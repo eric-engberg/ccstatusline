@@ -1,0 +1,176 @@
+import {
+    Box,
+    Text,
+    useInput
+} from 'ink';
+import React, { useState } from 'react';
+
+import type { WidgetEditorProps } from '../../types/Widget';
+import {
+    getAvailableColorsForUI,
+    getColorAnsiCode,
+    getColorDisplayName
+} from '../../utils/colors';
+import { shouldInsertInput } from '../../utils/input-guards';
+import {
+    KNOWN_THINKING_EFFORTS,
+    type TranscriptThinkingEffort
+} from '../../utils/jsonl-metadata';
+
+import {
+    THINKING_EFFORT_DEFAULT_COLOR,
+    formatThinkingEffort,
+    getBracketColorMode,
+    getLevelColor,
+    isLevelColorsEnabled,
+    parseCustomColor,
+    resetLevelColors,
+    setBracketColorMode,
+    setLevelColor,
+    setLevelColorsEnabled
+} from './effort-style';
+
+export const EDIT_LEVEL_COLORS_ACTION = 'edit-level-colors';
+
+// The editor has no access to the configured color level, so it previews at
+// the default (256 colors)
+const EDITOR_COLOR_LEVEL = 'ansi256';
+
+type Row = TranscriptThinkingEffort | 'brackets';
+const ROWS: Row[] = [...KNOWN_THINKING_EFFORTS, 'brackets'];
+const NAMED_COLORS = getAvailableColorsForUI().map(color => color.value).filter(value => value !== '');
+
+// Custom (hex/ansi256) colors aren't in the named list, so cycling from one
+// starts at either end of it
+function cycleNamedColor(current: string, direction: 1 | -1): string {
+    const index = NAMED_COLORS.indexOf(current);
+    const nextIndex = index === -1
+        ? (direction === 1 ? 0 : NAMED_COLORS.length - 1)
+        : (index + direction + NAMED_COLORS.length) % NAMED_COLORS.length;
+    return NAMED_COLORS[nextIndex] ?? current;
+}
+
+function paint(text: string, color: string): string {
+    const code = getColorAnsiCode(color, EDITOR_COLOR_LEVEL);
+    return code ? `${code}${text}\x1b[39m` : text;
+}
+
+export const EffortColorsEditor: React.FC<WidgetEditorProps> = ({ widget, onComplete, onCancel }) => {
+    const [draft, setDraft] = useState(widget);
+    const [selectedIndex, setSelectedIndex] = useState(0);
+    // The sample shows the highlighted level, or the last one highlighted
+    // while the cursor is on the brackets row
+    const [sampleLevel, setSampleLevel] = useState<TranscriptThinkingEffort>(KNOWN_THINKING_EFFORTS[0]);
+    const [customInput, setCustomInput] = useState<string | null>(null);
+    const [customError, setCustomError] = useState(false);
+
+    const selectedRow = ROWS[selectedIndex] ?? 'brackets';
+    const enabled = isLevelColorsEnabled(draft);
+    const baseColor = draft.color ?? THINKING_EFFORT_DEFAULT_COLOR;
+
+    const moveTo = (index: number) => {
+        setSelectedIndex(index);
+        const row = ROWS[index];
+        if (row && row !== 'brackets') {
+            setSampleLevel(row);
+        }
+    };
+
+    useInput((input, key) => {
+        if (customInput !== null) {
+            if (key.escape) {
+                setCustomInput(null);
+                setCustomError(false);
+            } else if (key.return) {
+                const color = parseCustomColor(customInput);
+                if (color && selectedRow !== 'brackets') {
+                    setDraft(setLevelColor(draft, selectedRow, color));
+                    setCustomInput(null);
+                    setCustomError(false);
+                } else {
+                    setCustomError(true);
+                }
+            } else if (key.backspace || key.delete) {
+                setCustomInput(customInput.slice(0, -1));
+            } else if (shouldInsertInput(input, key)) {
+                setCustomInput(customInput + input);
+                setCustomError(false);
+            }
+            return;
+        }
+
+        if (key.return) {
+            onComplete(draft);
+        } else if (key.escape) {
+            onCancel();
+        } else if (key.upArrow) {
+            moveTo(selectedIndex - 1 < 0 ? ROWS.length - 1 : selectedIndex - 1);
+        } else if (key.downArrow) {
+            moveTo(selectedIndex + 1 > ROWS.length - 1 ? 0 : selectedIndex + 1);
+        } else if (key.leftArrow || key.rightArrow) {
+            if (selectedRow === 'brackets') {
+                setDraft(setBracketColorMode(draft, getBracketColorMode(draft) === 'effort' ? 'widget' : 'effort'));
+            } else {
+                const current = getLevelColor(draft, selectedRow, EDITOR_COLOR_LEVEL);
+                setDraft(setLevelColor(draft, selectedRow, cycleNamedColor(current, key.rightArrow ? 1 : -1)));
+            }
+        } else if (input === ' ') {
+            setDraft(setLevelColorsEnabled(draft, !enabled));
+        } else if (input === 'x' && selectedRow !== 'brackets') {
+            setCustomInput('');
+            setCustomError(false);
+        } else if (input === 'd') {
+            setDraft(resetLevelColors(draft));
+        }
+    });
+
+    const sample = formatThinkingEffort(draft, { text: sampleLevel, level: sampleLevel }, {
+        colorLevel: EDITOR_COLOR_LEVEL,
+        colorsDisabled: false,
+        baseColor
+    });
+
+    return (
+        <Box flexDirection='column'>
+            <Text bold>Thinking Effort: level colors</Text>
+            <Text dimColor>↑↓ select, ←→ change color, Space on/off, (x) custom color, (d)efaults, Enter save, ESC cancel</Text>
+            <Box marginTop={1}>
+                <Text>Sample: </Text>
+                <Text>{sample}</Text>
+            </Box>
+            <Box marginTop={1}>
+                <Text>Level colors: </Text>
+                <Text color={enabled ? 'green' : 'red'}>{enabled ? 'On' : 'Off'}</Text>
+                {!enabled && <Text dimColor>  (Space to turn on; the widget uses its single color until then)</Text>}
+            </Box>
+            {customInput !== null && (
+                <Box marginTop={1} flexDirection='column'>
+                    <Box>
+                        <Text>{`Custom color for ${selectedRow} (#RRGGBB or 0-255): `}</Text>
+                        <Text color='cyan'>{customInput}</Text>
+                    </Box>
+                    {customError && <Text color='red'>Not a color. Use #RRGGBB, or a number from 0 to 255.</Text>}
+                </Box>
+            )}
+            <Box marginTop={1} flexDirection='column'>
+                {ROWS.map((row, index) => {
+                    const isSelected = index === selectedIndex;
+                    const value = row === 'brackets'
+                        ? (getBracketColorMode(draft) === 'effort' ? 'Match effort' : 'Widget color')
+                        : paint(getColorDisplayName(getLevelColor(draft, row, EDITOR_COLOR_LEVEL)), getLevelColor(draft, row, EDITOR_COLOR_LEVEL));
+                    return (
+                        <Box key={row} flexDirection='row' flexWrap='nowrap'>
+                            <Box width={3}>
+                                <Text color={isSelected ? 'green' : undefined}>{isSelected ? '▶ ' : '  '}</Text>
+                            </Box>
+                            <Box width={11}>
+                                <Text color={isSelected ? 'green' : undefined} dimColor={!enabled && !isSelected}>{row}</Text>
+                            </Box>
+                            <Text dimColor={!enabled}>{value}</Text>
+                        </Box>
+                    );
+                })}
+            </Box>
+        </Box>
+    );
+};
