@@ -11,6 +11,7 @@ import {
 
 import { DEFAULT_SETTINGS } from '../../../types/Settings';
 import type { WidgetItem } from '../../../types/Widget';
+import { getWidgetCatalog } from '../../../utils/widgets';
 import { ItemsEditor } from '../ItemsEditor';
 
 class MockTtyStream extends PassThrough {
@@ -231,10 +232,16 @@ describe('ItemsEditor', () => {
         }
     });
 
-    describe('widget picker preview', () => {
+    describe('widget picker', () => {
         const ESC = '\x1b';
         const ENTER = '\r';
+        const UP_ARROW = '\x1b[A';
         const RIGHT_ARROW = '\x1b[C';
+        const allWidgetCount = getWidgetCatalog(DEFAULT_SETTINGS).length;
+
+        function getEntryRows(output: string): string[] {
+            return output.split('\n').filter(row => /^\s*(▶\s+)?\d+\. /.test(row));
+        }
 
         function renderEditor(widgets: WidgetItem[], settings = DEFAULT_SETTINGS) {
             const stdin = createMockStdin();
@@ -271,6 +278,13 @@ describe('ItemsEditor', () => {
                 instance,
                 onUpdate,
                 press,
+                // Output written since the previous call, i.e. the frame(s)
+                // rendered for the keys pressed in between
+                takeOutput: () => {
+                    const output = stripAnsi(stdout.getOutput());
+                    stdout.clearOutput();
+                    return output;
+                },
                 latestPreview: () => previews.at(-1),
                 cleanup: () => {
                     instance.unmount();
@@ -338,6 +352,49 @@ describe('ItemsEditor', () => {
                 expect(editor.onUpdate).toHaveBeenCalledTimes(1);
                 expect(editor.onUpdate).toHaveBeenCalledWith(preview);
                 expect(editor.latestPreview()).toBeNull();
+            } finally {
+                editor.cleanup();
+            }
+        });
+
+        it('shows a window of a long list and counts the entries hidden below it', async () => {
+            const editor = renderEditor([{ id: '1', type: 'model' }]);
+
+            try {
+                await flushInk();
+                await editor.press('a');
+                editor.takeOutput();
+                await editor.press(ENTER);
+                const output = editor.takeOutput();
+
+                const shown = getEntryRows(output).length;
+                const hiddenBelow = Number(/↓ (\d+) more/.exec(output)?.[1]);
+                expect(shown).toBeGreaterThan(0);
+                expect(shown).toBeLessThan(allWidgetCount);
+                expect(shown + hiddenBelow).toBe(allWidgetCount);
+                expect(output).not.toMatch(/↑ \d+ more/);
+            } finally {
+                editor.cleanup();
+            }
+        });
+
+        it('scrolls the window to keep the highlighted widget visible', async () => {
+            const editor = renderEditor([{ id: '1', type: 'model' }]);
+
+            try {
+                await flushInk();
+                await editor.press('a');
+                await editor.press(ENTER);
+                editor.takeOutput();
+                // Up from the first widget wraps to the last one
+                await editor.press(UP_ARROW);
+                const output = editor.takeOutput();
+                const rows = getEntryRows(output);
+
+                expect(rows.find(row => row.includes('▶'))).toMatch(new RegExp(`${allWidgetCount}\\. `));
+                expect(rows.some(row => /^\s*1\. /.test(row))).toBe(false);
+                expect(output).toMatch(/↑ \d+ more/);
+                expect(output).not.toMatch(/↓ \d+ more/);
             } finally {
                 editor.cleanup();
             }

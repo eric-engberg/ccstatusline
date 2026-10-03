@@ -1,7 +1,8 @@
 import {
     Box,
     Text,
-    useInput
+    useInput,
+    useStdout
 } from 'ink';
 import React, {
     useEffect,
@@ -48,6 +49,10 @@ import {
     type WidgetPickerState
 } from './items-editor/input-handlers';
 import {
+    getListWindow,
+    getPickerMaxVisible
+} from './items-editor/list-window';
+import {
     getPickerInsertIndex,
     placePickerSelection
 } from './items-editor/picker-selection';
@@ -74,6 +79,33 @@ function isMergedIntoPreviousWidget(widgets: WidgetItem[], index: number): boole
     return Boolean(widgets[index - 1]?.merge);
 }
 
+const HiddenEntriesMarker: React.FC<{ arrow: string; count: number }> = ({ arrow, count }) => (
+    <Box paddingLeft={3}>
+        <Text dimColor>{count > 0 ? `${arrow} ${count} more` : ' '}</Text>
+    </Box>
+);
+
+// Long picker lists show only the entries around the selection so the whole
+// screen, status line preview included, fits in the terminal. Both marker
+// rows stay reserved while windowed so the list doesn't shift as it scrolls.
+function renderWindowedList<T>(
+    items: T[],
+    selectedIndex: number,
+    maxVisible: number,
+    renderItem: (item: T, index: number) => React.ReactNode
+): React.ReactNode {
+    const visible = getListWindow(items.length, Math.max(0, selectedIndex), maxVisible);
+    const isWindowed = items.length > maxVisible;
+
+    return (
+        <>
+            {isWindowed && <HiddenEntriesMarker arrow='↑' count={visible.hiddenAbove} />}
+            {items.slice(visible.start, visible.end).map((item, offset) => renderItem(item, visible.start + offset))}
+            {isWindowed && <HiddenEntriesMarker arrow='↓' count={visible.hiddenBelow} />}
+        </>
+    );
+}
+
 export const ItemsEditor: React.FC<ItemsEditorProps> = ({
     widgets,
     onUpdate,
@@ -93,6 +125,11 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
     // on every keypress and Enter adds exactly what was previewed
     const [pickerNewWidget, setPickerNewWidget] = useState<Omit<WidgetItem, 'type'> | null>(null);
     const [showClearConfirm, setShowClearConfirm] = useState(false);
+    const { stdout } = useStdout();
+    const pickerMaxVisible = getPickerMaxVisible(
+        stdout.rows,
+        settings.lines.filter(line => line.length > 0).length
+    );
     const separatorChars = ['|', '-', ',', ' '];
 
     const widgetCatalog = getWidgetCatalog(settings);
@@ -520,7 +557,7 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
                                 <Text dimColor>No widgets match the search.</Text>
                             ) : (
                                 <>
-                                    {topLevelSearchEntries.map((entry, index) => {
+                                    {renderWindowedList(topLevelSearchEntries, topLevelSearchEntries.findIndex(entry => entry.type === selectedTopLevelSearchEntry?.type), pickerMaxVisible, (entry, index) => {
                                         const isSelected = entry.type === selectedTopLevelSearchEntry?.type;
                                         const segments = getMatchSegments(entry.displayName, widgetPicker.categoryQuery);
                                         return (
@@ -555,7 +592,7 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
                                 <Text dimColor>No categories available.</Text>
                             ) : (
                                 <>
-                                    {pickerCategories.map((category, index) => {
+                                    {renderWindowedList(pickerCategories, pickerCategories.findIndex(category => category === selectedPickerCategory), pickerMaxVisible, (category, index) => {
                                         const isSelected = category === selectedPickerCategory;
                                         return (
                                             <Box key={category} flexDirection='row' flexWrap='nowrap'>
@@ -583,7 +620,7 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
                             <Text dimColor>No widgets match the current category/search.</Text>
                         ) : (
                             <>
-                                {pickerEntries.map((entry, index) => {
+                                {renderWindowedList(pickerEntries, pickerEntries.findIndex(entry => entry.type === selectedPickerEntry?.type), pickerMaxVisible, (entry, index) => {
                                     const isSelected = entry.type === selectedPickerEntry?.type;
                                     const segments = getMatchSegments(entry.displayName, widgetPicker.widgetQuery);
                                     return (
