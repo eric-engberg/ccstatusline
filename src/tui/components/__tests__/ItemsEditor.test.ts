@@ -230,4 +230,133 @@ describe('ItemsEditor', () => {
             stderr.destroy();
         }
     });
+
+    describe('widget picker preview', () => {
+        const ESC = '\x1b';
+        const ENTER = '\r';
+        const RIGHT_ARROW = '\x1b[C';
+
+        function renderEditor(widgets: WidgetItem[], settings = DEFAULT_SETTINGS) {
+            const stdin = createMockStdin();
+            const stdout = createMockStdout();
+            const stderr = createMockStdout();
+            const previews: (WidgetItem[] | null)[] = [];
+            const onUpdate = vi.fn<(widgets: WidgetItem[]) => void>();
+
+            const instance = render(
+                React.createElement(ItemsEditor, {
+                    widgets,
+                    onUpdate,
+                    onBack: vi.fn(),
+                    onPreviewChange: (preview: WidgetItem[] | null) => { previews.push(preview); },
+                    lineNumber: 1,
+                    settings
+                }),
+                {
+                    stdin,
+                    stdout,
+                    stderr,
+                    debug: true,
+                    exitOnCtrlC: false,
+                    patchConsole: false
+                }
+            );
+
+            const press = async (input: string) => {
+                stdin.write(input);
+                await flushInk();
+            };
+
+            return {
+                instance,
+                onUpdate,
+                press,
+                latestPreview: () => previews.at(-1),
+                cleanup: () => {
+                    instance.unmount();
+                    instance.cleanup();
+                    stdin.destroy();
+                    stdout.destroy();
+                    stderr.destroy();
+                }
+            };
+        }
+
+        it('shows the highlighted widget added after the cursor until the picker is cancelled', async () => {
+            const editor = renderEditor([{ id: '1', type: 'model' }]);
+
+            try {
+                await flushInk();
+                await editor.press('a');
+                // Browsing categories highlights no widget, so the line is untouched
+                expect(editor.latestPreview() ?? null).toBeNull();
+
+                await editor.press('git branch');
+                expect(editor.latestPreview()?.map(widget => widget.type)).toEqual(['model', 'git-branch']);
+
+                await editor.press(ESC);
+                await editor.press(ESC);
+                expect(editor.latestPreview()).toBeNull();
+                expect(editor.onUpdate).not.toHaveBeenCalled();
+            } finally {
+                editor.cleanup();
+            }
+        });
+
+        it('shows the widget at the cursor with its type swapped when changing type', async () => {
+            const editor = renderEditor([{ id: '1', type: 'model' }, { id: '2', type: 'tokens-input' }]);
+
+            try {
+                await flushInk();
+                await editor.press(RIGHT_ARROW);
+                await editor.press('git branch');
+                expect(editor.latestPreview()).toEqual([
+                    { id: '1', type: 'git-branch' },
+                    { id: '2', type: 'tokens-input' }
+                ]);
+            } finally {
+                editor.cleanup();
+            }
+        });
+
+        it('applies exactly the previewed line, powerline background included, on Enter', async () => {
+            const powerlineSettings = {
+                ...DEFAULT_SETTINGS,
+                powerline: { ...DEFAULT_SETTINGS.powerline, enabled: true }
+            };
+            const editor = renderEditor([{ id: '1', type: 'model', backgroundColor: 'bgRed' }], powerlineSettings);
+
+            try {
+                await flushInk();
+                await editor.press('a');
+                await editor.press('git branch');
+                const preview = editor.latestPreview();
+                expect(preview?.[1]?.backgroundColor).toEqual(expect.any(String));
+                expect(preview?.[1]?.backgroundColor).not.toBe('bgRed');
+
+                await editor.press(ENTER);
+                expect(editor.onUpdate).toHaveBeenCalledTimes(1);
+                expect(editor.onUpdate).toHaveBeenCalledWith(preview);
+                expect(editor.latestPreview()).toBeNull();
+            } finally {
+                editor.cleanup();
+            }
+        });
+
+        it('clears the preview when the editor is closed mid-pick', async () => {
+            const editor = renderEditor([{ id: '1', type: 'model' }]);
+
+            try {
+                await flushInk();
+                await editor.press('a');
+                await editor.press('git branch');
+                expect(editor.latestPreview()?.map(widget => widget.type)).toEqual(['model', 'git-branch']);
+
+                editor.instance.unmount();
+                expect(editor.latestPreview()).toBeNull();
+            } finally {
+                editor.cleanup();
+            }
+        });
+    });
 });

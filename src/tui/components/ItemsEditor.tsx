@@ -5,6 +5,7 @@ import {
 } from 'ink';
 import React, {
     useEffect,
+    useMemo,
     useState
 } from 'react';
 
@@ -46,11 +47,18 @@ import {
     type WidgetPickerAction,
     type WidgetPickerState
 } from './items-editor/input-handlers';
+import {
+    getPickerInsertIndex,
+    placePickerSelection
+} from './items-editor/picker-selection';
 
 export interface ItemsEditorProps {
     widgets: WidgetItem[];
     onUpdate: (widgets: WidgetItem[]) => void;
     onBack: () => void;
+    // Receives the line as it would look with the widget highlighted in the
+    // picker, or null when nothing is being previewed. Pass a stable callback.
+    onPreviewChange?: (widgets: WidgetItem[] | null) => void;
     // Lets the caller restore the cursor, e.g. after a dev reload
     initialSelectedIndex?: number;
     onSelectedIndexChange?: (index: number) => void;
@@ -70,6 +78,7 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
     widgets,
     onUpdate,
     onBack,
+    onPreviewChange,
     initialSelectedIndex = 0,
     onSelectedIndexChange,
     lineNumber,
@@ -79,6 +88,10 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
     const [moveMode, setMoveMode] = useState(false);
     const [customEditorWidget, setCustomEditorWidget] = useState<CustomEditorWidgetState | null>(null);
     const [widgetPicker, setWidgetPicker] = useState<WidgetPickerState | null>(null);
+    // Identity and powerline background of the widget an add/insert would
+    // create, fixed when the picker opens so the preview doesn't change color
+    // on every keypress and Enter adds exactly what was previewed
+    const [pickerNewWidget, setPickerNewWidget] = useState<Omit<WidgetItem, 'type'> | null>(null);
     const [showClearConfirm, setShowClearConfirm] = useState(false);
     const separatorChars = ['|', '-', ',', ' '];
 
@@ -156,7 +169,14 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
 
         const currentType = widgets[selectedIndex]?.type;
         const selectedType = action === 'change' ? currentType ?? null : null;
+        const backgroundColor = action === 'change'
+            ? undefined
+            : getUniqueBackgroundColor(getPickerInsertIndex(action, widgets.length, selectedIndex));
 
+        setPickerNewWidget({
+            id: generateGuid(),
+            ...(backgroundColor && { backgroundColor })
+        });
         setWidgetPicker(normalizePickerState({
             action,
             level: 'category',
@@ -172,27 +192,16 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
             return;
         }
 
-        if (widgetPicker.action === 'change') {
-            const currentWidget = widgets[selectedIndex];
-            if (currentWidget) {
-                const newWidgets = [...widgets];
-                newWidgets[selectedIndex] = { ...currentWidget, type: selectedType };
-                onUpdate(newWidgets);
-            }
-        } else {
-            const insertIndex = widgetPicker.action === 'add'
-                ? (widgets.length > 0 ? selectedIndex + 1 : 0)
-                : selectedIndex;
-            const backgroundColor = getUniqueBackgroundColor(insertIndex);
-            const newWidget: WidgetItem = {
-                id: generateGuid(),
-                type: selectedType,
-                ...(backgroundColor && { backgroundColor })
-            };
-            const newWidgets = [...widgets];
-            newWidgets.splice(insertIndex, 0, newWidget);
-            onUpdate(newWidgets);
-            setSelectedIndex(insertIndex);
+        const placement = placePickerSelection(
+            widgets,
+            widgetPicker.action,
+            selectedIndex,
+            selectedType,
+            pickerNewWidget ?? { id: generateGuid() }
+        );
+        if (placement.widgets !== widgets) {
+            onUpdate(placement.widgets);
+            setSelectedIndex(placement.selectedIndex);
         }
 
         setWidgetPicker(null);
@@ -321,6 +330,28 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
     const selectedPickerEntry = widgetPicker
         ? (pickerEntries.find(entry => entry.type === widgetPicker.selectedType) ?? pickerEntries[0])
         : null;
+
+    // Only a widget the picker visibly highlights is previewed; browsing the
+    // category list leaves the line as it is
+    const highlightedPickerType = widgetPicker?.level === 'widget'
+        ? selectedPickerEntry?.type
+        : (widgetPicker && widgetPicker.categoryQuery.trim().length > 0 ? selectedTopLevelSearchEntry?.type : undefined);
+    const pickerAction = widgetPicker?.action;
+    const previewWidgets = useMemo(() => {
+        if (!pickerAction || !highlightedPickerType || !pickerNewWidget) {
+            return null;
+        }
+
+        return placePickerSelection(widgets, pickerAction, selectedIndex, highlightedPickerType, pickerNewWidget).widgets;
+    }, [widgets, pickerAction, selectedIndex, highlightedPickerType, pickerNewWidget]);
+
+    useEffect(() => {
+        onPreviewChange?.(previewWidgets);
+    }, [onPreviewChange, previewWidgets]);
+
+    useEffect(() => () => {
+        onPreviewChange?.(null);
+    }, [onPreviewChange]);
 
     useEffect(() => {
         onSelectedIndexChange?.(selectedIndex);

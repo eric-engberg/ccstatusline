@@ -468,6 +468,20 @@ export function buildInvalidConfigSaveConfirm(
     };
 }
 
+export function applyLinePreview(
+    lines: WidgetItem[][],
+    lineIndex: number,
+    previewLine: WidgetItem[] | null
+): WidgetItem[][] {
+    if (!previewLine) {
+        return lines;
+    }
+
+    const previewLines = [...lines];
+    previewLines[lineIndex] = previewLine;
+    return previewLines;
+}
+
 export const App: React.FC = () => {
     const { exit } = useApp();
     // Only set when running under the CCSTATUSLINE_DEV_RELOAD supervisor; the
@@ -491,6 +505,7 @@ export const App: React.FC = () => {
     const [existingStatusLine, setExistingStatusLine] = useState<string | null>(null);
     const [flashMessage, setFlashMessage] = useState<FlashMessage | null>(null);
     const [previewIsTruncated, setPreviewIsTruncated] = useState(false);
+    const [itemsPreviewLine, setItemsPreviewLine] = useState<WidgetItem[] | null>(null);
     const [currentRefreshInterval, setCurrentRefreshInterval] = useState<number | null>(null);
     const [supportsRefreshInterval] = useState(() => isClaudeCodeVersionAtLeast('2.1.97'));
     const [commandAvailability] = useState(() => getPackageCommandAvailability());
@@ -1170,7 +1185,7 @@ export const App: React.FC = () => {
             )}
 
             <StatusLinePreview
-                lines={settings.lines}
+                lines={applyLinePreview(settings.lines, selectedLine, itemsPreviewLine)}
                 terminalWidth={terminalWidth}
                 settings={settings}
                 onTruncationChange={setPreviewIsTruncated}
@@ -1219,6 +1234,7 @@ export const App: React.FC = () => {
                     <ItemsEditor
                         widgets={settings.lines[selectedLine] ?? []}
                         onUpdate={(widgets) => { updateLine(selectedLine, widgets); }}
+                        onPreviewChange={setItemsPreviewLine}
                         initialSelectedIndex={itemsCursor}
                         onSelectedIndexChange={setItemsCursor}
                         onBack={() => {

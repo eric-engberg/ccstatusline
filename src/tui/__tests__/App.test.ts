@@ -10,7 +10,9 @@ import {
     DEFAULT_SETTINGS,
     type InstallationMetadata
 } from '../../types/Settings';
+import type { WidgetItem } from '../../types/Widget';
 import {
+    applyLinePreview,
     applyTuiImport,
     buildConfigLoadWarning,
     buildInvalidConfigSaveConfirm,
@@ -317,5 +319,26 @@ describe('Invalid-config TUI guards', () => {
             .toContain('settings.json is not valid JSON');
         expect(buildInvalidConfigSaveConfirm('settings.json is not in a valid format', vi.fn())?.message)
             .toContain('not in a valid format');
+    });
+});
+
+describe('Widget picker line preview', () => {
+    const lines: WidgetItem[][] = [
+        [{ id: '1', type: 'model' }],
+        [{ id: '2', type: 'tokens-input' }]
+    ];
+
+    it('shows the configured lines when nothing is being previewed', () => {
+        expect(applyLinePreview(lines, 1, null)).toBe(lines);
+    });
+
+    it('swaps in the previewed line without touching the others or the saved lines', () => {
+        const preview: WidgetItem[] = [{ id: '2', type: 'tokens-input' }, { id: '3', type: 'git-branch' }];
+
+        expect(applyLinePreview(lines, 1, preview)).toEqual([
+            [{ id: '1', type: 'model' }],
+            [{ id: '2', type: 'tokens-input' }, { id: '3', type: 'git-branch' }]
+        ]);
+        expect(lines[1]).toEqual([{ id: '2', type: 'tokens-input' }]);
     });
 });
