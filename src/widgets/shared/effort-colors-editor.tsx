@@ -11,7 +11,10 @@ import {
     getColorAnsiCode,
     getColorDisplayName
 } from '../../utils/colors';
-import { shouldInsertInput } from '../../utils/input-guards';
+import {
+    getPlainInput,
+    shouldInsertInput
+} from '../../utils/input-guards';
 import {
     KNOWN_THINKING_EFFORTS,
     type TranscriptThinkingEffort
@@ -99,6 +102,8 @@ export const EffortColorsEditor: React.FC<WidgetEditorProps> = ({ widget, onComp
             return;
         }
 
+        const shortcut = getPlainInput(input, key);
+
         if (key.return) {
             onComplete(draft);
         } else if (key.escape) {
@@ -114,12 +119,12 @@ export const EffortColorsEditor: React.FC<WidgetEditorProps> = ({ widget, onComp
                 const current = getLevelColor(draft, selectedRow, EDITOR_COLOR_LEVEL);
                 setDraft(setLevelColor(draft, selectedRow, cycleNamedColor(current, key.rightArrow ? 1 : -1)));
             }
-        } else if (input === ' ') {
+        } else if (shortcut === ' ') {
             setDraft(setLevelColorsEnabled(draft, !enabled));
-        } else if (input === 'x' && selectedRow !== 'brackets') {
+        } else if (shortcut === 'x' && selectedRow !== 'brackets') {
             setCustomInput('');
             setCustomError(false);
-        } else if (input === 'd') {
+        } else if (shortcut === 'd') {
             setDraft(resetLevelColors(draft));
         }
     });

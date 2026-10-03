@@ -240,6 +240,22 @@ describe('EffortColorsEditor', () => {
         }
     });
 
+    it('ignores its letter shortcuts when ctrl or alt is held', async () => {
+        const editor = renderEditor({ ...rawWithParens, metadata: { 'brackets': '()', 'levelColor.low': 'blue' } });
+
+        try {
+            await flushInk();
+            // ctrl+d, alt+d (ESC d), alt+x, ctrl+space (NUL)
+            await editor.press('\x04', '\x1bd', '\x1bx', '\x00');
+            expect(editor.takeOutput()).not.toContain('Custom color for');
+
+            await editor.press(ENTER);
+            expect(editor.savedMetadata()).toEqual({ 'brackets': '()', 'levelColor.low': 'blue' });
+        } finally {
+            editor.cleanup();
+        }
+    });
+
     it('discards changes on ESC', async () => {
         const editor = renderEditor(rawWithParens);
 
