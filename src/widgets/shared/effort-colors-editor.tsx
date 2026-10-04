@@ -53,6 +53,21 @@ function cycleNamedColor(current: string, direction: 1 | -1): string {
     return NAMED_COLORS[nextIndex] ?? current;
 }
 
+// Custom colors are labeled the way Edit Colors labels them (ANSI n, #RRGGBB),
+// except the default xhigh orange, which has no name among the 16 named colors
+function getColorLabel(color: string): string {
+    if (color === 'ansi256:208') {
+        return 'Orange';
+    }
+    if (color.startsWith('ansi256:')) {
+        return `ANSI ${color.substring(8)}`;
+    }
+    if (color.startsWith('hex:')) {
+        return `#${color.substring(4).toUpperCase()}`;
+    }
+    return getColorDisplayName(color);
+}
+
 function paint(text: string, color: string): string {
     const code = getColorAnsiCode(color, EDITOR_COLOR_LEVEL);
     return code ? `${code}${text}\x1b[39m` : text;
@@ -162,7 +177,7 @@ export const EffortColorsEditor: React.FC<WidgetEditorProps> = ({ widget, onComp
                     const isSelected = index === selectedIndex;
                     const value = row === 'brackets'
                         ? (getBracketColorMode(draft) === 'effort' ? 'Match effort' : 'Widget color')
-                        : paint(getColorDisplayName(getLevelColor(draft, row, EDITOR_COLOR_LEVEL)), getLevelColor(draft, row, EDITOR_COLOR_LEVEL));
+                        : paint(getColorLabel(getLevelColor(draft, row, EDITOR_COLOR_LEVEL)), getLevelColor(draft, row, EDITOR_COLOR_LEVEL));
                     return (
                         <Box key={row} flexDirection='row' flexWrap='nowrap'>
                             <Box width={3}>

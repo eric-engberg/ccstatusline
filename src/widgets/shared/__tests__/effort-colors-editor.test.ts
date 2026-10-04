@@ -194,6 +194,35 @@ describe('EffortColorsEditor', () => {
         }
     });
 
+    it('names the default xhigh orange instead of showing its palette number', async () => {
+        const editor = renderEditor(rawWithParens);
+
+        try {
+            await flushInk();
+            const output = editor.takeOutput();
+            expect(output).toMatch(/xhigh\s+Orange/);
+            expect(output).not.toContain('ansi256:208');
+        } finally {
+            editor.cleanup();
+        }
+    });
+
+    it('labels custom colors the way Edit Colors does', async () => {
+        const editor = renderEditor({
+            ...rawWithParens,
+            metadata: { ...rawWithParens.metadata, 'levelColor.high': 'ansi256:33', 'levelColor.max': 'hex:ff8800' }
+        });
+
+        try {
+            await flushInk();
+            const output = editor.takeOutput();
+            expect(output).toMatch(/high\s+ANSI 33/);
+            expect(output).toMatch(/max\s+#FF8800/);
+        } finally {
+            editor.cleanup();
+        }
+    });
+
     it('sets a custom color typed after (x)', async () => {
         const editor = renderEditor(rawWithParens);
 
