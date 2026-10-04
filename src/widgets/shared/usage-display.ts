@@ -1,3 +1,4 @@
+import type { NumberFormat } from '../../types/NumberFormat';
 import type {
     CustomKeybind,
     HideableState,
@@ -7,6 +8,7 @@ import {
     DEFAULT_RESET_LOCALE,
     canonicalizeLocale
 } from '../../utils/locales';
+import { formatPercent } from '../../utils/number-format';
 
 import { makeModifierText } from './editor-display';
 import {
@@ -14,6 +16,7 @@ import {
     removeMetadataKeys,
     toggleMetadataFlag
 } from './metadata';
+import { makeTimerProgressBar } from './progress-bar';
 
 export type UsageDisplayMode = 'time' | 'progress' | 'progress-short' | 'slider' | 'slider-only';
 
@@ -53,6 +56,26 @@ export function isUsageSliderMode(mode: UsageDisplayMode): boolean {
 }
 
 interface SliderBarOptions { cursorPercent?: number }
+
+// The bar modes' text: "[████░░░░] 50.0%", "▓▓▓▓░░░░ 50.0%" or "▓▓▓▓░░░░". Null in
+// the other modes, without calling getCursor, which can be costly to resolve.
+export function formatUsageBar(
+    item: WidgetItem,
+    percent: number,
+    format: NumberFormat,
+    getCursor: () => SliderBarOptions | undefined = () => undefined
+): string | null {
+    const mode = getUsageDisplayMode(item);
+    if (isUsageProgressMode(mode)) {
+        const progressBar = makeTimerProgressBar(percent, getUsageProgressBarWidth(mode), getCursor());
+        return `[${progressBar}] ${formatPercent(percent, format)}`;
+    }
+    if (isUsageSliderMode(mode)) {
+        const slider = makeSliderBar(percent, undefined, getCursor());
+        return mode === 'slider' ? `${slider} ${formatPercent(percent, format)}` : slider;
+    }
+    return null;
+}
 
 export function makeSliderBar(percent: number, width: number = SLIDER_WIDTH, options?: SliderBarOptions): string {
     const clamped = Math.max(0, Math.min(100, percent));

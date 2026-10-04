@@ -23,19 +23,14 @@ import {
 import type { UsageWindowMetrics } from '../../utils/usage-types';
 
 import { isHidden } from './hideable';
-import { makeTimerProgressBar } from './progress-bar';
 import { formatRawOrLabeledValue } from './raw-or-labeled';
 import {
     USAGE_NO_DATA_HIDEABLE_STATE,
     cycleUsageDisplayMode,
-    getUsageDisplayMode,
+    formatUsageBar,
     getUsageDisplayModifierText,
-    getUsageProgressBarWidth,
     isUsageCursorEnabled,
     isUsageInverted,
-    isUsageProgressMode,
-    isUsageSliderMode,
-    makeSliderBar,
     toggleUsageCursor,
     toggleUsageInverted
 } from './usage-display';
@@ -117,22 +112,8 @@ function renderUsageDisplay(
     format: NumberFormat,
     getCursorOptions: () => UsageCursorOptions | undefined
 ): string {
-    const displayMode = getUsageDisplayMode(item);
-
-    if (isUsageProgressMode(displayMode)) {
-        const width = getUsageProgressBarWidth(displayMode);
-        const progressBar = makeTimerProgressBar(percent, width, getCursorOptions());
-        const progressDisplay = `[${progressBar}] ${formatPercent(percent, format)}`;
-        return formatRawOrLabeledValue(item, label, progressDisplay);
-    }
-
-    if (isUsageSliderMode(displayMode)) {
-        const slider = makeSliderBar(percent, undefined, getCursorOptions());
-        const sliderDisplay = displayMode === 'slider' ? `${slider} ${formatPercent(percent, format)}` : slider;
-        return formatRawOrLabeledValue(item, label, sliderDisplay);
-    }
-
-    return formatRawOrLabeledValue(item, label, formatPercent(percent, format));
+    const bar = formatUsageBar(item, percent, format, getCursorOptions);
+    return formatRawOrLabeledValue(item, label, bar ?? formatPercent(percent, format));
 }
 
 export function getUsagePercentWidgetDisplayName(kind: UsagePercentWidgetKind): string {
