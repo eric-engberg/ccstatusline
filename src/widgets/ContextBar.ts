@@ -1,3 +1,4 @@
+import { getColorLevelString } from '../types/ColorLevel';
 import type { RenderContext } from '../types/RenderContext';
 import type { Settings } from '../types/Settings';
 import type {
@@ -18,6 +19,11 @@ import {
 import { formatTokens } from '../utils/renderer';
 import { makeUsageProgressBar } from '../utils/usage';
 
+import { paintGradientBar } from './shared/gradient-bar';
+import {
+    isMetadataFlagEnabled,
+    toggleMetadataFlag
+} from './shared/metadata';
 import { makeSliderBar } from './shared/usage-display';
 
 type DisplayMode = 'progress' | 'progress-short' | 'slider' | 'slider-only';
@@ -32,6 +38,18 @@ function getDisplayMode(item: WidgetItem): DisplayMode {
 
 function isBarSliderMode(mode: DisplayMode): boolean {
     return mode === 'slider' || mode === 'slider-only';
+}
+
+const GRADIENT_KEY = 'gradient';
+
+// The gradient needs colors, and a global foreground override owns every
+// widget's foreground
+function paintBar(bar: string, item: WidgetItem, settings: Settings): string {
+    const override = settings.overrideForegroundColor;
+    if (!isMetadataFlagEnabled(item, GRADIENT_KEY) || settings.colorLevel === 0 || (override && override !== 'none')) {
+        return bar;
+    }
+    return paintGradientBar(bar, getColorLevelString(settings.colorLevel));
 }
 
 export class ContextBarWidget implements Widget {
@@ -51,6 +69,9 @@ export class ContextBarWidget implements Widget {
         } else if (mode === 'slider-only') {
             modifiers.push('short bar only');
         }
+        if (isMetadataFlagEnabled(item, GRADIENT_KEY)) {
+            modifiers.push('gradient');
+        }
 
         return {
             displayText: this.getDisplayName(),
@@ -59,6 +80,9 @@ export class ContextBarWidget implements Widget {
     }
 
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
+        if (action === 'toggle-gradient') {
+            return toggleMetadataFlag(item, GRADIENT_KEY);
+        }
         if (action !== 'toggle-progress') {
             return null;
         }
@@ -91,12 +115,12 @@ export class ContextBarWidget implements Widget {
             const totalDisplay = formatTokens(200000, tokenFormat, 0);
             const percentDisplay = formatPercent(25, percentFormat, 0);
             if (isBarSliderMode(displayMode)) {
-                const slider = makeSliderBar(25);
+                const slider = paintBar(makeSliderBar(25), item, settings);
                 const sliderDisplay = displayMode === 'slider' ? `${slider} ${usedDisplay}/${totalDisplay} (${percentDisplay})` : slider;
                 return item.rawValue ? sliderDisplay : `Context: ${sliderDisplay}`;
             }
             const barWidth = displayMode === 'progress' ? 32 : 16;
-            const previewDisplay = `${makeUsageProgressBar(25, barWidth)} ${usedDisplay}/${totalDisplay} (${percentDisplay})`;
+            const previewDisplay = `${paintBar(makeUsageProgressBar(25, barWidth), item, settings)} ${usedDisplay}/${totalDisplay} (${percentDisplay})`;
             return item.rawValue ? previewDisplay : `Context: ${previewDisplay}`;
         }
 
@@ -125,20 +149,21 @@ export class ContextBarWidget implements Widget {
         const percentDisplay = formatPercent(clampedPercent, percentFormat, 0);
 
         if (isBarSliderMode(displayMode)) {
-            const slider = makeSliderBar(clampedPercent);
+            const slider = paintBar(makeSliderBar(clampedPercent), item, settings);
             const sliderDisplay = displayMode === 'slider' ? `${slider} ${usedDisplay}/${totalDisplay} (${percentDisplay})` : slider;
             return item.rawValue ? sliderDisplay : `Context: ${sliderDisplay}`;
         }
 
         const barWidth = displayMode === 'progress' ? 32 : 16;
-        const display = `${makeUsageProgressBar(clampedPercent, barWidth)} ${usedDisplay}/${totalDisplay} (${percentDisplay})`;
+        const display = `${paintBar(makeUsageProgressBar(clampedPercent, barWidth), item, settings)} ${usedDisplay}/${totalDisplay} (${percentDisplay})`;
 
         return item.rawValue ? display : `Context: ${display}`;
     }
 
     getCustomKeybinds(): CustomKeybind[] {
         return [
-            { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' }
+            { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
+            { key: 'g', label: '(g)radient', action: 'toggle-gradient' }
         ];
     }
 

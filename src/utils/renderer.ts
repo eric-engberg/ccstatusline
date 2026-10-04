@@ -30,7 +30,8 @@ import {
     applyParensDim,
     bgToFg,
     getColorAnsiCode,
-    getPowerlineTheme
+    getPowerlineTheme,
+    restoreForegroundAfterRuns
 } from './colors';
 import { calculateContextPercentage } from './context-percentage';
 import {
@@ -518,9 +519,10 @@ function renderPowerlineStatusLine(
             ? applyParensDim(widget.content, shouldBold)
             : widget.content;
 
-        if (widget.fgColor && !isPreserveColors && !textGradientStops) {
-            widgetContent += getColorAnsiCode(widget.fgColor, colorLevel, false);
-        }
+        const fgCode = widget.fgColor && !isPreserveColors && !textGradientStops
+            ? getColorAnsiCode(widget.fgColor, colorLevel, false)
+            : '';
+        widgetContent += fgCode;
         // Always apply background for consistency in powerline mode
         if (widget.bgColor) {
             widgetContent += getColorAnsiCode(widget.bgColor, colorLevel, true);
@@ -536,7 +538,7 @@ function renderPowerlineStatusLine(
             widgetContent += gradientResult.text;
             powerlineGradientColumn = gradientResult.nextColumn;
         } else {
-            widgetContent += styledContent;
+            widgetContent += fgCode ? restoreForegroundAfterRuns(styledContent, fgCode) : styledContent;
         }
         // Reset colors after content
         // For custom commands with preserveColors, also reset text attributes like dim
