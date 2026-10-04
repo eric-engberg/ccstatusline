@@ -87,7 +87,7 @@ export function getPaletteHex(index: number): string {
 }
 
 function hexToRgb(hex: string): [number, number, number] {
-    return [0, 2, 4].map(start => parseInt(hex.slice(start, start + 2), 16)) as [number, number, number];
+    return [0, 2, 4].map(start => Number.parseInt(hex.slice(start, start + 2), 16)) as [number, number, number];
 }
 
 export function getPaletteLabel(index: number): string {
@@ -136,7 +136,7 @@ export function colorToPaletteIndex(color: string): number {
         return named;
     }
     if (color.startsWith('ansi256:')) {
-        const code = parseInt(color.substring(8), 10);
+        const code = Number.parseInt(color.substring(8), 10);
         if (code >= 0 && code <= 255) {
             return code;
         }
