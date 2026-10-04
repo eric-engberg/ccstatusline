@@ -26,6 +26,7 @@ import {
 } from '../../utils/widgets';
 
 import { ConfirmDialog } from './ConfirmDialog';
+import { PalettePicker } from './color-menu/PalettePicker';
 import {
     clearAllWidgetStyling,
     cycleWidgetColor,
@@ -34,6 +35,10 @@ import {
     setWidgetColor,
     toggleWidgetBold
 } from './color-menu/mutations';
+import {
+    colorToPaletteIndex,
+    paletteIndexToColor
+} from './color-menu/palette';
 
 export interface ColorMenuProps {
     widgets: WidgetItem[];
@@ -43,12 +48,32 @@ export interface ColorMenuProps {
     onBack: () => void;
 }
 
+// The color the menu shows for a widget: its own setting, else the widget's default
+function getEffectiveColor(widget: WidgetItem, editingBackground: boolean): string {
+    if (editingBackground) {
+        return widget.backgroundColor ?? '';  // Empty string for 'none'
+    }
+    if (widget.color !== undefined) {
+        return widget.color;
+    }
+    if (widget.type !== 'separator' && widget.type !== 'flex-separator') {
+        return getWidget(widget.type)?.getDefaultColor() ?? 'white';
+    }
+    return 'white';
+}
+
+interface PaletteSession {
+    widgets: WidgetItem[];  // as they were when the grid opened; ESC restores them
+    widgetId: string;
+    startColor: string;
+    startIndex: number;
+}
+
 export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settings, onUpdate, onBack }) => {
     const [showSeparators, setShowSeparators] = useState(false);
     const [hexInputMode, setHexInputMode] = useState(false);
     const [hexInput, setHexInput] = useState('');
-    const [ansi256InputMode, setAnsi256InputMode] = useState(false);
-    const [ansi256Input, setAnsi256Input] = useState('');
+    const [palette, setPalette] = useState<PaletteSession | null>(null);
     const [showClearConfirm, setShowClearConfirm] = useState(false);
     const [gradientMode, setGradientMode] = useState(false);
     const [gradientIndex, setGradientIndex] = useState(0);
@@ -71,6 +96,12 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
     const [highlightedItemId, setHighlightedItemId] = useState(colorableWidgets[0]?.id ?? null);
     const [editingBackground, setEditingBackground] = useState(false);
 
+    const applyPaletteColor = (session: PaletteSession, index: number) => {
+        const color = paletteIndexToColor(index, editingBackground);
+        // Landing back on the color the grid opened on leaves the settings as they were
+        onUpdate(color === session.startColor ? session.widgets : setWidgetColor(session.widgets, session.widgetId, color, editingBackground));
+    };
+
     // Handle keyboard input
     const hasNoItems = colorableWidgets.length === 0;
     useInput((input, key) => {
@@ -83,6 +114,11 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
 
         // Skip input handling when confirmation is active - let ConfirmDialog handle it
         if (showClearConfirm) {
+            return;
+        }
+
+        // The 256-color grid handles its own input
+        if (palette) {
             return;
         }
 
@@ -114,47 +150,6 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
                 const upperInput = input.toUpperCase();
                 if (/^[0-9A-F]$/.test(upperInput)) {
                     setHexInput(hexInput + upperInput);
-                }
-            }
-            return;
-        }
-
-        // Handle ansi256 input mode
-        if (ansi256InputMode) {
-            // Disable arrow keys in input mode
-            if (key.upArrow || key.downArrow) {
-                return;
-            }
-            if (key.escape) {
-                setAnsi256InputMode(false);
-                setAnsi256Input('');
-            } else if (key.return) {
-                // Validate and apply the ansi256 color
-                const code = parseInt(ansi256Input, 10);
-                if (!isNaN(code) && code >= 0 && code <= 255) {
-                    const ansiColor = `ansi256:${code}`;
-
-                    const selectedWidget = colorableWidgets.find(widget => widget.id === highlightedItemId);
-
-                    if (selectedWidget) {
-                        const newItems = setWidgetColor(widgets, selectedWidget.id, ansiColor, editingBackground);
-
-                        onUpdate(newItems);
-                        setAnsi256InputMode(false);
-                        setAnsi256Input('');
-                    }
-                }
-            } else if (key.backspace || key.delete) {
-                setAnsi256Input(ansi256Input.slice(0, -1));
-            } else if (shouldInsertInput(input, key) && ansi256Input.length < 3) {
-                // Only accept numeric characters (0-9)
-                if (/^[0-9]$/.test(input)) {
-                    const newInput = ansi256Input + input;
-                    const code = parseInt(newInput, 10);
-                    // Only allow if it won't exceed 255
-                    if (code <= 255) {
-                        setAnsi256Input(newInput);
-                    }
                 }
             }
             return;
@@ -242,10 +237,14 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
                 setHexInput('');
             }
         } else if (shortcut === 'a' || shortcut === 'A') {
-            // Enter ansi256 input mode (only in 256 color mode)
-            if (highlightedItemId && highlightedItemId !== 'back' && settings.colorLevel === 2) {
-                setAnsi256InputMode(true);
-                setAnsi256Input('');
+            // Open the 256-color grid (256-color and truecolor modes)
+            const selectedWidget = colorableWidgets.find(widget => widget.id === highlightedItemId);
+            if (selectedWidget && settings.colorLevel >= 2) {
+                const startColor = getEffectiveColor(selectedWidget, editingBackground);
+                const session = { widgets, widgetId: selectedWidget.id, startColor, startIndex: colorToPaletteIndex(startColor) };
+                setPalette(session);
+                // The preview shows the highlighted color from the start, so Enter keeps what it shows
+                applyPaletteColor(session, session.startIndex);
             }
         } else if (shortcut === 'g' || shortcut === 'G') {
             // Enter gradient selection mode (foreground only, needs a real color palette)
@@ -387,15 +386,9 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
     const selectedWidget = highlightedItemId && highlightedItemId !== 'back'
         ? colorableWidgets.find(widget => widget.id === highlightedItemId)
         : null;
-    const currentColor = editingBackground
-        ? (selectedWidget?.backgroundColor ?? '')  // Empty string for 'none'
-        : (selectedWidget ? (selectedWidget.color ?? (() => {
-            if (selectedWidget.type !== 'separator' && selectedWidget.type !== 'flex-separator') {
-                const widgetImpl = getWidget(selectedWidget.type);
-                return widgetImpl ? widgetImpl.getDefaultColor() : 'white';
-            }
-            return 'white';
-        })()) : 'white');
+    const currentColor = selectedWidget
+        ? getEffectiveColor(selectedWidget, editingBackground)
+        : (editingBackground ? '' : 'white');
 
     const colorList = editingBackground ? bgColors : colors;
     const colorIndex = colorList.indexOf(currentColor);
@@ -453,6 +446,28 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
         selectedWidget?.dim === true ? '[DIM]' : null,
         selectedWidget?.dim === 'parens' ? '[DIM ()]' : null
     ].filter(indicator => indicator !== null).join(' ');
+
+    // The 256-color grid takes over the whole view
+    if (palette) {
+        const paletteWidget = palette.widgets.find(widget => widget.id === palette.widgetId);
+        return (
+            <PalettePicker
+                title={`Select ANSI 256 Color - ${paletteWidget ? getItemLabel(paletteWidget) : ''} (${editingBackground ? 'background' : 'foreground'})`}
+                initialIndex={palette.startIndex}
+                onHighlight={(index) => {
+                    applyPaletteColor(palette, index);
+                }}
+                onSelect={(index) => {
+                    applyPaletteColor(palette, index);
+                    setPalette(null);
+                }}
+                onCancel={() => {
+                    onUpdate(palette.widgets);
+                    setPalette(null);
+                }}
+            />
+        );
+    }
 
     // Gradient selection mode takes over the whole view
     if (gradientMode) {
@@ -579,16 +594,6 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
                     <Text> </Text>
                     <Text dimColor>Press Enter when done, ESC to cancel</Text>
                 </Box>
-            ) : ansi256InputMode ? (
-                <Box flexDirection='column'>
-                    <Text>Enter ANSI 256 color code (0-255):</Text>
-                    <Text>
-                        {ansi256Input}
-                        <Text dimColor>{ansi256Input.length === 0 ? '___' : ansi256Input.length === 1 ? '__' : ansi256Input.length === 2 ? '_' : ''}</Text>
-                    </Text>
-                    <Text> </Text>
-                    <Text dimColor>Press Enter when done, ESC to cancel</Text>
-                </Box>
             ) : (
                 <>
                     <Text dimColor>
@@ -596,7 +601,7 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
                         {' '}
                         {editingBackground ? 'background' : 'foreground'}
                         , (f) to toggle bg/fg, (b)old, (d)im,
-                        {settings.colorLevel === 3 ? ' (h)ex,' : settings.colorLevel === 2 ? ' (a)nsi256,' : ''}
+                        {settings.colorLevel === 3 ? ' (h)ex, (a)nsi256,' : settings.colorLevel === 2 ? ' (a)nsi256,' : ''}
                         {!editingBackground && settings.colorLevel >= 2 ? ' (g)radient,' : ''}
                         {' '}
                         (r)eset, (c)lear all, ESC to go back
@@ -635,7 +640,7 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
                 </>
             )}
             <Box marginTop={1}>
-                {(hexInputMode || ansi256InputMode) ? (
+                {hexInputMode ? (
                     // Static list when in input mode - no keyboard interaction
                     <Box flexDirection='column'>
                         {menuItems.map(item => (
