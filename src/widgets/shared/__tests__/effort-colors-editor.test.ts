@@ -53,9 +53,36 @@ function createMockStdout(): CapturedWriteStream {
     });
 }
 
-function flushInk() {
+// Lets work React has already queued run first. Its scheduler runs on
+// setImmediate, and it attaches input listeners in an effect just after
+// drawing a frame, so a key sent as soon as the frame shows could be lost.
+async function letReactCatchUp() {
+    for (let turn = 0; turn < 2; turn++) {
+        await new Promise((resolve) => {
+            setImmediate(resolve);
+        });
+    }
+}
+
+// Polls until the condition holds; a fixed delay races Ink on a busy machine
+async function waitUntil(condition: () => boolean, timeoutMs = 3000): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    do {
+        await new Promise((resolve) => {
+            setTimeout(resolve, 10);
+        });
+        if (condition()) {
+            await letReactCatchUp();
+            return true;
+        }
+    } while (Date.now() < deadline);
+    return false;
+}
+
+// Long enough for a key to be handled, for checks that it did nothing
+function settle() {
     return new Promise((resolve) => {
-        setTimeout(resolve, 25);
+        setTimeout(resolve, 150);
     });
 }
 
@@ -77,14 +104,35 @@ function renderEditor(widget: WidgetItem) {
         { stdin, stdout, stderr, debug: true, exitOnCtrlC: false, patchConsole: false }
     );
 
+    const endings = () => onComplete.mock.calls.length + onCancel.mock.calls.length;
+
     return {
         onComplete,
         onCancel,
+        // The editor is drawn and listening for keys
+        ready: async () => {
+            if (!(await waitUntil(() => stdout.getOutput().length > 0))) {
+                throw new Error('The editor never drew');
+            }
+        },
+        // Every key here redraws the editor or ends it, so each waits for that
+        // before the next key goes out
         press: async (...inputs: string[]) => {
             for (const input of inputs) {
+                const drawn = stdout.getOutput().length;
+                const ended = endings();
                 stdin.write(input);
-                await flushInk();
+                if (!(await waitUntil(() => stdout.getOutput().length > drawn || endings() > ended))) {
+                    throw new Error(`No redraw after ${JSON.stringify(input)}`);
+                }
             }
+        },
+        // For keys that should do nothing
+        pressIgnored: async (...inputs: string[]) => {
+            for (const input of inputs) {
+                stdin.write(input);
+            }
+            await settle();
         },
         // Output written since the previous call, i.e. the latest frame(s)
         takeOutput: () => {
@@ -110,7 +158,7 @@ describe('EffortColorsEditor', () => {
         const editor = renderEditor(rawWithParens);
 
         try {
-            await flushInk();
+            await editor.ready();
             expect(editor.takeOutput()).toContain('Sample: (low)');
 
             await editor.press(DOWN);
@@ -124,7 +172,7 @@ describe('EffortColorsEditor', () => {
         const editor = renderEditor(rawWithParens);
 
         try {
-            await flushInk();
+            await editor.ready();
             await editor.press(DOWN, DOWN, DOWN, DOWN, DOWN);
             const output = editor.takeOutput();
             expect(output).toContain('Sample: (max)');
@@ -138,7 +186,7 @@ describe('EffortColorsEditor', () => {
         const editor = renderEditor(rawWithParens);
 
         try {
-            await flushInk();
+            await editor.ready();
             // high defaults to yellow; the named colors run ... green, yellow, blue ...
             await editor.press(DOWN, DOWN, RIGHT, ENTER);
             expect(editor.savedMetadata()?.['levelColor.high']).toBe('blue');
@@ -151,7 +199,7 @@ describe('EffortColorsEditor', () => {
         const editor = renderEditor(rawWithParens);
 
         try {
-            await flushInk();
+            await editor.ready();
             await editor.press(DOWN, DOWN, LEFT, ENTER);
             expect(editor.savedMetadata()?.['levelColor.high']).toBe('green');
         } finally {
@@ -163,7 +211,7 @@ describe('EffortColorsEditor', () => {
         const editor = renderEditor(rawWithParens);
 
         try {
-            await flushInk();
+            await editor.ready();
             await editor.press(DOWN, DOWN, DOWN, DOWN, DOWN);
             expect(editor.takeOutput()).toContain('Match effort');
 
@@ -181,7 +229,7 @@ describe('EffortColorsEditor', () => {
         const editor = renderEditor(rawWithParens);
 
         try {
-            await flushInk();
+            await editor.ready();
             expect(editor.takeOutput()).toContain('Level colors: Off');
 
             await editor.press(' ');
@@ -198,7 +246,7 @@ describe('EffortColorsEditor', () => {
         const editor = renderEditor(rawWithParens);
 
         try {
-            await flushInk();
+            await editor.ready();
             const output = editor.takeOutput();
             expect(output).toMatch(/xhigh\s+Orange/);
             expect(output).not.toContain('ansi256:208');
@@ -214,7 +262,7 @@ describe('EffortColorsEditor', () => {
         });
 
         try {
-            await flushInk();
+            await editor.ready();
             const output = editor.takeOutput();
             expect(output).toMatch(/high\s+ANSI 33/);
             expect(output).toMatch(/max\s+#FF8800/);
@@ -227,7 +275,7 @@ describe('EffortColorsEditor', () => {
         const editor = renderEditor(rawWithParens);
 
         try {
-            await flushInk();
+            await editor.ready();
             await editor.press(DOWN, DOWN, DOWN, 'x', '#ff8800', ENTER, ENTER);
             expect(editor.savedMetadata()?.['levelColor.xhigh']).toBe('hex:ff8800');
         } finally {
@@ -239,7 +287,7 @@ describe('EffortColorsEditor', () => {
         const editor = renderEditor(rawWithParens);
 
         try {
-            await flushInk();
+            await editor.ready();
             await editor.press('x', 'orange', ENTER);
             expect(editor.takeOutput()).toContain('Not a color');
 
@@ -261,7 +309,7 @@ describe('EffortColorsEditor', () => {
         });
 
         try {
-            await flushInk();
+            await editor.ready();
             await editor.press('d', ENTER);
             expect(editor.savedMetadata()).toEqual({ brackets: '()', levelColors: 'true' });
         } finally {
@@ -273,9 +321,9 @@ describe('EffortColorsEditor', () => {
         const editor = renderEditor({ ...rawWithParens, metadata: { 'brackets': '()', 'levelColor.low': 'blue' } });
 
         try {
-            await flushInk();
+            await editor.ready();
             // ctrl+d, alt+d (ESC d), alt+x, ctrl+space (NUL)
-            await editor.press('\x04', '\x1bd', '\x1bx', '\x00');
+            await editor.pressIgnored('\x04', '\x1bd', '\x1bx', '\x00');
             expect(editor.takeOutput()).not.toContain('Custom color for');
 
             await editor.press(ENTER);
@@ -289,7 +337,7 @@ describe('EffortColorsEditor', () => {
         const editor = renderEditor(rawWithParens);
 
         try {
-            await flushInk();
+            await editor.ready();
             await editor.press(RIGHT, ' ', ESC);
             expect(editor.onCancel).toHaveBeenCalledTimes(1);
             expect(editor.onComplete).not.toHaveBeenCalled();
