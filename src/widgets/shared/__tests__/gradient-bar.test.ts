@@ -5,7 +5,11 @@ import {
     it
 } from 'vitest';
 
-import { paintGradientBar } from '../gradient-bar';
+import {
+    BAR_GRADIENT_PRESETS,
+    paintGradientBar,
+    type BarGradientPreset
+} from '../gradient-bar';
 
 const ESC = '\x1b';
 const DEFAULT_FG = `${ESC}[39m`;
@@ -49,6 +53,38 @@ describe('paintGradientBar', () => {
         expect(paintGradientBar('[██████░]', 'ansi16')).toBe(
             `[${ESC}[32m██${ESC}[33m██${ESC}[31m██${ESC}[90m░${DEFAULT_FG}]`
         );
+    });
+
+    it('starts and ends each preset on its own colors', () => {
+        const ends = (preset: BarGradientPreset) => {
+            const found = codes(paintGradientBar('[████████]', 'truecolor', preset));
+            return [found[0], found.at(-2)];
+        };
+        const seen = new Set<string>();
+        for (const preset of BAR_GRADIENT_PRESETS) {
+            const [first, last] = ends(preset);
+            expect(first).not.toBe(last);
+            seen.add(`${first}${last}`);
+        }
+        expect(seen.size).toBe(BAR_GRADIENT_PRESETS.length);
+        expect(ends('traffic')).toEqual([`${ESC}[38;2;0;200;80m`, `${ESC}[38;2;220;40;20m`]);
+    });
+
+    it('gets brighter from end to end in the colorblind-safe presets', () => {
+        const luminance = (code: string | undefined) => {
+            const [r = 0, g = 0, b = 0] = (code ?? '').replace(`${ESC}[38;2;`, '').replace('m', '').split(';').map(Number);
+            return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        };
+        for (const preset of ['viridis', 'cividis', 'mono'] as const) {
+            const cells = codes(paintGradientBar('[████████]', 'truecolor', preset)).slice(0, -1);
+            const values = cells.map(luminance);
+            expect(values).toEqual([...values].sort((a, b) => a - b));
+        }
+    });
+
+    it('gives each preset three bands at 16 colors', () => {
+        expect(paintGradientBar('[██████]', 'ansi16', 'thermal')).toBe(`[${ESC}[34m██${ESC}[35m██${ESC}[31m██${DEFAULT_FG}]`);
+        expect(paintGradientBar('[██████]', 'ansi16', 'mono')).toBe(`[${ESC}[90m██${ESC}[37m██${ESC}[97m██${DEFAULT_FG}]`);
     });
 
     it('colors the slider bar\'s filled cells too', () => {

@@ -19,11 +19,13 @@ import {
 import { formatTokens } from '../utils/renderer';
 import { makeUsageProgressBar } from '../utils/usage';
 
-import { paintGradientBar } from './shared/gradient-bar';
 import {
-    isMetadataFlagEnabled,
-    toggleMetadataFlag
-} from './shared/metadata';
+    BAR_GRADIENT_PRESETS,
+    isBarGradientPreset,
+    paintGradientBar,
+    type BarGradientPreset
+} from './shared/gradient-bar';
+import { removeMetadataKeys } from './shared/metadata';
 import { makeSliderBar } from './shared/usage-display';
 
 type DisplayMode = 'progress' | 'progress-short' | 'slider' | 'slider-only';
@@ -42,14 +44,34 @@ function isBarSliderMode(mode: DisplayMode): boolean {
 
 const GRADIENT_KEY = 'gradient';
 
+// "true" is the earlier on/off setting, from before there were presets
+function getGradientPreset(item: WidgetItem): BarGradientPreset | null {
+    const value = item.metadata?.[GRADIENT_KEY];
+    if (value === 'true') {
+        return 'traffic';
+    }
+    return isBarGradientPreset(value) ? value : null;
+}
+
+// Off, then each preset in turn, then off again
+function cycleGradientPreset(item: WidgetItem): WidgetItem {
+    const current = getGradientPreset(item);
+    const next = current === null ? BAR_GRADIENT_PRESETS[0] : BAR_GRADIENT_PRESETS[BAR_GRADIENT_PRESETS.indexOf(current) + 1];
+    if (!next) {
+        return removeMetadataKeys(item, [GRADIENT_KEY]);
+    }
+    return { ...item, metadata: { ...(item.metadata ?? {}), [GRADIENT_KEY]: next } };
+}
+
 // The gradient needs colors, and a global foreground override owns every
 // widget's foreground
 function paintBar(bar: string, item: WidgetItem, settings: Settings): string {
+    const preset = getGradientPreset(item);
     const override = settings.overrideForegroundColor;
-    if (!isMetadataFlagEnabled(item, GRADIENT_KEY) || settings.colorLevel === 0 || (override && override !== 'none')) {
+    if (!preset || settings.colorLevel === 0 || (override && override !== 'none')) {
         return bar;
     }
-    return paintGradientBar(bar, getColorLevelString(settings.colorLevel));
+    return paintGradientBar(bar, getColorLevelString(settings.colorLevel), preset);
 }
 
 export class ContextBarWidget implements Widget {
@@ -69,8 +91,9 @@ export class ContextBarWidget implements Widget {
         } else if (mode === 'slider-only') {
             modifiers.push('short bar only');
         }
-        if (isMetadataFlagEnabled(item, GRADIENT_KEY)) {
-            modifiers.push('gradient');
+        const preset = getGradientPreset(item);
+        if (preset) {
+            modifiers.push(`gradient: ${preset}`);
         }
 
         return {
@@ -80,8 +103,8 @@ export class ContextBarWidget implements Widget {
     }
 
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
-        if (action === 'toggle-gradient') {
-            return toggleMetadataFlag(item, GRADIENT_KEY);
+        if (action === 'cycle-gradient') {
+            return cycleGradientPreset(item);
         }
         if (action !== 'toggle-progress') {
             return null;
@@ -163,7 +186,7 @@ export class ContextBarWidget implements Widget {
     getCustomKeybinds(): CustomKeybind[] {
         return [
             { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
-            { key: 'g', label: '(g)radient', action: 'toggle-gradient' }
+            { key: 'g', label: '(g)radient', action: 'cycle-gradient' }
         ];
     }
 

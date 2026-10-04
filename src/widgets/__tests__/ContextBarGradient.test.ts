@@ -30,22 +30,42 @@ const context: RenderContext = {
     }
 };
 const plainBar: WidgetItem = { id: 'ctx', type: 'context-bar' };
-const gradientBar: WidgetItem = { ...plainBar, metadata: { gradient: 'true' } };
+const gradientBar: WidgetItem = { ...plainBar, metadata: { gradient: 'traffic' } };
 const truecolor: Settings = { ...DEFAULT_SETTINGS, colorLevel: 3 };
 
 describe('ContextBarWidget gradient', () => {
     const widget = new ContextBarWidget();
 
-    it('toggles with (g)', () => {
-        expect(widget.getCustomKeybinds().some(keybind => keybind.key === 'g' && keybind.action === 'toggle-gradient')).toBe(true);
+    it('cycles through the presets with (g), then back to off', () => {
+        expect(widget.getCustomKeybinds().some(keybind => keybind.key === 'g' && keybind.action === 'cycle-gradient')).toBe(true);
 
-        const on = widget.handleEditorAction('toggle-gradient', plainBar);
-        expect(on?.metadata?.gradient).toBe('true');
-        expect(widget.getEditorDisplay(on ?? plainBar).modifierText).toContain('gradient');
+        const seen: string[] = [];
+        let item: WidgetItem = plainBar;
+        for (let press = 0; press < 7; press++) {
+            item = widget.handleEditorAction('cycle-gradient', item) ?? item;
+            seen.push(item.metadata?.gradient ?? 'off');
+        }
+        expect(seen).toEqual(['traffic', 'thermal', 'viridis', 'cividis', 'blue-orange', 'mono', 'off']);
+        expect(item.metadata?.gradient).toBeUndefined();
+    });
 
-        const off = widget.handleEditorAction('toggle-gradient', on ?? plainBar);
-        expect(off?.metadata?.gradient).not.toBe('true');
-        expect(widget.getEditorDisplay(off ?? plainBar).modifierText ?? '').not.toContain('gradient');
+    it('names the preset in the line editor', () => {
+        const thermal = { ...plainBar, metadata: { gradient: 'thermal' } };
+        expect(widget.getEditorDisplay(thermal).modifierText).toContain('gradient: thermal');
+        expect(widget.getEditorDisplay(plainBar).modifierText ?? '').not.toContain('gradient');
+    });
+
+    it('renders the chosen preset', () => {
+        const traffic = widget.render(gradientBar, context, truecolor);
+        const thermal = widget.render({ ...plainBar, metadata: { gradient: 'thermal' } }, context, truecolor);
+        expect(thermal).not.toBe(traffic);
+        expect(stripAnsi(thermal ?? '')).toBe(stripAnsi(traffic ?? ''));
+    });
+
+    it('reads an earlier on/off setting as the traffic preset', () => {
+        const legacy = { ...plainBar, metadata: { gradient: 'true' } };
+        expect(widget.render(legacy, context, truecolor)).toBe(widget.render({ ...plainBar, metadata: { gradient: 'traffic' } }, context, truecolor));
+        expect(widget.handleEditorAction('cycle-gradient', legacy)?.metadata?.gradient).toBe('thermal');
     });
 
     it('is off by default and renders exactly as before', () => {
