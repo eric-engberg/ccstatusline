@@ -41,7 +41,7 @@ describe('BlockResetTimerWidget', () => {
     it('renders preview using block-style reset format', () => {
         const widget = new BlockResetTimerWidget();
 
-        expect(render(widget, { id: 'reset', type: 'reset-timer' }, { isPreview: true })).toBe('Reset: 4hr 30m');
+        expect(render(widget, { id: 'reset', type: 'reset-timer' }, { isPreview: true })).toBe('Reset: 45m');
     });
 
     it('renders remaining time in time mode', () => {

@@ -193,7 +193,8 @@ export class WeeklyResetTimerWidget implements Widget {
         const format = resolveNumberFormat('percent', item, settings);
 
         if (context.isPreview) {
-            const previewPercent = inverted ? 90.0 : 10.0;
+            // Matches WEEKLY_PREVIEW_DURATION_MS: 36.5h of the 168h week left
+            const previewPercent = inverted ? 21.7 : 78.3;
 
             const bar = formatUsageBar(item, previewPercent, format, settings);
             if (bar !== null) {

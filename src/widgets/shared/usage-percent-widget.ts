@@ -62,35 +62,35 @@ const USAGE_PERCENT_WIDGET_CONFIG: Record<UsagePercentWidgetKind, UsagePercentWi
         label: 'Session: ',
         displayName: 'Session Usage',
         description: 'Shows daily/session API usage percentage',
-        previewPercent: 20,
+        previewPercent: 90,
         usageField: 'sessionUsage'
     },
     'weekly': {
         label: 'Weekly: ',
         displayName: 'Weekly Usage',
         description: 'Shows weekly API usage percentage',
-        previewPercent: 12,
+        previewPercent: 80,
         usageField: 'weeklyUsage'
     },
     'weekly-sonnet': {
         label: 'Weekly Sonnet: ',
         displayName: 'Weekly Sonnet Usage',
         description: 'Shows weekly Sonnet API usage percentage',
-        previewPercent: 8,
+        previewPercent: 70,
         usageField: 'weeklySonnetUsage'
     },
     'weekly-opus': {
         label: 'Weekly Opus: ',
         displayName: 'Weekly Opus Usage',
         description: 'Shows weekly Opus API usage percentage',
-        previewPercent: 4,
+        previewPercent: 60,
         usageField: 'weeklyOpusUsage'
     },
     'fable-weekly': {
         label: 'Weekly Fable: ',
         displayName: 'Weekly Fable Usage',
         description: 'Shows Fable-only weekly usage percentage',
-        previewPercent: 4,
+        previewPercent: 60,
         usageField: 'fableUsage'
     }
 };

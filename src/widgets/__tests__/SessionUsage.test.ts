@@ -69,7 +69,7 @@ describe('SessionUsageWidget', () => {
         errorMessageMock: usageErrorMessageMock,
         expectedInvertedTime: 'Session: 76.5%',
         expectedModifierText: '(medium bar, remaining)',
-        expectedPreviewInvertedTime: 'Session: 80.0%',
+        expectedPreviewInvertedTime: 'Session: 10.0%',
         expectedProgress: 'Session: [████████████░░░░] 76.5%',
         expectedRawInvertedTime: '76.5%',
         expectedRawProgress: '[████████░░░░░░░░░░░░░░░░░░░░░░░░] 23.4%',

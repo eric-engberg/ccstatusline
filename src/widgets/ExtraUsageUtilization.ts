@@ -68,7 +68,7 @@ export class ExtraUsageUtilizationWidget implements Widget {
         const format = resolveNumberFormat('percent', item, settings);
 
         if (context.isPreview) {
-            const previewPercent = 2.6;
+            const previewPercent = 85;
             const renderedPercent = inverted ? 100 - previewPercent : previewPercent;
 
             const bar = formatUsageBar(item, renderedPercent, format, settings);

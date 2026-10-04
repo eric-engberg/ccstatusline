@@ -188,6 +188,6 @@ describe('ExtraUsageUtilizationWidget', () => {
                 extraUsageUtilization: 25
             }
         })).toBe('75.0%');
-        expect(render(widget, item, { isPreview: true })).toBe('Overage: 97.4%');
+        expect(render(widget, item, { isPreview: true })).toBe('Overage: 15.0%');
     });
 });

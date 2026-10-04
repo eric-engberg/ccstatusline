@@ -105,7 +105,7 @@ export class BlockResetTimerWidget implements Widget {
         const format = resolveNumberFormat('percent', item, settings);
 
         if (context.isPreview) {
-            const previewPercent = inverted ? 90.0 : 10.0;
+            const previewPercent = inverted ? 15.0 : 85.0;
 
             const bar = formatUsageBar(item, previewPercent, format, settings);
             if (bar !== null) {
@@ -123,7 +123,7 @@ export class BlockResetTimerWidget implements Widget {
                 return formatRawOrLabeledValue(item, 'Reset: ', resetAt ?? (compact ? '03-12 08:30Z' : '2026-03-12 08:30 UTC'));
             }
 
-            return formatRawOrLabeledValue(item, 'Reset: ', compact ? '4h30m' : '4hr 30m');
+            return formatRawOrLabeledValue(item, 'Reset: ', '45m');
         }
 
         const usageData = context.usageData ?? {};
