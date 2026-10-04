@@ -17,12 +17,13 @@ import {
     isContextInverse
 } from './context-inverse';
 import {
-    cycleContextSliderMode,
     getContextSliderKeybinds,
     getContextSliderMode,
     getContextSliderModifierText,
+    handleContextSliderAction,
     renderContextSlider
 } from './context-slider';
+import { paintWidgetBar } from './gradient-bar';
 import { formatRawOrLabeledValue } from './raw-or-labeled';
 
 // Context % and Context % (usable) differ only in their name, color, label, preview
@@ -54,10 +55,7 @@ export abstract class ContextPercentageWidgetBase implements Widget {
     }
 
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
-        if (action === 'toggle-slider') {
-            return cycleContextSliderMode(item);
-        }
-        return handleContextInverseAction(action, item);
+        return handleContextSliderAction(action, item) ?? handleContextInverseAction(action, item);
     }
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
@@ -70,14 +68,15 @@ export abstract class ContextPercentageWidgetBase implements Widget {
 
         const displayPercentage = isInverse ? 100 - usedPercentage : usedPercentage;
         const format = resolveNumberFormat('percent', item, settings);
-        const sliderResult = renderContextSlider(getContextSliderMode(item), displayPercentage, format);
+        const slider = renderContextSlider(getContextSliderMode(item), displayPercentage, format);
+        const sliderResult = slider === null ? null : paintWidgetBar(slider, item, settings, isInverse);
         return formatRawOrLabeledValue(item, label, sliderResult ?? formatPercent(displayPercentage, format));
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
         return [
             { key: 'u', label: '(u)sed/remaining', action: 'toggle-inverse' },
-            ...getContextSliderKeybinds()
+            ...getContextSliderKeybinds(item)
         ];
     }
 

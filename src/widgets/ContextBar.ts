@@ -19,12 +19,12 @@ import { formatTokens } from '../utils/renderer';
 import { makeUsageProgressBar } from '../utils/usage';
 
 import {
-    BAR_GRADIENT_PRESETS,
-    isBarGradientPreset,
-    paintGradientBar,
-    type BarGradientPreset
+    CYCLE_GRADIENT_ACTION,
+    cycleGradientPreset,
+    getGradientKeybinds,
+    getGradientModifier,
+    paintWidgetBar
 } from './shared/gradient-bar';
-import { removeMetadataKeys } from './shared/metadata';
 import { makeSliderBar } from './shared/usage-display';
 
 type DisplayMode = 'progress' | 'progress-short' | 'slider' | 'slider-only';
@@ -46,49 +46,13 @@ const PREVIEW_USED_TOKENS = 180000;
 const PREVIEW_WINDOW_TOKENS = 200000;
 const PREVIEW_PERCENT = 90;
 
-const GRADIENT_KEY = 'gradient';
-
-// "true" is the earlier on/off setting, from before there were presets
-function getGradientPreset(item: WidgetItem): BarGradientPreset | null {
-    const value = item.metadata?.[GRADIENT_KEY];
-    if (value === 'true') {
-        return 'traffic';
-    }
-    return isBarGradientPreset(value) ? value : null;
-}
-
-// Off, then each preset in turn, then off again
-function cycleGradientPreset(item: WidgetItem): WidgetItem {
-    const current = getGradientPreset(item);
-    const next = current === null ? BAR_GRADIENT_PRESETS[0] : BAR_GRADIENT_PRESETS[BAR_GRADIENT_PRESETS.indexOf(current) + 1];
-    if (!next) {
-        return removeMetadataKeys(item, [GRADIENT_KEY]);
-    }
-    return { ...item, metadata: { ...(item.metadata ?? {}), [GRADIENT_KEY]: next } };
-}
-
-// The 256-color palette is too coarse for a smooth gradient, so it needs truecolor
-function supportsGradient(settings: Settings): boolean {
-    return settings.colorLevel === 3;
-}
-
-// A global foreground override owns every widget's foreground
-function paintBar(bar: string, item: WidgetItem, settings: Settings): string {
-    const preset = getGradientPreset(item);
-    const override = settings.overrideForegroundColor;
-    if (!preset || !supportsGradient(settings) || (override && override !== 'none')) {
-        return bar;
-    }
-    return paintGradientBar(bar, preset);
-}
-
 export class ContextBarWidget implements Widget {
     getDefaultColor(): string { return 'blue'; }
     getDescription(): string { return 'Shows context usage as a progress bar'; }
     getDisplayName(): string { return 'Context Bar'; }
     getCategory(): string { return 'Context'; }
 
-    getEditorDisplay(item: WidgetItem, settings?: Settings): WidgetEditorDisplay {
+    getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         const mode = getDisplayMode(item);
         const modifiers: string[] = [];
 
@@ -99,9 +63,9 @@ export class ContextBarWidget implements Widget {
         } else if (mode === 'slider-only') {
             modifiers.push('short bar only');
         }
-        const preset = getGradientPreset(item);
-        if (preset) {
-            modifiers.push(settings && !supportsGradient(settings) ? `gradient: ${preset}, needs truecolor` : `gradient: ${preset}`);
+        const gradient = getGradientModifier(item);
+        if (gradient) {
+            modifiers.push(gradient);
         }
 
         return {
@@ -111,7 +75,7 @@ export class ContextBarWidget implements Widget {
     }
 
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
-        if (action === 'cycle-gradient') {
+        if (action === CYCLE_GRADIENT_ACTION) {
             return cycleGradientPreset(item);
         }
         if (action !== 'toggle-progress') {
@@ -146,12 +110,12 @@ export class ContextBarWidget implements Widget {
             const totalDisplay = formatTokens(PREVIEW_WINDOW_TOKENS, tokenFormat, 0);
             const percentDisplay = formatPercent(PREVIEW_PERCENT, percentFormat, 0);
             if (isBarSliderMode(displayMode)) {
-                const slider = paintBar(makeSliderBar(PREVIEW_PERCENT), item, settings);
+                const slider = paintWidgetBar(makeSliderBar(PREVIEW_PERCENT), item, settings);
                 const sliderDisplay = displayMode === 'slider' ? `${slider} ${usedDisplay}/${totalDisplay} (${percentDisplay})` : slider;
                 return item.rawValue ? sliderDisplay : `Context: ${sliderDisplay}`;
             }
             const barWidth = displayMode === 'progress' ? 32 : 16;
-            const previewDisplay = `${paintBar(makeUsageProgressBar(PREVIEW_PERCENT, barWidth), item, settings)} ${usedDisplay}/${totalDisplay} (${percentDisplay})`;
+            const previewDisplay = `${paintWidgetBar(makeUsageProgressBar(PREVIEW_PERCENT, barWidth), item, settings)} ${usedDisplay}/${totalDisplay} (${percentDisplay})`;
             return item.rawValue ? previewDisplay : `Context: ${previewDisplay}`;
         }
 
@@ -180,24 +144,22 @@ export class ContextBarWidget implements Widget {
         const percentDisplay = formatPercent(clampedPercent, percentFormat, 0);
 
         if (isBarSliderMode(displayMode)) {
-            const slider = paintBar(makeSliderBar(clampedPercent), item, settings);
+            const slider = paintWidgetBar(makeSliderBar(clampedPercent), item, settings);
             const sliderDisplay = displayMode === 'slider' ? `${slider} ${usedDisplay}/${totalDisplay} (${percentDisplay})` : slider;
             return item.rawValue ? sliderDisplay : `Context: ${sliderDisplay}`;
         }
 
         const barWidth = displayMode === 'progress' ? 32 : 16;
-        const display = `${paintBar(makeUsageProgressBar(clampedPercent, barWidth), item, settings)} ${usedDisplay}/${totalDisplay} (${percentDisplay})`;
+        const display = `${paintWidgetBar(makeUsageProgressBar(clampedPercent, barWidth), item, settings)} ${usedDisplay}/${totalDisplay} (${percentDisplay})`;
 
         return item.rawValue ? display : `Context: ${display}`;
     }
 
-    // Like Edit Colors' color options, (g) is offered only where it can show
-    getCustomKeybinds(item?: WidgetItem, settings?: Settings): CustomKeybind[] {
-        const keybinds: CustomKeybind[] = [{ key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' }];
-        if (!settings || supportsGradient(settings)) {
-            keybinds.push({ key: 'g', label: '(g)radient', action: 'cycle-gradient' });
-        }
-        return keybinds;
+    getCustomKeybinds(): CustomKeybind[] {
+        return [
+            { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
+            ...getGradientKeybinds(true)
+        ];
     }
 
     supportsRawValue(): boolean { return true; }

@@ -1,7 +1,14 @@
+import type { Settings } from '../../types/Settings';
+import type {
+    CustomKeybind,
+    WidgetItem
+} from '../../types/Widget';
 import {
     gradientCodeAt,
     type Rgb
 } from '../../utils/gradient';
+
+import { removeMetadataKeys } from './metadata';
 
 export const BAR_GRADIENT_PRESETS = ['traffic', 'thermal', 'viridis', 'cividis', 'blue-orange', 'mono'] as const;
 export type BarGradientPreset = typeof BAR_GRADIENT_PRESETS[number];
@@ -36,6 +43,8 @@ export function isBarGradientPreset(value: string | undefined): value is BarGrad
 const EMPTY_CELL_CODE = '\x1b[38;2;60;60;60m';
 const FILLED_CELLS = new Set(['█', '▓']);
 const EMPTY_CELLS = new Set(['░']);
+// The usage widgets' time cursor takes a cell's place but keeps the widget color
+const CURSOR_CELLS = new Set(['│']);
 const DEFAULT_FOREGROUND = '\x1b[39m';
 
 // Colors a bar's filled cells by where they sit along the preset's gradient, so
@@ -43,11 +52,13 @@ const DEFAULT_FOREGROUND = '\x1b[39m';
 // Truecolor only: the 256-color palette is too coarse for a smooth gradient.
 // Other characters, such as brackets, are left alone. Each colored run ends with
 // the default-foreground code, which the renderer turns back into the widget's
-// own color.
-export function paintGradientBar(bar: string, preset: BarGradientPreset = 'traffic'): string {
+// own color. Reversed runs the gradient from the urgent end, for bars that fill
+// with what's left.
+export function paintGradientBar(bar: string, preset: BarGradientPreset = 'traffic', reversed = false): string {
     const gradient = BAR_GRADIENTS[preset];
     const chars = Array.from(bar);
-    const cellCount = chars.filter(char => FILLED_CELLS.has(char) || EMPTY_CELLS.has(char)).length;
+    const isCell = (char: string) => FILLED_CELLS.has(char) || EMPTY_CELLS.has(char) || CURSOR_CELLS.has(char);
+    const cellCount = chars.filter(isCell).length;
     let cellIndex = 0;
     let activeCode = '';
     let painted = '';
@@ -55,10 +66,12 @@ export function paintGradientBar(bar: string, preset: BarGradientPreset = 'traff
     for (const char of chars) {
         let code = '';
         if (FILLED_CELLS.has(char)) {
-            code = gradientCodeAt(gradient.stops, cellCount > 1 ? cellIndex / (cellCount - 1) : 0, 'truecolor');
-            cellIndex++;
+            const position = cellCount > 1 ? cellIndex / (cellCount - 1) : 0;
+            code = gradientCodeAt(gradient.stops, reversed ? 1 - position : position, 'truecolor');
         } else if (EMPTY_CELLS.has(char)) {
             code = EMPTY_CELL_CODE;
+        }
+        if (isCell(char)) {
             cellIndex++;
         }
 
@@ -70,4 +83,70 @@ export function paintGradientBar(bar: string, preset: BarGradientPreset = 'traff
     }
 
     return activeCode ? painted + DEFAULT_FOREGROUND : painted;
+}
+
+export const CYCLE_GRADIENT_ACTION = 'cycle-gradient';
+const GRADIENT_KEY = 'gradient';
+const GRADIENT_KEYBIND: CustomKeybind = { key: 'g', label: '(g)radient', action: CYCLE_GRADIENT_ACTION };
+
+// "true" is the earlier on/off setting, from before there were presets
+export function getGradientPreset(item: WidgetItem): BarGradientPreset | null {
+    const value = item.metadata?.[GRADIENT_KEY];
+    if (value === 'true') {
+        return 'traffic';
+    }
+    return isBarGradientPreset(value) ? value : null;
+}
+
+// Off, then each preset in turn, then off again
+export function cycleGradientPreset(item: WidgetItem): WidgetItem {
+    const current = getGradientPreset(item);
+    const next = current === null ? BAR_GRADIENT_PRESETS[0] : BAR_GRADIENT_PRESETS[BAR_GRADIENT_PRESETS.indexOf(current) + 1];
+    if (!next) {
+        return removeMetadataKeys(item, [GRADIENT_KEY]);
+    }
+    return { ...item, metadata: { ...(item.metadata ?? {}), [GRADIENT_KEY]: next } };
+}
+
+// The 256-color palette is too coarse for a smooth gradient, so it needs truecolor
+export function supportsBarGradient(settings: Settings): boolean {
+    return settings.colorLevel === 3;
+}
+
+// A widget offers (g) while it shows a bar; the line editor hides it below
+// truecolor (see filterGradientKeybinds)
+export function getGradientKeybinds(showsBar: boolean): CustomKeybind[] {
+    return showsBar ? [GRADIENT_KEYBIND] : [];
+}
+
+// The line editor's modifier for the widget's preset, e.g. "gradient: thermal"
+export function getGradientModifier(item: WidgetItem): string | null {
+    const preset = getGradientPreset(item);
+    return preset ? `gradient: ${preset}` : null;
+}
+
+// Like Edit Colors' color options, (g) is offered only where it can show
+export function filterGradientKeybinds(keybinds: CustomKeybind[], settings: Settings): CustomKeybind[] {
+    return supportsBarGradient(settings) ? keybinds : keybinds.filter(keybind => keybind.action !== CYCLE_GRADIENT_ACTION);
+}
+
+// Below truecolor a saved preset renders plain; the line editor says why
+export function noteGradientNeedsTruecolor(modifierText: string | undefined, settings: Settings): string | undefined {
+    if (!modifierText || supportsBarGradient(settings)) {
+        return modifierText;
+    }
+    return modifierText.replace(/gradient: ([a-z-]+)/, 'gradient: $1, needs truecolor');
+}
+
+// Paints a widget's bar with its gradient preset when the settings allow it. A
+// global foreground override owns every widget's foreground, so it wins.
+// Reversed is for bars that fill with what's left: the color where the fill
+// ends then still shows how urgent things are.
+export function paintWidgetBar(bar: string, item: WidgetItem, settings: Settings, reversed = false): string {
+    const preset = getGradientPreset(item);
+    const override = settings.overrideForegroundColor;
+    if (!preset || !supportsBarGradient(settings) || (override && override !== 'none')) {
+        return bar;
+    }
+    return paintGradientBar(bar, preset, reversed);
 }

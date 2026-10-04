@@ -25,6 +25,10 @@ import {
 } from '../../utils/usage';
 import type { UsageWindowMetrics } from '../../utils/usage-types';
 
+import {
+    CYCLE_GRADIENT_ACTION,
+    cycleGradientPreset
+} from './gradient-bar';
 import { isHidden } from './hideable';
 import { formatRawOrLabeledValue } from './raw-or-labeled';
 import {
@@ -114,9 +118,10 @@ function renderUsageDisplay(
     label: string,
     percent: number,
     format: NumberFormat,
-    getCursorOptions: () => UsageCursorOptions | undefined
+    getCursorOptions: () => UsageCursorOptions | undefined,
+    settings: Settings
 ): string {
-    const bar = formatUsageBar(item, percent, format, getCursorOptions);
+    const bar = formatUsageBar(item, percent, format, settings, getCursorOptions);
     return formatRawOrLabeledValue(item, label, bar ?? formatPercent(percent, format));
 }
 
@@ -148,6 +153,10 @@ export function handleUsagePercentWidgetEditorAction(action: string, item: Widge
         return toggleUsageCursor(item);
     }
 
+    if (action === CYCLE_GRADIENT_ACTION) {
+        return cycleGradientPreset(item);
+    }
+
     return null;
 }
 
@@ -164,7 +173,7 @@ export function renderUsagePercentWidgetValue(
 
     if (context.isPreview) {
         const renderedPercent = inverted ? 100 - config.previewPercent : config.previewPercent;
-        return renderUsageDisplay(item, config.label, renderedPercent, format, () => showCursor ? { cursorPercent: 50 } : undefined);
+        return renderUsageDisplay(item, config.label, renderedPercent, format, () => showCursor ? { cursorPercent: 50 } : undefined, settings);
     }
 
     const data: RenderUsageData = context.usageData ?? {};
@@ -188,7 +197,7 @@ export function renderUsagePercentWidgetValue(
 
         const window = resolveUsageWindow(kind, data, context);
         return window ? { cursorPercent: window.elapsedPercent } : undefined;
-    });
+    }, settings);
 }
 
 // Session, Weekly, Weekly Sonnet, Weekly Opus and Fable Weekly Usage differ only

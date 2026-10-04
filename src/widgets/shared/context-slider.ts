@@ -5,6 +5,12 @@ import type {
 } from '../../types/Widget';
 import { formatPercent } from '../../utils/number-format';
 
+import {
+    CYCLE_GRADIENT_ACTION,
+    cycleGradientPreset,
+    getGradientKeybinds,
+    getGradientModifier
+} from './gradient-bar';
 import { makeSliderBar } from './usage-display';
 
 export type ContextSliderMode = 'none' | 'slider' | 'slider-only';
@@ -58,15 +64,25 @@ export function renderContextSlider(mode: ContextSliderMode, percent: number, fo
 
 export function getContextSliderModifierText(item: WidgetItem): string | undefined {
     const mode = getContextSliderMode(item);
-    if (mode === 'slider') {
-        return '(short bar)';
+    if (mode === 'none') {
+        return undefined;
     }
-    if (mode === 'slider-only') {
-        return '(short bar only)';
-    }
-    return undefined;
+    const gradientModifier = getGradientModifier(item);
+    const barModifier = mode === 'slider' ? 'short bar' : 'short bar only';
+    return gradientModifier ? `(${barModifier}, ${gradientModifier})` : `(${barModifier})`;
 }
 
-export function getContextSliderKeybinds(): CustomKeybind[] {
-    return [SLIDER_TOGGLE_KEYBIND];
+export function getContextSliderKeybinds(item?: WidgetItem): CustomKeybind[] {
+    return [SLIDER_TOGGLE_KEYBIND, ...getGradientKeybinds(item ? getContextSliderMode(item) !== 'none' : false)];
+}
+
+// The slider and gradient actions; null for anything else
+export function handleContextSliderAction(action: string, item: WidgetItem): WidgetItem | null {
+    if (action === 'toggle-slider') {
+        return cycleContextSliderMode(item);
+    }
+    if (action === CYCLE_GRADIENT_ACTION) {
+        return cycleGradientPreset(item);
+    }
+    return null;
 }

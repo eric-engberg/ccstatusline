@@ -18,6 +18,10 @@ import {
     resolveUsageWindowWithFallback
 } from '../utils/usage';
 
+import {
+    CYCLE_GRADIENT_ACTION,
+    cycleGradientPreset
+} from './shared/gradient-bar';
 import { isHidden } from './shared/hideable';
 import {
     LOCALE_EDITOR_ACTION,
@@ -67,6 +71,10 @@ export class BlockResetTimerWidget implements Widget {
     }
 
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
+        if (action === CYCLE_GRADIENT_ACTION) {
+            return cycleGradientPreset(item);
+        }
+
         if (action === 'toggle-progress') {
             return cycleUsageDisplayMode(item, ['compact', 'absolute'], true);
         }
@@ -99,7 +107,7 @@ export class BlockResetTimerWidget implements Widget {
         if (context.isPreview) {
             const previewPercent = inverted ? 90.0 : 10.0;
 
-            const bar = formatUsageBar(item, previewPercent, format);
+            const bar = formatUsageBar(item, previewPercent, format, settings);
             if (bar !== null) {
                 return formatRawOrLabeledValue(item, 'Reset ', bar);
             }
@@ -133,7 +141,7 @@ export class BlockResetTimerWidget implements Widget {
             return formatRawOrLabeledValue(item, 'Reset: ', USAGE_TIMER_LOADING_MESSAGE);
         }
 
-        const bar = formatUsageBar(item, inverted ? window.remainingPercent : window.elapsedPercent, format);
+        const bar = formatUsageBar(item, inverted ? window.remainingPercent : window.elapsedPercent, format, settings);
         if (bar !== null) {
             return formatRawOrLabeledValue(item, 'Reset ', bar);
         }

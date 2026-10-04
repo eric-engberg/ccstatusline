@@ -5,8 +5,11 @@ import {
     it
 } from 'vitest';
 
+import { DEFAULT_SETTINGS } from '../../../types/Settings';
 import {
     BAR_GRADIENT_PRESETS,
+    filterGradientKeybinds,
+    noteGradientNeedsTruecolor,
     paintGradientBar,
     type BarGradientPreset
 } from '../gradient-bar';
@@ -75,5 +78,23 @@ describe('paintGradientBar', () => {
         const painted = paintGradientBar('▓▓░░');
         expect(painted.startsWith(`${ESC}[38;2;0;200;80m▓`)).toBe(true);
         expect(painted.endsWith(`${ESC}[38;2;60;60;60m░░${DEFAULT_FG}`)).toBe(true);
+    });
+});
+
+describe('the line editor\'s truecolor rule', () => {
+    const gradientKey = { key: 'g', label: '(g)radient', action: 'cycle-gradient' };
+    const progressKey = { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' };
+
+    it('hides (g) below truecolor and keeps the other keys', () => {
+        expect(filterGradientKeybinds([progressKey, gradientKey], { ...DEFAULT_SETTINGS, colorLevel: 3 })).toEqual([progressKey, gradientKey]);
+        expect(filterGradientKeybinds([progressKey, gradientKey], { ...DEFAULT_SETTINGS, colorLevel: 2 })).toEqual([progressKey]);
+    });
+
+    it('notes that a saved preset needs truecolor below it', () => {
+        const color256 = { ...DEFAULT_SETTINGS, colorLevel: 2 } as const;
+        expect(noteGradientNeedsTruecolor('(long bar, gradient: blue-orange)', color256)).toBe('(long bar, gradient: blue-orange, needs truecolor)');
+        expect(noteGradientNeedsTruecolor('(long bar, gradient: blue-orange)', { ...DEFAULT_SETTINGS, colorLevel: 3 })).toBe('(long bar, gradient: blue-orange)');
+        expect(noteGradientNeedsTruecolor('(long bar)', color256)).toBe('(long bar)');
+        expect(noteGradientNeedsTruecolor(undefined, color256)).toBeUndefined();
     });
 });

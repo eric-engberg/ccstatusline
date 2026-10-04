@@ -49,10 +49,9 @@ export interface Widget {
     getDescription(): string;
     getDisplayName(): string;
     getCategory(): string;
-    // settings, when given, let the editor note options the current settings can't show
-    getEditorDisplay(item: WidgetItem, settings?: Settings): WidgetEditorDisplay;
+    getEditorDisplay(item: WidgetItem): WidgetEditorDisplay;
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null;
-    getCustomKeybinds?(item?: WidgetItem, settings?: Settings): CustomKeybind[];
+    getCustomKeybinds?(item?: WidgetItem): CustomKeybind[];
     getHideableStates?(): HideableState[];
     renderEditor?(props: WidgetEditorProps): React.ReactElement | null;
     supportsRawValue(): boolean;

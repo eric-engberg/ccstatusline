@@ -19,6 +19,11 @@ import {
 } from '../utils/usage';
 
 import { makeModifierText } from './shared/editor-display';
+import {
+    CYCLE_GRADIENT_ACTION,
+    cycleGradientPreset,
+    getGradientModifier
+} from './shared/gradient-bar';
 import { isHidden } from './shared/hideable';
 import {
     LOCALE_EDITOR_ACTION,
@@ -119,6 +124,11 @@ function getWeeklyResetModifierText(item: WidgetItem): string | undefined {
         modifiers.push(localeModifier);
     }
 
+    const gradientModifier = isBarMode ? getGradientModifier(item) : null;
+    if (gradientModifier) {
+        modifiers.push(gradientModifier);
+    }
+
     return makeModifierText(modifiers);
 }
 
@@ -140,6 +150,10 @@ export class WeeklyResetTimerWidget implements Widget {
     }
 
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
+        if (action === CYCLE_GRADIENT_ACTION) {
+            return cycleGradientPreset(item);
+        }
+
         if (action === 'toggle-progress') {
             return cycleUsageDisplayMode(item, ['compact', 'hours', 'absolute'], true);
         }
@@ -181,7 +195,7 @@ export class WeeklyResetTimerWidget implements Widget {
         if (context.isPreview) {
             const previewPercent = inverted ? 90.0 : 10.0;
 
-            const bar = formatUsageBar(item, previewPercent, format);
+            const bar = formatUsageBar(item, previewPercent, format, settings);
             if (bar !== null) {
                 return formatRawOrLabeledValue(item, 'Weekly Reset ', bar);
             }
@@ -220,7 +234,7 @@ export class WeeklyResetTimerWidget implements Widget {
             return formatRawOrLabeledValue(item, 'Weekly Reset: ', USAGE_TIMER_LOADING_MESSAGE);
         }
 
-        const bar = formatUsageBar(item, inverted ? window.remainingPercent : window.elapsedPercent, format);
+        const bar = formatUsageBar(item, inverted ? window.remainingPercent : window.elapsedPercent, format, settings);
         if (bar !== null) {
             return formatRawOrLabeledValue(item, 'Weekly Reset ', bar);
         }
