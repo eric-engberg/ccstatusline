@@ -48,15 +48,16 @@ export function setBarWidth(item: WidgetItem, width: BarWidth): WidgetItem {
     if (width === 'default') {
         return removeMetadataKeys(item, [BAR_WIDTH_KEY]);
     }
-    return { ...item, metadata: { ...(item.metadata ?? {}), [BAR_WIDTH_KEY]: String(width) } };
+    return { ...item, metadata: { ...item.metadata, [BAR_WIDTH_KEY]: String(width) } };
 }
 
 // The next setting left (-1) or right (1), stopping at the default and at fill
 export function stepBarWidth(width: BarWidth, direction: -1 | 1): BarWidth {
     const current = rank(width);
+    // The step before the first one at or above the current setting is the last below it
     const next = direction === 1
         ? STEPS.find(step => rank(step) > current)
-        : STEPS.filter(step => rank(step) < current).at(-1);
+        : STEPS[STEPS.findIndex(step => rank(step) >= current) - 1];
     return next ?? width;
 }
 

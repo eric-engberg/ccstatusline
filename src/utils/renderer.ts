@@ -883,15 +883,16 @@ interface SizedBar {
     item: WidgetItem;  // As rendered, minimalist override included
 }
 
-// The width setting of a bar the widget shows now. Widgets offer (b) only while
-// they show a bar, so a width kept from a bar mode is ignored in other modes.
-function getSizedBarWidth(widgetImpl: Widget, item: WidgetItem): number | 'fill' | null {
+// The widget's bar to size to its line: one it shows now, with a width setting,
+// on a line whose width is known. Widgets offer (b) only while they show a bar,
+// so a width kept from a bar mode is ignored in their other modes.
+function findSizedBar(widgetImpl: Widget, item: WidgetItem, index: number, getLineWidth: () => number | null): SizedBar | null {
     const width = getBarWidth(item);
     if (width === 'default') {
         return null;
     }
     const showsBar = widgetImpl.getCustomKeybinds?.(item).some(keybind => keybind.action === EDIT_BAR_WIDTH_ACTION) ?? false;
-    return showsBar ? width : null;
+    return showsBar && getLineWidth() ? { index, width, widgetImpl, item } : null;
 }
 
 // Grows each line's sized bars into the room the line leaves at the terminal's
@@ -930,6 +931,29 @@ function sizeBarsToLines(
     });
 }
 
+// Pre-renders one widget, without padding. A sized bar renders at MIN_BAR_CELLS
+// and comes back as `bar`, for sizeBarsToLines to grow.
+function preRenderWidget(
+    widget: WidgetItem,
+    index: number,
+    settings: Settings,
+    context: RenderContext,
+    getLineWidth: () => number | null
+): { entry: PreRenderedWidget; bar: SizedBar | null } {
+    // Separators are handled specially, and unknown widgets render nothing but
+    // keep their place, so indices match the configured widgets
+    const widgetImpl = widget.type === 'separator' || widget.type === 'flex-separator' ? undefined : getWidget(widget.type);
+    if (!widgetImpl) {
+        return { entry: { content: '', plainLength: 0, widget }, bar: null };
+    }
+
+    const effectiveWidget = context.minimalist ? { ...widget, rawValue: true } : widget;
+    const bar = findSizedBar(widgetImpl, effectiveWidget, index, getLineWidth);
+    const content = widgetImpl.render(effectiveWidget, bar ? { ...context, barCells: MIN_BAR_CELLS } : context, settings) ?? '';
+    // getVisibleWidth measures the display width of Unicode text
+    return { entry: { content, plainLength: getVisibleWidth(content), widget }, bar };
+}
+
 // Pre-render all widgets once and cache the results. Bars with a width setting
 // first render at MIN_BAR_CELLS, then grow to fit their lines.
 export function preRenderAllWidgets(
@@ -941,58 +965,17 @@ export function preRenderAllWidgets(
     const sizedBars: SizedBar[][] = [];
     // Resolved only once a sized bar needs it; null when the width is unknown
     let lineWidth: number | null | undefined;
+    const getLineWidth = (): number | null => {
+        lineWidth ??= resolveEffectiveTerminalWidth(context.terminalWidth ?? getTerminalWidth(), settings, context);
+        return lineWidth;
+    };
 
-    // Process each line
     for (const lineWidgets of allLinesWidgets) {
-        const preRenderedLine: PreRenderedWidget[] = [];
-        const lineBars: SizedBar[] = [];
-
-        for (const widget of lineWidgets) {
-            // Skip separators as they're handled differently
-            if (widget.type === 'separator' || widget.type === 'flex-separator') {
-                preRenderedLine.push({
-                    content: '',  // Separators are handled specially
-                    plainLength: 0,
-                    widget
-                });
-                continue;
-            }
-
-            const widgetImpl = getWidget(widget.type);
-            if (!widgetImpl) {
-                // Preserve index alignment with the configured widgets while skipping unknown output.
-                preRenderedLine.push({
-                    content: '',
-                    plainLength: 0,
-                    widget
-                });
-                continue;
-            }
-
-            const effectiveWidget = context.minimalist ? { ...widget, rawValue: true } : widget;
-            const barWidth = getSizedBarWidth(widgetImpl, effectiveWidget);
-            if (barWidth !== null) {
-                lineWidth ??= resolveEffectiveTerminalWidth(context.terminalWidth ?? getTerminalWidth(), settings, context);
-            }
-            const sized = barWidth !== null && Boolean(lineWidth);
-            if (sized) {
-                lineBars.push({ index: preRenderedLine.length, width: barWidth, widgetImpl, item: effectiveWidget });
-            }
-            const widgetText = widgetImpl.render(effectiveWidget, sized ? { ...context, barCells: MIN_BAR_CELLS } : context, settings) ?? '';
-
-            // Store the rendered content without padding (padding is applied later)
-            // Use stringWidth to properly calculate Unicode character display width
-            const plainLength = getVisibleWidth(widgetText);
-            preRenderedLine.push({
-                content: widgetText,
-                plainLength,
-                widget
-            });
-        }
-
+        const results = lineWidgets.map((widget, index) => preRenderWidget(widget, index, settings, context, getLineWidth));
+        const preRenderedLine = results.map(result => result.entry);
         applyMergeTargetHiding(preRenderedLine);
         preRenderedLines.push(preRenderedLine);
-        sizedBars.push(lineBars);
+        sizedBars.push(results.flatMap(result => (result.bar ? [result.bar] : [])));
     }
 
     if (lineWidth) {

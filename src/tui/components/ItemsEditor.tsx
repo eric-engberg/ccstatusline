@@ -85,6 +85,37 @@ function isMergedIntoPreviousWidget(widgets: WidgetItem[], index: number): boole
     return Boolean(widgets[index - 1]?.merge);
 }
 
+// What the preview shows: the bar width editor's draft in place of the widget it
+// edits, or else the line with the picker's highlighted widget, if any
+function getPreviewWidgets(widgets: WidgetItem[], index: number, barWidthDraft: WidgetItem | null, pickerPreview: WidgetItem[] | null): WidgetItem[] | null {
+    return barWidthDraft ? widgets.map((widget, i) => (i === index ? barWidthDraft : widget)) : pickerPreview;
+}
+
+interface SharedEditorHandlers {
+    onDraft: (draft: WidgetItem) => void;
+    onComplete: (updatedWidget: WidgetItem) => void;
+    onCancel: () => void;
+}
+
+// The hide-state checklist and the bar width editor are shared by every widget
+// that offers them, so they render here rather than via widget renderEditor
+function renderSharedEditor(editor: CustomEditorWidgetState | null, { onDraft, onComplete, onCancel }: SharedEditorHandlers): React.ReactElement | null {
+    if (editor?.action === EDIT_HIDE_STATES_ACTION) {
+        return (
+            <HideStatesEditor
+                widget={editor.widget}
+                states={editor.impl.getHideableStates?.() ?? []}
+                onComplete={onComplete}
+                onCancel={onCancel}
+            />
+        );
+    }
+    if (editor?.action === EDIT_BAR_WIDTH_ACTION) {
+        return <BarWidthEditor widget={editor.widget} onChange={onDraft} onComplete={onComplete} onCancel={onCancel} />;
+    }
+    return null;
+}
+
 const HiddenEntriesMarker: React.FC<{ arrow: string; count: number }> = ({ arrow, count }) => (
     <Box paddingLeft={3}>
         <Text dimColor>{count > 0 ? `${arrow} ${count} more` : ' '}</Text>
@@ -385,16 +416,17 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
         ? selectedPickerEntry?.type
         : (widgetPicker && widgetPicker.categoryQuery.trim().length > 0 ? selectedTopLevelSearchEntry?.type : undefined);
     const pickerAction = widgetPicker?.action;
-    const previewWidgets = useMemo(() => {
-        if (barWidthDraft) {
-            return widgets.map((widget, index) => (index === selectedIndex ? barWidthDraft : widget));
-        }
+    const pickerPreviewWidgets = useMemo(() => {
         if (!pickerAction || !highlightedPickerType || !pickerNewWidget) {
             return null;
         }
 
         return placePickerSelection(widgets, pickerAction, selectedIndex, highlightedPickerType, pickerNewWidget).widgets;
-    }, [widgets, barWidthDraft, pickerAction, selectedIndex, highlightedPickerType, pickerNewWidget]);
+    }, [widgets, pickerAction, selectedIndex, highlightedPickerType, pickerNewWidget]);
+    const previewWidgets = useMemo(
+        () => getPreviewWidgets(widgets, selectedIndex, barWidthDraft, pickerPreviewWidgets),
+        [widgets, selectedIndex, barWidthDraft, pickerPreviewWidgets]
+    );
 
     useEffect(() => {
         onPreviewChange?.(previewWidgets);
@@ -437,28 +469,13 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
             ? 'Insert Widget'
             : 'Change Widget Type';
 
-    // The hide-state checklist is shared across all widgets that declare
-    // hideable states, so it renders here rather than via widget renderEditor
-    if (customEditorWidget?.action === EDIT_HIDE_STATES_ACTION) {
-        return (
-            <HideStatesEditor
-                widget={customEditorWidget.widget}
-                states={customEditorWidget.impl.getHideableStates?.() ?? []}
-                onComplete={handleEditorComplete}
-                onCancel={handleEditorCancel}
-            />
-        );
-    }
-
-    if (customEditorWidget?.action === EDIT_BAR_WIDTH_ACTION) {
-        return (
-            <BarWidthEditor
-                widget={customEditorWidget.widget}
-                onChange={setBarWidthDraft}
-                onComplete={handleEditorComplete}
-                onCancel={handleEditorCancel}
-            />
-        );
+    const sharedEditor = renderSharedEditor(customEditorWidget, {
+        onDraft: setBarWidthDraft,
+        onComplete: handleEditorComplete,
+        onCancel: handleEditorCancel
+    });
+    if (sharedEditor) {
+        return sharedEditor;
     }
 
     // If custom editor is active, render it instead of the normal UI
