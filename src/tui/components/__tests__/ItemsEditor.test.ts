@@ -269,22 +269,28 @@ describe('ItemsEditor', () => {
                 }
             );
 
-            const press = async (input: string) => {
-                stdin.write(input);
-                await flushInk();
-            };
+            // Output written since the last key press
+            const screen = () => stripAnsi(stdout.getOutput());
 
             return {
                 instance,
                 onUpdate,
-                press,
-                // Output written since the previous call, i.e. the frame(s)
-                // rendered for the keys pressed in between
-                takeOutput: () => {
-                    const output = stripAnsi(stdout.getOutput());
+                // Sends keys without waiting; follow with waitFor on what they change
+                press: (input: string) => {
                     stdout.clearOutput();
-                    return output;
+                    stdin.write(input);
                 },
+                screen,
+                // The last picker frame drawn since the last key press
+                latestPickerFrame: () => {
+                    const output = screen();
+                    const start = output.lastIndexOf('ADD WIDGET');
+                    return start === -1 ? '' : output.slice(start);
+                },
+                // The line editor is drawn and listening for keys
+                ready: () => waitFor(() => {
+                    expect(screen()).toContain('1. ');
+                }),
                 latestPreview: () => previews.at(-1),
                 cleanup: () => {
                     instance.unmount();
@@ -300,17 +306,29 @@ describe('ItemsEditor', () => {
             const editor = renderEditor([{ id: '1', type: 'model' }]);
 
             try {
-                await flushInk();
-                await editor.press('a');
+                await editor.ready();
+                editor.press('a');
+                await waitFor(() => {
+                    expect(editor.screen()).toContain('ADD WIDGET');
+                });
                 // Browsing categories highlights no widget, so the line is untouched
                 expect(editor.latestPreview() ?? null).toBeNull();
 
-                await editor.press('git branch');
-                expect(editor.latestPreview()?.map(widget => widget.type)).toEqual(['model', 'git-branch']);
+                editor.press('git branch');
+                await waitFor(() => {
+                    expect(editor.latestPreview()?.map(widget => widget.type)).toEqual(['model', 'git-branch']);
+                });
 
-                await editor.press(ESC);
-                await editor.press(ESC);
-                expect(editor.latestPreview()).toBeNull();
+                // The first ESC clears the search, the second closes the picker
+                editor.press(ESC);
+                await waitFor(() => {
+                    expect(editor.latestPreview()).toBeNull();
+                });
+                editor.press(ESC);
+                await waitFor(() => {
+                    expect(editor.screen()).toContain('Edit Line 1');
+                    expect(editor.screen()).not.toContain('ADD WIDGET');
+                });
                 expect(editor.onUpdate).not.toHaveBeenCalled();
             } finally {
                 editor.cleanup();
@@ -321,13 +339,18 @@ describe('ItemsEditor', () => {
             const editor = renderEditor([{ id: '1', type: 'model' }, { id: '2', type: 'tokens-input' }]);
 
             try {
-                await flushInk();
-                await editor.press(RIGHT_ARROW);
-                await editor.press('git branch');
-                expect(editor.latestPreview()).toEqual([
-                    { id: '1', type: 'git-branch' },
-                    { id: '2', type: 'tokens-input' }
-                ]);
+                await editor.ready();
+                editor.press(RIGHT_ARROW);
+                await waitFor(() => {
+                    expect(editor.screen()).toContain('CHANGE WIDGET TYPE');
+                });
+                editor.press('git branch');
+                await waitFor(() => {
+                    expect(editor.latestPreview()).toEqual([
+                        { id: '1', type: 'git-branch' },
+                        { id: '2', type: 'tokens-input' }
+                    ]);
+                });
             } finally {
                 editor.cleanup();
             }
@@ -341,17 +364,25 @@ describe('ItemsEditor', () => {
             const editor = renderEditor([{ id: '1', type: 'model', backgroundColor: 'bgRed' }], powerlineSettings);
 
             try {
-                await flushInk();
-                await editor.press('a');
-                await editor.press('git branch');
+                await editor.ready();
+                editor.press('a');
+                await waitFor(() => {
+                    expect(editor.screen()).toContain('ADD WIDGET');
+                });
+                editor.press('git branch');
+                await waitFor(() => {
+                    expect(editor.latestPreview()?.map(widget => widget.type)).toEqual(['model', 'git-branch']);
+                });
                 const preview = editor.latestPreview();
                 expect(preview?.[1]?.backgroundColor).toEqual(expect.any(String));
                 expect(preview?.[1]?.backgroundColor).not.toBe('bgRed');
 
-                await editor.press(ENTER);
-                expect(editor.onUpdate).toHaveBeenCalledTimes(1);
+                editor.press(ENTER);
+                await waitFor(() => {
+                    expect(editor.onUpdate).toHaveBeenCalledTimes(1);
+                    expect(editor.latestPreview()).toBeNull();
+                });
                 expect(editor.onUpdate).toHaveBeenCalledWith(preview);
-                expect(editor.latestPreview()).toBeNull();
             } finally {
                 editor.cleanup();
             }
@@ -361,11 +392,16 @@ describe('ItemsEditor', () => {
             const editor = renderEditor([{ id: '1', type: 'model' }]);
 
             try {
-                await flushInk();
-                await editor.press('a');
-                editor.takeOutput();
-                await editor.press(ENTER);
-                const output = editor.takeOutput();
+                await editor.ready();
+                editor.press('a');
+                await waitFor(() => {
+                    expect(editor.screen()).toContain('ADD WIDGET');
+                });
+                editor.press(ENTER);
+                await waitFor(() => {
+                    expect(editor.latestPickerFrame()).toMatch(/↓ \d+ more/);
+                });
+                const output = editor.latestPickerFrame();
 
                 const shown = getEntryRows(output).length;
                 const hiddenBelow = Number(/↓ (\d+) more/.exec(output)?.[1]);
@@ -382,16 +418,24 @@ describe('ItemsEditor', () => {
             const editor = renderEditor([{ id: '1', type: 'model' }]);
 
             try {
-                await flushInk();
-                await editor.press('a');
-                await editor.press(ENTER);
-                editor.takeOutput();
+                await editor.ready();
+                editor.press('a');
+                await waitFor(() => {
+                    expect(editor.screen()).toContain('ADD WIDGET');
+                });
+                editor.press(ENTER);
+                await waitFor(() => {
+                    expect(editor.latestPickerFrame()).toMatch(/↓ \d+ more/);
+                });
                 // Up from the first widget wraps to the last one
-                await editor.press(UP_ARROW);
-                const output = editor.takeOutput();
+                editor.press(UP_ARROW);
+                await waitFor(() => {
+                    const highlighted = getEntryRows(editor.latestPickerFrame()).find(row => row.includes('▶'));
+                    expect(highlighted).toMatch(new RegExp(`${allWidgetCount}\\. `));
+                });
+                const output = editor.latestPickerFrame();
                 const rows = getEntryRows(output);
 
-                expect(rows.find(row => row.includes('▶'))).toMatch(new RegExp(`${allWidgetCount}\\. `));
                 expect(rows.some(row => /^\s*1\. /.test(row))).toBe(false);
                 expect(output).toMatch(/↑ \d+ more/);
                 expect(output).not.toMatch(/↓ \d+ more/);
@@ -404,10 +448,15 @@ describe('ItemsEditor', () => {
             const editor = renderEditor([{ id: '1', type: 'model' }]);
 
             try {
-                await flushInk();
-                await editor.press('a');
-                await editor.press('git branch');
-                expect(editor.latestPreview()?.map(widget => widget.type)).toEqual(['model', 'git-branch']);
+                await editor.ready();
+                editor.press('a');
+                await waitFor(() => {
+                    expect(editor.screen()).toContain('ADD WIDGET');
+                });
+                editor.press('git branch');
+                await waitFor(() => {
+                    expect(editor.latestPreview()?.map(widget => widget.type)).toEqual(['model', 'git-branch']);
+                });
 
                 editor.instance.unmount();
                 expect(editor.latestPreview()).toBeNull();
