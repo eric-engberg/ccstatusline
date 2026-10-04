@@ -91,6 +91,26 @@ describe('ContextBarWidget gradient', () => {
         expect(widget.render(gradientBar, { isPreview: true }, truecolor)).toContain(GREEN_TRUECOLOR);
     });
 
+    it('needs truecolor, staying plain at 256 and 16 colors', () => {
+        for (const colorLevel of [1, 2] as const) {
+            const settings = { ...truecolor, colorLevel };
+            expect(widget.render(gradientBar, context, settings)).toBe(widget.render(plainBar, context, settings));
+        }
+    });
+
+    it('offers (g) only at truecolor, as Edit Colors does with its color options', () => {
+        const offersGradient = (settings?: Settings) => widget.getCustomKeybinds(plainBar, settings).some(keybind => keybind.key === 'g');
+        expect(offersGradient(truecolor)).toBe(true);
+        expect(offersGradient({ ...truecolor, colorLevel: 2 })).toBe(false);
+        expect(offersGradient({ ...truecolor, colorLevel: 1 })).toBe(false);
+    });
+
+    it('says in the line editor when the color level is too low for the gradient', () => {
+        expect(widget.getEditorDisplay(gradientBar, { ...truecolor, colorLevel: 2 }).modifierText).toContain('gradient: traffic, needs truecolor');
+        expect(widget.getEditorDisplay(gradientBar, truecolor).modifierText).not.toContain('needs truecolor');
+        expect(widget.getEditorDisplay(plainBar, { ...truecolor, colorLevel: 2 }).modifierText ?? '').not.toContain('truecolor');
+    });
+
     it('stays plain with colors off or a global foreground override', () => {
         expect(widget.render(gradientBar, context, { ...truecolor, colorLevel: 0 })).not.toContain('\x1b[');
         expect(widget.render(gradientBar, context, { ...truecolor, overrideForegroundColor: 'white' })).not.toContain('\x1b[');

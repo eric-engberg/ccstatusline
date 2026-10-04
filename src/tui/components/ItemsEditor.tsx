@@ -178,7 +178,7 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
     };
 
     const getCustomKeybindsForWidget = (widgetImpl: Widget, widget: WidgetItem): CustomKeybind[] => {
-        const keybinds = widgetImpl.getCustomKeybinds ? [...widgetImpl.getCustomKeybinds(widget)] : [];
+        const keybinds = widgetImpl.getCustomKeybinds ? [...widgetImpl.getCustomKeybinds(widget, settings)] : [];
 
         // Numeric widgets get the precision cycle here rather than in the color
         // menu, so every non-color override stays on this screen and stays
@@ -337,7 +337,7 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
         // Handle regular widgets - delegate to widget for display
         const widgetImpl = getWidget(widget.type);
         if (widgetImpl) {
-            const { displayText, modifierText } = widgetImpl.getEditorDisplay(widget);
+            const { displayText, modifierText } = widgetImpl.getEditorDisplay(widget, settings);
             // Return plain text without colors
             return displayText + (modifierText ? ` ${modifierText}` : '');
         }
@@ -662,7 +662,7 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
                             {widgets.map((widget, index) => {
                                 const isSelected = index === selectedIndex;
                                 const widgetImpl = widget.type !== 'separator' && widget.type !== 'flex-separator' ? getWidget(widget.type) : null;
-                                const { displayText, modifierText } = widgetImpl?.getEditorDisplay(widget) ?? { displayText: getWidgetDisplay(widget) };
+                                const { displayText, modifierText } = widgetImpl?.getEditorDisplay(widget, settings) ?? { displayText: getWidgetDisplay(widget) };
                                 const supportsRawValue = widgetImpl?.supportsRawValue() ?? false;
                                 const numberFormatModifierText = widgetImpl?.supportsNumberFormat?.()
                                     ? getNumberFormatModifierText(widget)

@@ -22,42 +22,31 @@ function codes(painted: string): string[] {
 describe('paintGradientBar', () => {
     it('changes only colors, never the bar itself', () => {
         for (const bar of ['[████░░░░]', '[░░░░]', '[████]', '▓▓▓░░░░░']) {
-            expect(stripAnsi(paintGradientBar(bar, 'truecolor'))).toBe(bar);
+            expect(stripAnsi(paintGradientBar(bar))).toBe(bar);
         }
     });
 
     it('runs filled cells from green to red by position, in true RGB', () => {
-        const painted = paintGradientBar('[█████]', 'truecolor');
+        const painted = paintGradientBar('[█████]');
         expect(painted.startsWith(`[${ESC}[38;2;0;200;80m█`)).toBe(true);
         expect(painted).toContain(`${ESC}[38;2;220;200;0m█`);
         expect(painted.endsWith(`${ESC}[38;2;220;40;20m█${DEFAULT_FG}]`)).toBe(true);
     });
 
     it('colors a cell by where it sits in the bar, not by how full the bar is', () => {
-        const quarter = codes(paintGradientBar('[██░░░░░░]', 'truecolor'));
-        const full = codes(paintGradientBar('[████████]', 'truecolor'));
+        const quarter = codes(paintGradientBar('[██░░░░░░]'));
+        const full = codes(paintGradientBar('[████████]'));
         expect(quarter.slice(0, 2)).toEqual(full.slice(0, 2));
     });
 
     it('paints empty cells dark gray and ends the colored run before the bracket', () => {
-        const painted = paintGradientBar('[█░░]', 'truecolor');
+        const painted = paintGradientBar('[█░░]');
         expect(painted).toBe(`[${ESC}[38;2;0;200;80m█${ESC}[38;2;60;60;60m░░${DEFAULT_FG}]`);
-    });
-
-    it('uses the nearest palette colors at 256 colors', () => {
-        expect(paintGradientBar('[███]', 'ansi256')).toBe(`[${ESC}[38;5;42m█${ESC}[38;5;184m█${ESC}[38;5;166m█${DEFAULT_FG}]`);
-        expect(paintGradientBar('[░]', 'ansi256')).toBe(`[${ESC}[38;5;237m░${DEFAULT_FG}]`);
-    });
-
-    it('falls back to green, yellow and red bands at 16 colors', () => {
-        expect(paintGradientBar('[██████░]', 'ansi16')).toBe(
-            `[${ESC}[32m██${ESC}[33m██${ESC}[31m██${ESC}[90m░${DEFAULT_FG}]`
-        );
     });
 
     it('starts and ends each preset on its own colors', () => {
         const ends = (preset: BarGradientPreset) => {
-            const found = codes(paintGradientBar('[████████]', 'truecolor', preset));
+            const found = codes(paintGradientBar('[████████]', preset));
             return [found[0], found.at(-2)];
         };
         const seen = new Set<string>();
@@ -76,19 +65,14 @@ describe('paintGradientBar', () => {
             return 0.2126 * r + 0.7152 * g + 0.0722 * b;
         };
         for (const preset of ['viridis', 'cividis', 'mono'] as const) {
-            const cells = codes(paintGradientBar('[████████]', 'truecolor', preset)).slice(0, -1);
+            const cells = codes(paintGradientBar('[████████]', preset)).slice(0, -1);
             const values = cells.map(luminance);
             expect(values).toEqual([...values].sort((a, b) => a - b));
         }
     });
 
-    it('gives each preset three bands at 16 colors', () => {
-        expect(paintGradientBar('[██████]', 'ansi16', 'thermal')).toBe(`[${ESC}[34m██${ESC}[35m██${ESC}[31m██${DEFAULT_FG}]`);
-        expect(paintGradientBar('[██████]', 'ansi16', 'mono')).toBe(`[${ESC}[90m██${ESC}[37m██${ESC}[97m██${DEFAULT_FG}]`);
-    });
-
     it('colors the slider bar\'s filled cells too', () => {
-        const painted = paintGradientBar('▓▓░░', 'truecolor');
+        const painted = paintGradientBar('▓▓░░');
         expect(painted.startsWith(`${ESC}[38;2;0;200;80m▓`)).toBe(true);
         expect(painted.endsWith(`${ESC}[38;2;60;60;60m░░${DEFAULT_FG}`)).toBe(true);
     });

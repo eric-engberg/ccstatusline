@@ -1,4 +1,3 @@
-import { getColorLevelString } from '../types/ColorLevel';
 import type { RenderContext } from '../types/RenderContext';
 import type { Settings } from '../types/Settings';
 import type {
@@ -68,15 +67,19 @@ function cycleGradientPreset(item: WidgetItem): WidgetItem {
     return { ...item, metadata: { ...(item.metadata ?? {}), [GRADIENT_KEY]: next } };
 }
 
-// The gradient needs colors, and a global foreground override owns every
-// widget's foreground
+// The 256-color palette is too coarse for a smooth gradient, so it needs truecolor
+function supportsGradient(settings: Settings): boolean {
+    return settings.colorLevel === 3;
+}
+
+// A global foreground override owns every widget's foreground
 function paintBar(bar: string, item: WidgetItem, settings: Settings): string {
     const preset = getGradientPreset(item);
     const override = settings.overrideForegroundColor;
-    if (!preset || settings.colorLevel === 0 || (override && override !== 'none')) {
+    if (!preset || !supportsGradient(settings) || (override && override !== 'none')) {
         return bar;
     }
-    return paintGradientBar(bar, getColorLevelString(settings.colorLevel), preset);
+    return paintGradientBar(bar, preset);
 }
 
 export class ContextBarWidget implements Widget {
@@ -85,7 +88,7 @@ export class ContextBarWidget implements Widget {
     getDisplayName(): string { return 'Context Bar'; }
     getCategory(): string { return 'Context'; }
 
-    getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
+    getEditorDisplay(item: WidgetItem, settings?: Settings): WidgetEditorDisplay {
         const mode = getDisplayMode(item);
         const modifiers: string[] = [];
 
@@ -98,7 +101,7 @@ export class ContextBarWidget implements Widget {
         }
         const preset = getGradientPreset(item);
         if (preset) {
-            modifiers.push(`gradient: ${preset}`);
+            modifiers.push(settings && !supportsGradient(settings) ? `gradient: ${preset}, needs truecolor` : `gradient: ${preset}`);
         }
 
         return {
@@ -188,11 +191,13 @@ export class ContextBarWidget implements Widget {
         return item.rawValue ? display : `Context: ${display}`;
     }
 
-    getCustomKeybinds(): CustomKeybind[] {
-        return [
-            { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
-            { key: 'g', label: '(g)radient', action: 'cycle-gradient' }
-        ];
+    // Like Edit Colors' color options, (g) is offered only where it can show
+    getCustomKeybinds(item?: WidgetItem, settings?: Settings): CustomKeybind[] {
+        const keybinds: CustomKeybind[] = [{ key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' }];
+        if (!settings || supportsGradient(settings)) {
+            keybinds.push({ key: 'g', label: '(g)radient', action: 'cycle-gradient' });
+        }
+        return keybinds;
     }
 
     supportsRawValue(): boolean { return true; }
