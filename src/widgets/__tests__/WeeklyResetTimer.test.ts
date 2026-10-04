@@ -436,7 +436,8 @@ describe('WeeklyResetTimerWidget', () => {
         })).toEqual([
             { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
             { key: 'v', label: 'in(v)ert fill', action: 'toggle-invert' },
-            { key: 'g', label: '(g)radient', action: 'cycle-gradient' }
+            { key: 'g', label: '(g)radient', action: 'cycle-gradient' },
+            { key: 'b', label: '(b)ar width', action: 'edit-bar-width' }
         ]);
     });
 
@@ -481,7 +482,8 @@ describe('WeeklyResetTimerWidget', () => {
         expectedProgressKeybinds: [
             { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
             { key: 'v', label: 'in(v)ert fill', action: 'toggle-invert' },
-            { key: 'g', label: '(g)radient', action: 'cycle-gradient' }
+            { key: 'g', label: '(g)radient', action: 'cycle-gradient' },
+            { key: 'b', label: '(b)ar width', action: 'edit-bar-width' }
         ],
         modifierItem: {
             id: 'weekly-reset',

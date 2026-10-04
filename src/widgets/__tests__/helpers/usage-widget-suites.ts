@@ -61,7 +61,8 @@ const EXPECTED_TIMER_TIME_KEYBINDS: CustomKeybind[] = [
 const EXPECTED_TIMER_PROGRESS_KEYBINDS: CustomKeybind[] = [
     { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
     { key: 'v', label: 'in(v)ert fill', action: 'toggle-invert' },
-    { key: 'g', label: '(g)radient', action: 'cycle-gradient' }
+    { key: 'g', label: '(g)radient', action: 'cycle-gradient' },
+    { key: 'b', label: '(b)ar width', action: 'edit-bar-width' }
 ];
 
 function getUsageContext(field: 'sessionUsage' | 'weeklyUsage' | 'weeklySonnetUsage' | 'weeklyOpusUsage' | 'fableUsage', value: number): RenderContext {
@@ -75,10 +76,10 @@ function getExpectedUsageKeybinds(item: WidgetItem, includeCursor = false): Cust
         { key: 'u', label: `(u) show ${nextDirection}`, action: 'toggle-invert' }
     ];
 
-    // Bar modes add the time cursor and the bar gradient
+    // Bar modes add the time cursor, the bar gradient and the bar width
     if (includeCursor) {
         keybinds.push({ key: 't', label: '(t)ime cursor', action: 'toggle-cursor' });
-        keybinds.push({ key: 'g', label: '(g)radient', action: 'cycle-gradient' });
+        keybinds.push({ key: 'g', label: '(g)radient', action: 'cycle-gradient' }, { key: 'b', label: '(b)ar width', action: 'edit-bar-width' });
     }
 
     return keybinds;

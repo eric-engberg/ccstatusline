@@ -31,6 +31,7 @@ import {
     getWidgetCatalog,
     getWidgetCatalogCategories
 } from '../../utils/widgets';
+import { EDIT_BAR_WIDTH_ACTION } from '../../widgets/shared/bar-width';
 import {
     filterGradientKeybinds,
     noteGradientNeedsTruecolor
@@ -41,6 +42,7 @@ import {
     getHideModifierText
 } from '../../widgets/shared/hideable';
 
+import { BarWidthEditor } from './BarWidthEditor';
 import { ConfirmDialog } from './ConfirmDialog';
 import { HideStatesEditor } from './HideStatesEditor';
 import {
@@ -123,6 +125,8 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
     const [selectedIndex, setSelectedIndex] = useState(() => Math.min(initialSelectedIndex, Math.max(0, widgets.length - 1)));
     const [moveMode, setMoveMode] = useState(false);
     const [customEditorWidget, setCustomEditorWidget] = useState<CustomEditorWidgetState | null>(null);
+    // The widget at the width the bar width editor is showing, for the preview
+    const [barWidthDraft, setBarWidthDraft] = useState<WidgetItem | null>(null);
     const [widgetPicker, setWidgetPicker] = useState<WidgetPickerState | null>(null);
     // Identity and powerline background of the widget an add/insert would
     // create, fixed when the picker opens so the preview doesn't change color
@@ -175,10 +179,12 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
         newWidgets[selectedIndex] = updatedWidget;
         onUpdate(newWidgets);
         setCustomEditorWidget(null);
+        setBarWidthDraft(null);
     };
 
     const handleEditorCancel = () => {
         setCustomEditorWidget(null);
+        setBarWidthDraft(null);
     };
 
     const getCustomKeybindsForWidget = (widgetImpl: Widget, widget: WidgetItem): CustomKeybind[] => {
@@ -380,12 +386,15 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
         : (widgetPicker && widgetPicker.categoryQuery.trim().length > 0 ? selectedTopLevelSearchEntry?.type : undefined);
     const pickerAction = widgetPicker?.action;
     const previewWidgets = useMemo(() => {
+        if (barWidthDraft) {
+            return widgets.map((widget, index) => (index === selectedIndex ? barWidthDraft : widget));
+        }
         if (!pickerAction || !highlightedPickerType || !pickerNewWidget) {
             return null;
         }
 
         return placePickerSelection(widgets, pickerAction, selectedIndex, highlightedPickerType, pickerNewWidget).widgets;
-    }, [widgets, pickerAction, selectedIndex, highlightedPickerType, pickerNewWidget]);
+    }, [widgets, barWidthDraft, pickerAction, selectedIndex, highlightedPickerType, pickerNewWidget]);
 
     useEffect(() => {
         onPreviewChange?.(previewWidgets);
@@ -435,6 +444,17 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
             <HideStatesEditor
                 widget={customEditorWidget.widget}
                 states={customEditorWidget.impl.getHideableStates?.() ?? []}
+                onComplete={handleEditorComplete}
+                onCancel={handleEditorCancel}
+            />
+        );
+    }
+
+    if (customEditorWidget?.action === EDIT_BAR_WIDTH_ACTION) {
+        return (
+            <BarWidthEditor
+                widget={customEditorWidget.widget}
+                onChange={setBarWidthDraft}
                 onComplete={handleEditorComplete}
                 onCancel={handleEditorCancel}
             />

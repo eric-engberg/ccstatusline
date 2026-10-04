@@ -2,6 +2,7 @@ import chalk from 'chalk';
 
 import type {
     RenderContext,
+    Widget,
     WidgetItem
 } from '../types';
 import {
@@ -12,6 +13,13 @@ import type {
     DefaultPaddingSide,
     Settings
 } from '../types/Settings';
+import {
+    EDIT_BAR_WIDTH_ACTION,
+    MIN_BAR_CELLS,
+    allocateBarCells,
+    getBarWidth,
+    getDesiredBarCells
+} from '../widgets/shared/bar-width';
 import {
     MERGE_TARGET_HIDDEN_HIDEABLE_STATE,
     isHidden
@@ -768,6 +776,9 @@ export interface PreRenderedWidget {
     content: string;      // The rendered widget text (without padding)
     plainLength: number;  // Length without ANSI codes
     widget: WidgetItem;   // Original widget config
+    // The width auto-align uses, when it differs from plainLength: a bar sized to
+    // its line counts at its minimum, so it doesn't widen other lines' columns
+    alignmentWidth?: number;
 }
 
 export function countPowerlineStartCapSlots(
@@ -864,17 +875,77 @@ function applyMergeTargetHidingToSegment(segment: PreRenderedWidget[]): void {
     }
 }
 
-// Pre-render all widgets once and cache the results
+// A bar with a width setting, which preRenderAllWidgets sizes to its line
+interface SizedBar {
+    index: number;  // Position in the pre-rendered line
+    width: number | 'fill';
+    widgetImpl: Widget;
+    item: WidgetItem;  // As rendered, minimalist override included
+}
+
+// The width setting of a bar the widget shows now. Widgets offer (b) only while
+// they show a bar, so a width kept from a bar mode is ignored in other modes.
+function getSizedBarWidth(widgetImpl: Widget, item: WidgetItem): number | 'fill' | null {
+    const width = getBarWidth(item);
+    if (width === 'default') {
+        return null;
+    }
+    const showsBar = widgetImpl.getCustomKeybinds?.(item).some(keybind => keybind.action === EDIT_BAR_WIDTH_ACTION) ?? false;
+    return showsBar ? width : null;
+}
+
+// Grows each line's sized bars into the room the line leaves at the terminal's
+// width, measured with every bar at MIN_BAR_CELLS and flex separators at their
+// narrowest. Auto-align keeps the minimum widths, so a grown bar doesn't widen
+// the same column on other lines.
+function sizeBarsToLines(
+    allLinesWidgets: WidgetItem[][],
+    preRenderedLines: PreRenderedWidget[][],
+    sizedBars: SizedBar[][],
+    lineWidth: number,
+    settings: Settings,
+    context: RenderContext
+): void {
+    const maxWidths = calculateMaxWidthsFromPreRendered(preRenderedLines, settings);
+    sizedBars.forEach((bars, lineIndex) => {
+        const preRenderedLine = preRenderedLines[lineIndex] ?? [];
+        const shownBars = bars.filter(bar => preRenderedLine[bar.index]?.content);
+        if (shownBars.length === 0) {
+            return;
+        }
+
+        const measureContext = { ...context, terminalWidth: 0, lineIndex };
+        const minimumWidth = getVisibleWidth(renderStatusLine(allLinesWidgets[lineIndex] ?? [], settings, measureContext, preRenderedLine, maxWidths));
+        const cells = allocateBarCells(shownBars.map(bar => getDesiredBarCells(bar.width, lineWidth)), lineWidth - minimumWidth);
+        shownBars.forEach((bar, position) => {
+            const entry = preRenderedLine[bar.index];
+            if (!entry) {
+                return;
+            }
+            const content = bar.widgetImpl.render(bar.item, { ...context, barCells: cells[position] }, settings) ?? '';
+            entry.alignmentWidth = entry.plainLength;
+            entry.content = content;
+            entry.plainLength = getVisibleWidth(content);
+        });
+    });
+}
+
+// Pre-render all widgets once and cache the results. Bars with a width setting
+// first render at MIN_BAR_CELLS, then grow to fit their lines.
 export function preRenderAllWidgets(
     allLinesWidgets: WidgetItem[][],
     settings: Settings,
     context: RenderContext
 ): PreRenderedWidget[][] {
     const preRenderedLines: PreRenderedWidget[][] = [];
+    const sizedBars: SizedBar[][] = [];
+    // Resolved only once a sized bar needs it; null when the width is unknown
+    let lineWidth: number | null | undefined;
 
     // Process each line
     for (const lineWidgets of allLinesWidgets) {
         const preRenderedLine: PreRenderedWidget[] = [];
+        const lineBars: SizedBar[] = [];
 
         for (const widget of lineWidgets) {
             // Skip separators as they're handled differently
@@ -899,7 +970,15 @@ export function preRenderAllWidgets(
             }
 
             const effectiveWidget = context.minimalist ? { ...widget, rawValue: true } : widget;
-            const widgetText = widgetImpl.render(effectiveWidget, context, settings) ?? '';
+            const barWidth = getSizedBarWidth(widgetImpl, effectiveWidget);
+            if (barWidth !== null) {
+                lineWidth ??= resolveEffectiveTerminalWidth(context.terminalWidth ?? getTerminalWidth(), settings, context);
+            }
+            const sized = barWidth !== null && Boolean(lineWidth);
+            if (sized) {
+                lineBars.push({ index: preRenderedLine.length, width: barWidth, widgetImpl, item: effectiveWidget });
+            }
+            const widgetText = widgetImpl.render(effectiveWidget, sized ? { ...context, barCells: MIN_BAR_CELLS } : context, settings) ?? '';
 
             // Store the rendered content without padding (padding is applied later)
             // Use stringWidth to properly calculate Unicode character display width
@@ -913,6 +992,11 @@ export function preRenderAllWidgets(
 
         applyMergeTargetHiding(preRenderedLine);
         preRenderedLines.push(preRenderedLine);
+        sizedBars.push(lineBars);
+    }
+
+    if (lineWidth) {
+        sizeBarsToLines(allLinesWidgets, preRenderedLines, sizedBars, lineWidth, settings, context);
     }
 
     return preRenderedLines;
@@ -967,7 +1051,7 @@ export function calculateMaxWidthsFromPreRendered(
 
             // Calculate the total width for this alignment position
             // If this widget is merged with the next, accumulate their widths
-            let totalWidth = widget.plainLength + paddingPairLength;
+            let totalWidth = (widget.alignmentWidth ?? widget.plainLength) + paddingPairLength;
 
             // Check if this widget merges with the next one(s)
             let j = i;
@@ -977,10 +1061,11 @@ export function calculateMaxWidthsFromPreRendered(
                 if (nextWidget) {
                     // For merged widgets, add width but account for padding adjustments
                     // When merging with 'no-padding', don't count padding between widgets
+                    const nextWidth = nextWidget.alignmentWidth ?? nextWidget.plainLength;
                     if (renderedWidgets[j - 1]?.widget.merge === 'no-padding') {
-                        totalWidth += nextWidget.plainLength;
+                        totalWidth += nextWidth;
                     } else {
-                        totalWidth += nextWidget.plainLength + paddingPairLength;
+                        totalWidth += nextWidth + paddingPairLength;
                     }
                 }
             }

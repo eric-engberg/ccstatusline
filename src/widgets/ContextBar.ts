@@ -19,6 +19,10 @@ import { formatTokens } from '../utils/renderer';
 import { makeUsageProgressBar } from '../utils/usage';
 
 import {
+    getBarWidthKeybinds,
+    getBarWidthModifier
+} from './shared/bar-width';
+import {
     CYCLE_GRADIENT_ACTION,
     cycleGradientPreset,
     getGradientKeybinds,
@@ -63,10 +67,7 @@ export class ContextBarWidget implements Widget {
         } else if (mode === 'slider-only') {
             modifiers.push('short bar only');
         }
-        const gradient = getGradientModifier(item);
-        if (gradient) {
-            modifiers.push(gradient);
-        }
+        modifiers.push(...[getBarWidthModifier(item), getGradientModifier(item)].filter((modifier): modifier is string => modifier !== null));
 
         return {
             displayText: this.getDisplayName(),
@@ -110,11 +111,11 @@ export class ContextBarWidget implements Widget {
             const totalDisplay = formatTokens(PREVIEW_WINDOW_TOKENS, tokenFormat, 0);
             const percentDisplay = formatPercent(PREVIEW_PERCENT, percentFormat, 0);
             if (isBarSliderMode(displayMode)) {
-                const slider = paintWidgetBar(makeSliderBar(PREVIEW_PERCENT), item, settings);
+                const slider = paintWidgetBar(makeSliderBar(PREVIEW_PERCENT, context.barCells), item, settings);
                 const sliderDisplay = displayMode === 'slider' ? `${slider} ${usedDisplay}/${totalDisplay} (${percentDisplay})` : slider;
                 return item.rawValue ? sliderDisplay : `Context: ${sliderDisplay}`;
             }
-            const barWidth = displayMode === 'progress' ? 32 : 16;
+            const barWidth = context.barCells ?? (displayMode === 'progress' ? 32 : 16);
             const previewDisplay = `${paintWidgetBar(makeUsageProgressBar(PREVIEW_PERCENT, barWidth), item, settings)} ${usedDisplay}/${totalDisplay} (${percentDisplay})`;
             return item.rawValue ? previewDisplay : `Context: ${previewDisplay}`;
         }
@@ -144,12 +145,12 @@ export class ContextBarWidget implements Widget {
         const percentDisplay = formatPercent(clampedPercent, percentFormat, 0);
 
         if (isBarSliderMode(displayMode)) {
-            const slider = paintWidgetBar(makeSliderBar(clampedPercent), item, settings);
+            const slider = paintWidgetBar(makeSliderBar(clampedPercent, context.barCells), item, settings);
             const sliderDisplay = displayMode === 'slider' ? `${slider} ${usedDisplay}/${totalDisplay} (${percentDisplay})` : slider;
             return item.rawValue ? sliderDisplay : `Context: ${sliderDisplay}`;
         }
 
-        const barWidth = displayMode === 'progress' ? 32 : 16;
+        const barWidth = context.barCells ?? (displayMode === 'progress' ? 32 : 16);
         const display = `${paintWidgetBar(makeUsageProgressBar(clampedPercent, barWidth), item, settings)} ${usedDisplay}/${totalDisplay} (${percentDisplay})`;
 
         return item.rawValue ? display : `Context: ${display}`;
@@ -158,7 +159,8 @@ export class ContextBarWidget implements Widget {
     getCustomKeybinds(): CustomKeybind[] {
         return [
             { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
-            ...getGradientKeybinds(true)
+            ...getGradientKeybinds(true),
+            ...getBarWidthKeybinds(true)
         ];
     }
 

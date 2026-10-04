@@ -6,6 +6,10 @@ import type {
 import { formatPercent } from '../../utils/number-format';
 
 import {
+    getBarWidthKeybinds,
+    getBarWidthModifier
+} from './bar-width';
+import {
     CYCLE_GRADIENT_ACTION,
     cycleGradientPreset,
     getGradientKeybinds,
@@ -51,11 +55,11 @@ export function cycleContextSliderMode(item: WidgetItem): WidgetItem {
     };
 }
 
-export function renderContextSlider(mode: ContextSliderMode, percent: number, format: NumberFormat = {}): string | null {
+export function renderContextSlider(mode: ContextSliderMode, percent: number, format: NumberFormat = {}, cells?: number): string | null {
     if (mode === 'none') {
         return null;
     }
-    const slider = makeSliderBar(percent);
+    const slider = makeSliderBar(percent, cells);
     if (mode === 'slider') {
         return `${slider} ${formatPercent(percent, format)}`;
     }
@@ -67,13 +71,14 @@ export function getContextSliderModifierText(item: WidgetItem): string | undefin
     if (mode === 'none') {
         return undefined;
     }
-    const gradientModifier = getGradientModifier(item);
-    const barModifier = mode === 'slider' ? 'short bar' : 'short bar only';
-    return gradientModifier ? `(${barModifier}, ${gradientModifier})` : `(${barModifier})`;
+    const modifiers = [mode === 'slider' ? 'short bar' : 'short bar only', getBarWidthModifier(item), getGradientModifier(item)]
+        .filter((modifier): modifier is string => modifier !== null);
+    return `(${modifiers.join(', ')})`;
 }
 
 export function getContextSliderKeybinds(item?: WidgetItem): CustomKeybind[] {
-    return [SLIDER_TOGGLE_KEYBIND, ...getGradientKeybinds(item ? getContextSliderMode(item) !== 'none' : false)];
+    const showsBar = item ? getContextSliderMode(item) !== 'none' : false;
+    return [SLIDER_TOGGLE_KEYBIND, ...getGradientKeybinds(showsBar), ...getBarWidthKeybinds(showsBar)];
 }
 
 // The slider and gradient actions; null for anything else

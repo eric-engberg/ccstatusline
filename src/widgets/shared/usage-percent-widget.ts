@@ -119,9 +119,10 @@ function renderUsageDisplay(
     percent: number,
     format: NumberFormat,
     getCursorOptions: () => UsageCursorOptions | undefined,
-    settings: Settings
+    settings: Settings,
+    context: RenderContext
 ): string {
-    const bar = formatUsageBar(item, percent, format, settings, getCursorOptions);
+    const bar = formatUsageBar(item, percent, format, settings, context, getCursorOptions);
     return formatRawOrLabeledValue(item, label, bar ?? formatPercent(percent, format));
 }
 
@@ -173,7 +174,7 @@ export function renderUsagePercentWidgetValue(
 
     if (context.isPreview) {
         const renderedPercent = inverted ? 100 - config.previewPercent : config.previewPercent;
-        return renderUsageDisplay(item, config.label, renderedPercent, format, () => showCursor ? { cursorPercent: 50 } : undefined, settings);
+        return renderUsageDisplay(item, config.label, renderedPercent, format, () => showCursor ? { cursorPercent: 50 } : undefined, settings, context);
     }
 
     const data: RenderUsageData = context.usageData ?? {};
@@ -197,7 +198,7 @@ export function renderUsagePercentWidgetValue(
 
         const window = resolveUsageWindow(kind, data, context);
         return window ? { cursorPercent: window.elapsedPercent } : undefined;
-    }, settings);
+    }, settings, context);
 }
 
 // Session, Weekly, Weekly Sonnet, Weekly Opus and Fable Weekly Usage differ only

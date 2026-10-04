@@ -1,4 +1,5 @@
 import type { NumberFormat } from '../../types/NumberFormat';
+import type { RenderContext } from '../../types/RenderContext';
 import type { Settings } from '../../types/Settings';
 import type {
     CustomKeybind,
@@ -11,6 +12,10 @@ import {
 } from '../../utils/locales';
 import { formatPercent } from '../../utils/number-format';
 
+import {
+    getBarWidthKeybinds,
+    getBarWidthModifier
+} from './bar-width';
 import { makeModifierText } from './editor-display';
 import {
     getGradientKeybinds,
@@ -71,15 +76,16 @@ export function formatUsageBar(
     percent: number,
     format: NumberFormat,
     settings: Settings,
+    context: RenderContext,
     getCursor: () => SliderBarOptions | undefined = () => undefined
 ): string | null {
     const mode = getUsageDisplayMode(item);
     let text: string;
     if (isUsageProgressMode(mode)) {
-        const progressBar = makeTimerProgressBar(percent, getUsageProgressBarWidth(mode), getCursor());
+        const progressBar = makeTimerProgressBar(percent, context.barCells ?? getUsageProgressBarWidth(mode), getCursor());
         text = `[${progressBar}] ${formatPercent(percent, format)}`;
     } else if (isUsageSliderMode(mode)) {
-        const slider = makeSliderBar(percent, undefined, getCursor());
+        const slider = makeSliderBar(percent, context.barCells, getCursor());
         text = mode === 'slider' ? `${slider} ${formatPercent(percent, format)}` : slider;
     } else {
         return null;
@@ -260,9 +266,8 @@ export function getUsageDisplayModifierText(
         modifiers.push(localeModifier);
     }
 
-    const gradientModifier = showsUsageBar(item) ? getGradientModifier(item) : null;
-    if (gradientModifier) {
-        modifiers.push(gradientModifier);
+    if (showsUsageBar(item)) {
+        modifiers.push(...[getBarWidthModifier(item), getGradientModifier(item)].filter((modifier): modifier is string => modifier !== null));
     }
 
     return makeModifierText(modifiers);
@@ -325,7 +330,8 @@ export function getUsagePercentCustomKeybinds(item?: WidgetItem, includeCursor =
         }
     }
 
-    keybinds.push(...getGradientKeybinds(item ? showsUsageBar(item) : false));
+    const showsBar = item ? showsUsageBar(item) : false;
+    keybinds.push(...getGradientKeybinds(showsBar), ...getBarWidthKeybinds(showsBar));
 
     return keybinds;
 }
@@ -375,7 +381,7 @@ export function getUsageTimerCustomKeybinds(
         }
     }
 
-    keybinds.push(...getGradientKeybinds(item !== undefined && isBarMode));
+    keybinds.push(...getGradientKeybinds(item !== undefined && isBarMode), ...getBarWidthKeybinds(item !== undefined && isBarMode));
 
     return keybinds;
 }

@@ -68,7 +68,7 @@ export abstract class ContextPercentageWidgetBase implements Widget {
 
         const displayPercentage = isInverse ? 100 - usedPercentage : usedPercentage;
         const format = resolveNumberFormat('percent', item, settings);
-        const slider = renderContextSlider(getContextSliderMode(item), displayPercentage, format);
+        const slider = renderContextSlider(getContextSliderMode(item), displayPercentage, format, context.barCells);
         const sliderResult = slider === null ? null : paintWidgetBar(slider, item, settings, isInverse);
         return formatRawOrLabeledValue(item, label, sliderResult ?? formatPercent(displayPercentage, format));
     }

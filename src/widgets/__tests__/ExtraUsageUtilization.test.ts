@@ -82,7 +82,8 @@ describe('ExtraUsageUtilizationWidget', () => {
         })).toEqual([
             { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
             { key: 'u', label: '(u) show remaining', action: 'toggle-invert' },
-            { key: 'g', label: '(g)radient', action: 'cycle-gradient' }
+            { key: 'g', label: '(g)radient', action: 'cycle-gradient' },
+            { key: 'b', label: '(b)ar width', action: 'edit-bar-width' }
         ]);
         expect(widget.getCustomKeybinds({
             ...baseItem,

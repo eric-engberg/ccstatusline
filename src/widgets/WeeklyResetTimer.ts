@@ -18,6 +18,7 @@ import {
     resolveWeeklyUsageWindow
 } from '../utils/usage';
 
+import { getBarWidthModifier } from './shared/bar-width';
 import { makeModifierText } from './shared/editor-display';
 import {
     CYCLE_GRADIENT_ACTION,
@@ -124,9 +125,8 @@ function getWeeklyResetModifierText(item: WidgetItem): string | undefined {
         modifiers.push(localeModifier);
     }
 
-    const gradientModifier = isBarMode ? getGradientModifier(item) : null;
-    if (gradientModifier) {
-        modifiers.push(gradientModifier);
+    if (isBarMode) {
+        modifiers.push(...[getBarWidthModifier(item), getGradientModifier(item)].filter((modifier): modifier is string => modifier !== null));
     }
 
     return makeModifierText(modifiers);
@@ -196,7 +196,7 @@ export class WeeklyResetTimerWidget implements Widget {
             // Matches WEEKLY_PREVIEW_DURATION_MS: 36.5h of the 168h week left
             const previewPercent = inverted ? 21.7 : 78.3;
 
-            const bar = formatUsageBar(item, previewPercent, format, settings);
+            const bar = formatUsageBar(item, previewPercent, format, settings, context);
             if (bar !== null) {
                 return formatRawOrLabeledValue(item, 'Weekly Reset ', bar);
             }
@@ -235,7 +235,7 @@ export class WeeklyResetTimerWidget implements Widget {
             return formatRawOrLabeledValue(item, 'Weekly Reset: ', USAGE_TIMER_LOADING_MESSAGE);
         }
 
-        const bar = formatUsageBar(item, inverted ? window.remainingPercent : window.elapsedPercent, format, settings);
+        const bar = formatUsageBar(item, inverted ? window.remainingPercent : window.elapsedPercent, format, settings, context);
         if (bar !== null) {
             return formatRawOrLabeledValue(item, 'Weekly Reset ', bar);
         }
