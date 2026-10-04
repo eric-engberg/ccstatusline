@@ -5,6 +5,9 @@ import type {
 } from '../../types/RenderContext';
 import type { Settings } from '../../types/Settings';
 import type {
+    CustomKeybind,
+    HideableState,
+    Widget,
     WidgetEditorDisplay,
     WidgetItem
 } from '../../types/Widget';
@@ -29,6 +32,7 @@ import {
     cycleUsageDisplayMode,
     formatUsageBar,
     getUsageDisplayModifierText,
+    getUsagePercentCustomKeybinds,
     isUsageCursorEnabled,
     isUsageInverted,
     toggleUsageCursor,
@@ -185,4 +189,43 @@ export function renderUsagePercentWidgetValue(
         const window = resolveUsageWindow(kind, data, context);
         return window ? { cursorPercent: window.elapsedPercent } : undefined;
     });
+}
+
+// Session, Weekly, Weekly Sonnet, Weekly Opus and Fable Weekly Usage differ only
+// in their kind
+export class UsagePercentWidget implements Widget {
+    private readonly kind: UsagePercentWidgetKind;
+
+    constructor(kind: UsagePercentWidgetKind) {
+        this.kind = kind;
+    }
+
+    getDefaultColor(): string { return 'brightBlue'; }
+    getDescription(): string { return getUsagePercentWidgetDescription(this.kind); }
+    getDisplayName(): string { return getUsagePercentWidgetDisplayName(this.kind); }
+    getCategory(): string { return 'Usage'; }
+
+    getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
+        return getUsagePercentWidgetEditorDisplay(this.kind, item);
+    }
+
+    getHideableStates(): HideableState[] {
+        return [USAGE_NO_DATA_HIDEABLE_STATE];
+    }
+
+    handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
+        return handleUsagePercentWidgetEditorAction(action, item);
+    }
+
+    render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
+        return renderUsagePercentWidgetValue(this.kind, item, context, settings);
+    }
+
+    getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
+        return getUsagePercentCustomKeybinds(item);
+    }
+
+    supportsRawValue(): boolean { return true; }
+    supportsColors(item: WidgetItem): boolean { return true; }
+    supportsNumberFormat(): boolean { return true; }
 }
