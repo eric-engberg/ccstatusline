@@ -13,12 +13,12 @@ import {
 import { formatPercent } from '../../utils/number-format';
 
 import {
-    areBarNumbersShown,
     getBarLayoutModifiers,
     getBarNumbersKeybinds,
     getBarStyle,
     keepBarLayout,
-    setBarStyle
+    setBarStyle,
+    showsBarPercent
 } from './bar-layout';
 import {
     getBarWidthKeybinds,
@@ -95,7 +95,7 @@ export function formatUsageBar(
     const bar = style === 'block'
         ? `[${makeTimerProgressBar(percent, cells, getCursor())}]`
         : makeSliderBar(percent, cells, getCursor());
-    const text = areBarNumbersShown(item) ? `${bar} ${formatPercent(percent, format)}` : bar;
+    const text = showsBarPercent(item) ? `${bar} ${formatPercent(percent, format)}` : bar;
     return paintWidgetBar(text, item, settings, isUsageInverted(item));
 }
 

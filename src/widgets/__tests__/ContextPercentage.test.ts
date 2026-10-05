@@ -114,7 +114,7 @@ describe('ContextPercentageWidget', () => {
         expect(text?.metadata).toEqual({ barWidth: 'short' });
         expect(again?.metadata).toEqual({ display: 'slider' });
         expect(widget.handleEditorAction('toggle-slider', { ...base, metadata: { display: 'slider-only' } })?.metadata)
-            .toEqual({ barWidth: 'short', barOnly: 'true' });
+            .toEqual({ barWidth: 'short', barNumbers: 'none' });
     });
 
     it('renders slider with percentage in slider mode', () => {

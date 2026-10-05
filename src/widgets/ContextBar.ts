@@ -19,11 +19,12 @@ import { formatTokens } from '../utils/renderer';
 import { makeUsageProgressBar } from '../utils/usage';
 
 import {
-    areBarNumbersShown,
     getBarLayoutModifiers,
     getBarNumbersKeybinds,
     getBarStyle,
-    setBarStyle
+    setBarStyle,
+    showsBarCounts,
+    showsBarPercent
 } from './shared/bar-layout';
 import {
     getBarWidthKeybinds,
@@ -82,8 +83,8 @@ export class ContextBarWidget implements Widget {
         const percentFormat = resolveNumberFormat('percent', item, settings);
 
         if (context.isPreview) {
-            const numbers = `${formatTokens(PREVIEW_USED_TOKENS, tokenFormat, 0)}/${formatTokens(PREVIEW_WINDOW_TOKENS, tokenFormat, 0)} (${formatPercent(PREVIEW_PERCENT, percentFormat, 0)})`;
-            return this.formatBar(item, PREVIEW_PERCENT, numbers, settings, context);
+            const counts = `${formatTokens(PREVIEW_USED_TOKENS, tokenFormat, 0)}/${formatTokens(PREVIEW_WINDOW_TOKENS, tokenFormat, 0)}`;
+            return this.formatBar(item, PREVIEW_PERCENT, counts, formatPercent(PREVIEW_PERCENT, percentFormat, 0), settings, context);
         }
 
         const contextWindowMetrics = getContextWindowMetrics(context.data);
@@ -105,17 +106,24 @@ export class ContextBarWidget implements Widget {
         }
 
         const clampedPercent = Math.max(0, Math.min(100, (used / total) * 100));
-        const numbers = `${formatTokens(used, tokenFormat, 0)}/${formatTokens(total, tokenFormat, 0)} (${formatPercent(clampedPercent, percentFormat, 0)})`;
-        return this.formatBar(item, clampedPercent, numbers, settings, context);
+        const counts = `${formatTokens(used, tokenFormat, 0)}/${formatTokens(total, tokenFormat, 0)}`;
+        return this.formatBar(item, clampedPercent, counts, formatPercent(clampedPercent, percentFormat, 0), settings, context);
     }
 
-    // "[████░░░░] 50k/200k (25%)" or "▓▓▓▓░░░░", in the bar's style and size
-    private formatBar(item: WidgetItem, percent: number, numbers: string, settings: Settings, context: RenderContext): string {
+    // "[████░░░░] 50k/200k (25%)", "▓▓▓▓░░░░ 25%" and so on: the bar in its style
+    // and size, then the numbers that are on
+    private formatBar(item: WidgetItem, percent: number, counts: string, percentText: string, settings: Settings, context: RenderContext): string {
         const barItem = withBarDisplay(item);
         const cells = context.barCells ?? getFixedBarCells(barItem);
         const bar = getBarStyle(barItem) === 'slider' ? makeSliderBar(percent, cells) : makeUsageProgressBar(percent, cells);
+        const showsCounts = showsBarCounts(barItem);
+        const showsPercent = showsBarPercent(barItem);
+        let numbers = showsCounts ? counts : percentText;
+        if (showsCounts && showsPercent) {
+            numbers = `${counts} (${percentText})`;
+        }
         const painted = paintWidgetBar(bar, item, settings);
-        const display = areBarNumbersShown(barItem) ? `${painted} ${numbers}` : painted;
+        const display = showsCounts || showsPercent ? `${painted} ${numbers}` : painted;
         return item.rawValue ? display : `Context: ${display}`;
     }
 
@@ -124,7 +132,7 @@ export class ContextBarWidget implements Widget {
             { key: 'p', label: '(p) bar style', action: 'toggle-progress' },
             ...getGradientKeybinds(true),
             ...getBarWidthKeybinds(true),
-            ...getBarNumbersKeybinds(item, true)
+            ...getBarNumbersKeybinds(item, true, true)
         ];
     }
 

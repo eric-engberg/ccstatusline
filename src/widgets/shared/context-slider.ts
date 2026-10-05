@@ -6,11 +6,11 @@ import type {
 import { formatPercent } from '../../utils/number-format';
 
 import {
-    areBarNumbersShown,
     getBarLayoutModifiers,
     getBarNumbersKeybinds,
     keepBarLayout,
-    setBarStyle
+    setBarStyle,
+    showsBarPercent
 } from './bar-layout';
 import {
     getBarWidthKeybinds,
@@ -55,7 +55,7 @@ export function renderContextSlider(item: WidgetItem, percent: number, format: N
         return null;
     }
     const slider = makeSliderBar(percent, cells ?? getFixedBarCells(item));
-    return areBarNumbersShown(item) ? `${slider} ${formatPercent(percent, format)}` : slider;
+    return showsBarPercent(item) ? `${slider} ${formatPercent(percent, format)}` : slider;
 }
 
 export function getContextSliderModifierText(item: WidgetItem): string | undefined {
