@@ -42,7 +42,7 @@ export function cycleContextSliderMode(item: WidgetItem): WidgetItem {
         return setBarStyle(item, 'slider', 'short');
     }
 
-    const nextMetadata = { ...(keepBarLayout(item).metadata ?? {}) };
+    const nextMetadata = { ...keepBarLayout(item).metadata };
     delete nextMetadata.display;
     return {
         ...item,
