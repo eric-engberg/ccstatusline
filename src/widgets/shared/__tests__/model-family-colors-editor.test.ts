@@ -12,13 +12,13 @@ import {
     ENTER,
     ESC,
     RIGHT,
-    renderColorEditor
-} from './helpers/color-list-editor-harness';
+    renderWidgetEditor
+} from './helpers/widget-editor-harness';
 
 const rawModel: WidgetItem = { id: 'm', type: 'model', rawValue: true };
 
 function renderEditor(widget: WidgetItem) {
-    return renderColorEditor(ModelFamilyColorsEditor, widget);
+    return renderWidgetEditor(ModelFamilyColorsEditor, widget);
 }
 
 describe('ModelFamilyColorsEditor', () => {

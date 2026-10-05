@@ -13,11 +13,11 @@ import {
     ESC,
     LEFT,
     RIGHT,
-    renderColorEditor
-} from './helpers/color-list-editor-harness';
+    renderWidgetEditor
+} from './helpers/widget-editor-harness';
 
 function renderEditor(widget: WidgetItem) {
-    return renderColorEditor(EffortColorsEditor, widget);
+    return renderWidgetEditor(EffortColorsEditor, widget);
 }
 
 const rawWithParens: WidgetItem = { id: 'e', type: 'thinking-effort', rawValue: true, metadata: { brackets: '()' } };
