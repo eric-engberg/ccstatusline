@@ -33,8 +33,37 @@ const firstGroup = GLYPH_GROUPS[0];
 const lastGroup = GLYPH_GROUPS.at(-1);
 const groupHeader = (index: number) => `${GLYPH_GROUPS[index]?.name} (${index + 1}/${GLYPH_GROUPS.length})`;
 
-function savedWidget(editor: ReturnType<typeof renderWidgetEditor>): WidgetItem | undefined {
+type Editor = ReturnType<typeof renderWidgetEditor>;
+
+function savedWidget(editor: Editor): WidgetItem | undefined {
     return editor.onComplete.mock.calls.at(-1)?.[0];
+}
+
+// The picker loads its glyphs when it opens, so it draws "Loading glyphs…"
+// first; this waits for the text it draws once they're in
+async function waitForOutput(editor: Editor, text: string): Promise<string> {
+    let output = '';
+    const deadline = Date.now() + 3000;
+    do {
+        output += editor.takeOutput();
+        if (output.includes(text)) {
+            return output;
+        }
+        await new Promise((resolve) => {
+            setTimeout(resolve, 10);
+        });
+    } while (Date.now() < deadline);
+    throw new Error(`The picker never showed ${JSON.stringify(text)}`);
+}
+
+// → opens the picker for the highlighted row; returns what it drew
+async function openPicker(editor: Editor): Promise<string> {
+    await editor.press(RIGHT);
+    return waitForOutput(editor, 'Pick a glyph');
+}
+
+async function type(editor: Editor, text: string): Promise<void> {
+    await editor.press(...Array.from(text));
 }
 
 describe('glyph picker', () => {
@@ -44,8 +73,7 @@ describe('glyph picker', () => {
         try {
             await editor.ready();
             expect(editor.takeOutput()).toContain('→ pick from a list');
-            await editor.press(RIGHT);
-            const output = editor.takeOutput();
+            const output = await openPicker(editor);
             expect(output).toContain(`Pick a glyph: ${groupHeader(0)}`);
             expect(output).toContain(firstGroup?.glyphs[0]?.name);
         } finally {
@@ -58,7 +86,8 @@ describe('glyph picker', () => {
 
         try {
             await editor.ready();
-            await editor.press(RIGHT, RIGHT);
+            await openPicker(editor);
+            await editor.press(RIGHT);
             expect(editor.takeOutput()).toContain(firstGroup?.glyphs[1]?.name);
             await editor.press(DOWN);
             expect(editor.takeOutput()).toContain(firstGroup?.glyphs[11]?.name);
@@ -72,7 +101,8 @@ describe('glyph picker', () => {
 
         try {
             await editor.ready();
-            await editor.press(RIGHT, TAB);
+            await openPicker(editor);
+            await editor.press(TAB);
             expect(editor.takeOutput()).toContain(groupHeader(1));
             await editor.press(SHIFT_TAB, SHIFT_TAB);
             expect(editor.takeOutput()).toContain(groupHeader(GLYPH_GROUPS.length - 1));
@@ -88,10 +118,10 @@ describe('glyph picker', () => {
 
         try {
             await editor.ready();
-            await editor.press(RIGHT, SHIFT_TAB);
-            const output = editor.takeOutput();
+            await openPicker(editor);
+            await editor.press(SHIFT_TAB);
             expect(lastGroup?.needsNerdFont).toBe(true);
-            expect(output).toContain('Needs a Nerd Font');
+            expect(editor.takeOutput()).toContain('Needs a Nerd Font');
         } finally {
             editor.cleanup();
         }
@@ -102,7 +132,8 @@ describe('glyph picker', () => {
 
         try {
             await editor.ready();
-            await editor.press(RIGHT, RIGHT);
+            await openPicker(editor);
+            await editor.press(RIGHT);
             editor.takeOutput();
             await editor.press(ENTER);
             const output = editor.takeOutput();
@@ -121,7 +152,8 @@ describe('glyph picker', () => {
 
         try {
             await editor.ready();
-            await editor.press(RIGHT, RIGHT);
+            await openPicker(editor);
+            await editor.press(RIGHT);
             editor.takeOutput();
             await editor.press(ESC);
             const output = editor.takeOutput();
@@ -142,8 +174,7 @@ describe('glyph picker', () => {
 
         try {
             await editor.ready();
-            await editor.press(RIGHT);
-            const output = editor.takeOutput();
+            const output = await openPicker(editor);
             expect(output).toContain(groupHeader(groupIndex));
             expect(output).toContain(entry?.name);
         } finally {
@@ -161,10 +192,69 @@ describe('glyph picker', () => {
 
         try {
             await editor.ready();
-            await editor.press(DOWN, RIGHT, ENTER, ENTER);
+            await editor.press(DOWN);
+            await openPicker(editor);
+            await editor.press(ENTER, ENTER);
             expect(savedWidget(editor)?.metadata).toEqual({ deleteGlyph: firstGroup?.glyphs[0]?.glyph });
         } finally {
             editor.cleanup();
         }
+    });
+
+    describe('search', () => {
+        it('finds any Nerd Font glyph by the words of its name, and picks it', async () => {
+            const editor = renderWidgetEditor(singleGlyphEditor, cwd);
+
+            try {
+                await editor.ready();
+                await openPicker(editor);
+                await type(editor, 'pull req create');
+                const output = editor.takeOutput();
+                expect(output).toMatch(/Pick a glyph: "pull req create" \(\d+ match/);
+                expect(output).toContain('git pull request create (nf-cod-git_pull_request_create)');
+                expect(output).toContain('Needs a Nerd Font');
+                await editor.press(ENTER, ENTER);
+                expect(savedWidget(editor)?.character).toBe('');
+            } finally {
+                editor.cleanup();
+            }
+        });
+
+        it('edits the search with Backspace, clears it with ESC, and goes back on a second ESC', async () => {
+            const editor = renderWidgetEditor(singleGlyphEditor, cwd);
+
+            try {
+                await editor.ready();
+                await openPicker(editor);
+                await type(editor, 'folderx');
+                expect(editor.takeOutput()).toContain('No glyph names match.');
+                await editor.press('\x7f');
+                expect(editor.takeOutput()).toContain('Pick a glyph: "folder"');
+                await editor.press(ESC);
+                expect(editor.takeOutput()).toContain(`Pick a glyph: ${groupHeader(0)}`);
+                await editor.press(ESC);
+                expect(editor.takeOutput()).not.toContain('Pick a glyph');
+                expect(editor.onCancel).not.toHaveBeenCalled();
+            } finally {
+                editor.cleanup();
+            }
+        });
+
+        it('scrolls a long list of matches to keep the highlighted glyph in view', async () => {
+            const editor = renderWidgetEditor(singleGlyphEditor, cwd);
+
+            try {
+                await editor.ready();
+                await openPicker(editor);
+                await type(editor, 'folder');
+                expect(editor.takeOutput()).toContain('↓ more');
+                await editor.press(DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, DOWN);
+                const output = editor.takeOutput();
+                expect(output).toContain('↑ more');
+                expect(output).toMatch(/\[.{1,2}\s*\]/);
+            } finally {
+                editor.cleanup();
+            }
+        });
     });
 });
