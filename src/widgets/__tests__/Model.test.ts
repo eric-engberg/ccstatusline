@@ -30,6 +30,16 @@ describe('ModelWidget', () => {
             expect(new ModelWidget().render(RAW_ITEM, ctx, DEFAULT_SETTINGS)).toBe('Sonnet 4.6');
         });
 
+        it.each([
+            ['Opus 4.6 (beta) (1M context)', 'Opus 4.6'],
+            ['Opus 4.6\t(1M context)', 'Opus 4.6'],
+            ['Opus 4.6 (beta) preview', 'Opus 4.6 (beta) preview'],
+            ['Opus 4.6 (1M context', 'Opus 4.6 (1M context']
+        ])('strips only a trailing parenthetical, from its first "(": %j', (displayName, expected) => {
+            const ctx = makeContext({ data: { model: { id: 'claude-opus-4-6', display_name: displayName } } });
+            expect(new ModelWidget().render(RAW_ITEM, ctx, DEFAULT_SETTINGS)).toBe(expected);
+        });
+
         it('leaves name unchanged when no parenthetical', () => {
             const ctx = makeContext({ data: { model: { id: 'claude-sonnet-4-6', display_name: 'Sonnet 4.6' } } });
             expect(new ModelWidget().render(RAW_ITEM, ctx, DEFAULT_SETTINGS)).toBe('Sonnet 4.6');

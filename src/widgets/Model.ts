@@ -23,6 +23,13 @@ import {
     isFamilyColorsEnabled
 } from './shared/model-family-style';
 
+// Drops a trailing parenthetical such as "(1M context)", from its first "(".
+// String search rather than a regex, which would backtrack on long names.
+function stripTrailingParenthetical(name: string): string {
+    const open = name.indexOf('(');
+    return open !== -1 && name.endsWith(')') ? name.slice(0, open).trimEnd() : name;
+}
+
 export class ModelWidget implements Widget {
     getDefaultColor(): string { return MODEL_DEFAULT_COLOR; }
     getDescription(): string { return 'Displays the Claude model name (e.g., Claude 3.5 Sonnet).\nOptionally colors it by model family (Opus, Sonnet, Haiku, Fable).'; }
@@ -49,7 +56,7 @@ export class ModelWidget implements Widget {
             if (!modelDisplayName) {
                 return null;
             }
-            name = modelDisplayName.replace(/\s*\(.*\)$/, '');
+            name = stripTrailingParenthetical(modelDisplayName);
             id = typeof model === 'string' ? undefined : model?.id;
         }
 
