@@ -80,9 +80,9 @@ describe('cycleUsageDisplayMode with slider', () => {
 
     it('keeps a short bar only setting\'s size and numbers through the text', () => {
         const text = cycleUsageDisplayMode({ ...base, metadata: { display: 'slider-only' } }, [], true);
-        expect(text.metadata).toEqual({ display: 'time', barWidth: 'short', barOnly: 'true' });
-        expect(cycleUsageDisplayMode(text, [], true).metadata).toEqual({ display: 'progress-short', barWidth: 'short', barOnly: 'true' });
-        expect(cycleUsageDisplayMode({ ...base, metadata: { display: 'time', barOnly: 'true' } }, [], true).metadata).toEqual({ display: 'progress', barOnly: 'true' });
+        expect(text.metadata).toEqual({ display: 'time', barWidth: 'short', barNumbers: 'none' });
+        expect(cycleUsageDisplayMode(text, [], true).metadata).toEqual({ display: 'progress-short', barWidth: 'short', barNumbers: 'none' });
+        expect(cycleUsageDisplayMode({ ...base, metadata: { display: 'time', barNumbers: 'none' } }, [], true).metadata).toEqual({ display: 'progress', barNumbers: 'none' });
     });
 
     it('keeps cursor metadata through the bar styles and clears it when returning to time mode', () => {

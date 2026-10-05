@@ -199,12 +199,13 @@ describe('ItemsEditor bar width', () => {
         });
     });
 
-    it('hides the numbers after the bar with n', async () => {
+    // The Context Bar's counts and percent: both, the percent only, the counts only, none
+    it('steps through the numbers after the bar with n', async () => {
         await withEditor(async ({ press, screen, onUpdate }) => {
-            expect(screen()).toContain('(n) hide numbers');
+            expect(screen()).toContain('(n)umbers');
             press('n');
             await waitFor(() => {
-                expect(onUpdate).toHaveBeenCalledWith([{ ...bar, metadata: { display: 'progress', barOnly: 'true' } }]);
+                expect(onUpdate).toHaveBeenCalledWith([{ ...bar, metadata: { display: 'progress', barNumbers: 'percent' } }]);
             });
         });
     });

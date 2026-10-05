@@ -96,7 +96,7 @@ describe('bar sizes and numbers', () => {
 
     it.each(BAR_STYLES)('%s in %s mode shows only its bar with the numbers off', (type, display) => {
         expect(renderPreview(type, { display })).not.toMatch(ENDS_WITH_BAR);
-        expect(renderPreview(type, { display, barOnly: 'true' })).toMatch(ENDS_WITH_BAR);
+        expect(renderPreview(type, { display, barNumbers: 'none' })).toMatch(ENDS_WITH_BAR);
     });
 });
 
