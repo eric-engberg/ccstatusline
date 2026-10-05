@@ -662,6 +662,17 @@ describe('today\'s extra usage spend', () => {
         ]);
     });
 
+    it('also fetches the monthly limit when Extra Usage Today has value colors', async () => {
+        vi.spyOn(usage, 'getUsageAccountKey').mockReturnValue('work-login');
+        vi.spyOn(usage, 'getUsageFetchedAt').mockReturnValue(FETCHED_AT);
+
+        await prefetchUsageDataIfNeeded(makeLines([{ id: '1', type: 'extra-usage-today', metadata: { valueColors: 'true' } }]), {});
+
+        expect(mockFetchUsageData.mock.calls).toEqual([
+            [{ requiredFields: ['extraUsageEnabled', 'extraUsageUsed', 'extraUsageLimit'] }]
+        ]);
+    });
+
     it('leaves today\'s spend out when the login is unknown', async () => {
         vi.spyOn(usage, 'getUsageAccountKey').mockReturnValue(null);
         vi.spyOn(usage, 'getUsageFetchedAt').mockReturnValue(FETCHED_AT);

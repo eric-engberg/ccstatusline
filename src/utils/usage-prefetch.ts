@@ -122,12 +122,20 @@ const USAGE_CURSOR_REQUIREMENTS: Record<string, UsageFieldRequirement> = {
     ...Object.fromEntries(WEEKLY_MODEL_USAGE_BUCKETS.map(bucket => [bucket.widgetType, { field: bucket.resetField, alternatives: ['weeklyResetAt'] }]))
 };
 
+// Extra Usage Today's value colors measure today's spend against what was left
+// of the monthly limit when the day began
+const VALUE_COLORS_REQUIREMENTS: Record<string, UsageFieldRequirement> = { 'extra-usage-today': { field: 'extraUsageLimit' } };
+
 export function hasUsageDependentWidgets(lines: WidgetItem[][]): boolean {
     return lines.some(line => line.some(item => USAGE_WIDGET_TYPES.has(item.type)));
 }
 
 function isUsageCursorEnabled(item: WidgetItem): boolean {
     return item.metadata?.cursor === 'true';
+}
+
+function isValueColorsEnabled(item: WidgetItem): boolean {
+    return item.metadata?.valueColors === 'true';
 }
 
 function getUsageFieldRequirements(lines: WidgetItem[][]): UsageFieldRequirement[] {
@@ -140,6 +148,11 @@ function getUsageFieldRequirements(lines: WidgetItem[][]): UsageFieldRequirement
             const cursorRequirement = USAGE_CURSOR_REQUIREMENTS[item.type];
             if (cursorRequirement && isUsageCursorEnabled(item)) {
                 requirements.push(cursorRequirement);
+            }
+
+            const valueColorsRequirement = VALUE_COLORS_REQUIREMENTS[item.type];
+            if (valueColorsRequirement && isValueColorsEnabled(item)) {
+                requirements.push(valueColorsRequirement);
             }
         }
     }
