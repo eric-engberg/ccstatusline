@@ -98,7 +98,8 @@ export const GlyphPicker: React.FC<GlyphPickerProps> = ({ initialGlyph, onPick, 
             {group.needsNerdFont && <Text dimColor>Needs a Nerd Font; shows boxes without one.</Text>}
             <Box marginTop={1} flexDirection='column'>
                 {chunkRows(group).map((row, rowIndex) => (
-                    <Text key={rowIndex}>
+                    // A row's glyphs are unique within the group
+                    <Text key={row.join('')}>
                         {row.map((glyph, column) => formatCell(glyph, rowIndex * COLUMNS + column === position.index)).join('')}
                     </Text>
                 ))}
