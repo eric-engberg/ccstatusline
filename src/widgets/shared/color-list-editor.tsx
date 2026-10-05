@@ -1,7 +1,8 @@
 import {
     Box,
     Text,
-    useInput
+    useInput,
+    type Key
 } from 'ink';
 import React, { useState } from 'react';
 
@@ -35,9 +36,10 @@ const NAMED_COLORS = getAvailableColorsForUI().map(color => color.value).filter(
 // starts at either end of it
 function cycleNamedColor(current: string, direction: 1 | -1): string {
     const index = NAMED_COLORS.indexOf(current);
-    const nextIndex = index === -1
-        ? (direction === 1 ? 0 : NAMED_COLORS.length - 1)
-        : (index + direction + NAMED_COLORS.length) % NAMED_COLORS.length;
+    let nextIndex = (index + direction + NAMED_COLORS.length) % NAMED_COLORS.length;
+    if (index === -1) {
+        nextIndex = direction === 1 ? 0 : NAMED_COLORS.length - 1;
+    }
     return NAMED_COLORS[nextIndex] ?? current;
 }
 
@@ -100,7 +102,7 @@ interface TypedInput {
 
 export interface ColorListEditorProps<C extends string, X extends string> extends WidgetEditorProps { config: ColorListEditorConfig<C, X> }
 
-export function ColorListEditor<C extends string, X extends string = never>({ widget, onComplete, onCancel, config }: ColorListEditorProps<C, X>): React.ReactElement {
+export function ColorListEditor<C extends string, X extends string = never>({ widget, onComplete, onCancel, config }: Readonly<ColorListEditorProps<C, X>>): React.ReactElement {
     const { rows } = config;
     const firstColorRow = rows.find(row => row.kind === 'color');
     const [draft, setDraft] = useState(widget);
@@ -142,18 +144,33 @@ export function ColorListEditor<C extends string, X extends string = never>({ wi
         return null;
     };
 
+    // Keys while a custom color or a number is being typed
+    const handleTypedInput = (inputChar: string, key: Key, current: TypedInput) => {
+        if (key.escape) {
+            setInput(null);
+        } else if (key.return) {
+            const error = applyInput(current.text);
+            setInput(error === null ? null : { text: current.text, error });
+        } else if (key.backspace || key.delete) {
+            setInput({ text: current.text.slice(0, -1), error: null });
+        } else if (shouldInsertInput(inputChar, key)) {
+            setInput({ text: current.text + inputChar, error: null });
+        }
+    };
+
+    // ←→: the next named color on a color row, the next value on a setting row
+    const changeSelected = (direction: 1 | -1) => {
+        if (selectedRow?.kind === 'setting' && config.cycleSetting) {
+            setDraft(config.cycleSetting(draft, selectedRow.key, direction));
+        } else if (selectedRow?.kind === 'color') {
+            const current = config.getColor(draft, selectedRow.key);
+            setDraft(config.setColor(draft, selectedRow.key, cycleNamedColor(current, direction)));
+        }
+    };
+
     useInput((inputChar, key) => {
         if (input !== null) {
-            if (key.escape) {
-                setInput(null);
-            } else if (key.return) {
-                const error = applyInput(input.text);
-                setInput(error === null ? null : { text: input.text, error });
-            } else if (key.backspace || key.delete) {
-                setInput({ text: input.text.slice(0, -1), error: null });
-            } else if (shouldInsertInput(inputChar, key)) {
-                setInput({ text: input.text + inputChar, error: null });
-            }
+            handleTypedInput(inputChar, key, input);
             return;
         }
 
@@ -164,19 +181,11 @@ export function ColorListEditor<C extends string, X extends string = never>({ wi
         } else if (key.escape) {
             onCancel();
         } else if (key.upArrow) {
-            moveTo(selectedIndex - 1 < 0 ? rows.length - 1 : selectedIndex - 1);
+            moveTo((selectedIndex - 1 + rows.length) % rows.length);
         } else if (key.downArrow) {
-            moveTo(selectedIndex + 1 > rows.length - 1 ? 0 : selectedIndex + 1);
+            moveTo((selectedIndex + 1) % rows.length);
         } else if (key.leftArrow || key.rightArrow) {
-            const direction = key.rightArrow ? 1 : -1;
-            if (selectedRow?.kind === 'setting') {
-                if (config.cycleSetting) {
-                    setDraft(config.cycleSetting(draft, selectedRow.key, direction));
-                }
-            } else if (selectedRow?.kind === 'color') {
-                const current = config.getColor(draft, selectedRow.key);
-                setDraft(config.setColor(draft, selectedRow.key, cycleNamedColor(current, direction)));
-            }
+            changeSelected(key.rightArrow ? 1 : -1);
         } else if (shortcut === ' ') {
             setDraft(config.setEnabled(draft, !enabled));
         } else if (shortcut === 'x' && selectedRow?.kind === 'color') {
