@@ -37,17 +37,24 @@ jobs:
           # Full history: new-code detection and issue attribution use git blame.
           fetch-depth: 0
           persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      - run: bun install --frozen-lockfile --ignore-scripts
+      # Coverage for the quality gate's new-code coverage condition. Without a
+      # report, the scanner counts new code as 0% covered and the gate fails.
+      - run: bun test --coverage --coverage-reporter=lcov
       - uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           # Same scope automatic analysis used: the whole repo, with tests
           # recognized by the project's Test File Inclusions pattern. Images are
-          # excluded: the scanner reads every source file as UTF-8 text.
+          # excluded (the scanner reads every source file as UTF-8 text), and so are
+          # node_modules and the coverage output the steps above create.
           args: >
             -Dsonar.organization=eric-engberg
             -Dsonar.projectKey=eric-engberg_ccstatusline
             -Dsonar.sources=.
             -Dsonar.tests=.
             -Dsonar.test.inclusions=**/__tests__/**
-            -Dsonar.exclusions=**/__tests__/**,**/*.png,**/*.gif
+            -Dsonar.exclusions=**/__tests__/**,**/*.png,**/*.gif,node_modules/**,coverage/**
+            -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info
