@@ -42,11 +42,12 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         with:
           # Same scope automatic analysis used: the whole repo, with tests
-          # recognized by the project's Test File Inclusions pattern.
+          # recognized by the project's Test File Inclusions pattern. Images are
+          # excluded: the scanner reads every source file as UTF-8 text.
           args: >
             -Dsonar.organization=eric-engberg
             -Dsonar.projectKey=eric-engberg_ccstatusline
             -Dsonar.sources=.
             -Dsonar.tests=.
             -Dsonar.test.inclusions=**/__tests__/**
-            -Dsonar.exclusions=**/__tests__/**
+            -Dsonar.exclusions=**/__tests__/**,**/*.png,**/*.gif
