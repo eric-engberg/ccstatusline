@@ -1,3 +1,6 @@
+import type { StatusJSON } from '../types/StatusJSON';
+import type { WidgetItem } from '../types/Widget';
+
 import type {
     DailyStateDeps,
     SessionDayRecord
@@ -146,4 +149,34 @@ export function observeSessionCost(profileKey: string, sessionId: string, sample
         result.sessions = { ...profile, [sessionId]: advanceSessionRecord(profile[sessionId], sample, nowMs) };
     }
     return computeDailyTotals(result.sessions, nowMs);
+}
+
+// Sessions belong to a Claude Code profile: a CLAUDE_CONFIG_DIR profile (a
+// second login, say) keeps its own daily totals.
+function getProfileKey(): string {
+    const configDir = process.env.CLAUDE_CONFIG_DIR?.trim();
+    return configDir && configDir.length > 0 ? configDir : 'default';
+}
+
+/**
+ * Records this render's session totals and returns today's totals for its
+ * profile, when a line shows Daily Cost Rate and the payload carries the
+ * session id, cost and both durations. Otherwise records nothing.
+ */
+export function prefetchDailyCostIfNeeded(lines: WidgetItem[][], data: StatusJSON | undefined, deps?: DailyStateDeps): DailyCostTotals | null {
+    if (!lines.some(line => line.some(item => item.type === 'daily-cost-rate'))) {
+        return null;
+    }
+
+    const sessionId = data?.session_id;
+    const cost = data?.cost;
+    if (!sessionId || cost?.total_cost_usd === undefined || cost.total_api_duration_ms === undefined || cost.total_duration_ms === undefined) {
+        return null;
+    }
+
+    return observeSessionCost(getProfileKey(), sessionId, {
+        cost: cost.total_cost_usd,
+        apiMs: cost.total_api_duration_ms,
+        durationMs: cost.total_duration_ms
+    }, deps);
 }

@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import {
     afterEach,
+    beforeEach,
     describe,
     expect,
     it
@@ -9,7 +10,8 @@ import {
 import {
     advanceSessionRecord,
     computeDailyTotals,
-    observeSessionCost
+    observeSessionCost,
+    prefetchDailyCostIfNeeded
 } from '../daily-cost';
 import type {
     DailyStateDeps,
@@ -190,5 +192,53 @@ describe('observeSessionCost', () => {
         expect(observeSessionCost('default', 's1', { cost: 2.5, apiMs: 30 * MINUTE, durationMs: HOUR }, deps))
             .toEqual({ claudeCodeCost: 2.5, activeMs: 30 * MINUTE, clockMs: HOUR });
         expect(deps.writes).toBe(0);
+    });
+});
+
+describe('prefetchDailyCostIfNeeded', () => {
+    const rateLine = [[{ id: '1', type: 'daily-cost-rate' }]];
+    const payload = {
+        session_id: 's1',
+        cost: { total_cost_usd: 2.5, total_api_duration_ms: 30 * MINUTE, total_duration_ms: HOUR }
+    };
+    let savedConfigDir: string | undefined;
+
+    beforeEach(() => {
+        savedConfigDir = process.env.CLAUDE_CONFIG_DIR;
+        delete process.env.CLAUDE_CONFIG_DIR;
+    });
+
+    afterEach(() => {
+        if (savedConfigDir === undefined) {
+            delete process.env.CLAUDE_CONFIG_DIR;
+        } else {
+            process.env.CLAUDE_CONFIG_DIR = savedConfigDir;
+        }
+        fs.rmSync(LOCK_PATH, { force: true });
+    });
+
+    it('records nothing when no line shows Daily Cost Rate', () => {
+        const deps = makeDeps(null);
+
+        expect(prefetchDailyCostIfNeeded([[{ id: '1', type: 'session-cost' }]], payload, deps)).toBeNull();
+        expect(deps.writes).toBe(0);
+    });
+
+    it('records nothing without a session id and its cost and durations', () => {
+        const deps = makeDeps(null);
+
+        expect(prefetchDailyCostIfNeeded(rateLine, { cost: payload.cost }, deps)).toBeNull();
+        expect(prefetchDailyCostIfNeeded(rateLine, { session_id: 's1', cost: { total_cost_usd: 2.5 } }, deps)).toBeNull();
+        expect(deps.writes).toBe(0);
+    });
+
+    it('records the session under its Claude Code profile and returns today\'s totals', () => {
+        const deps = makeDeps(null);
+
+        expect(prefetchDailyCostIfNeeded(rateLine, payload, deps)).toEqual({ claudeCodeCost: 2.5, activeMs: 30 * MINUTE, clockMs: HOUR });
+        process.env.CLAUDE_CONFIG_DIR = '/Users/me/.claude-work';
+        prefetchDailyCostIfNeeded(rateLine, { ...payload, session_id: 's2' }, deps);
+
+        expect(Object.keys(readDailyState(deps).sessions).sort()).toEqual(['/Users/me/.claude-work', 'default']);
     });
 });
