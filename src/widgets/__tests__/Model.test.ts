@@ -66,4 +66,62 @@ describe('ModelWidget', () => {
             expect(new ModelWidget().render(RAW_ITEM, ctx, DEFAULT_SETTINGS)).toBe('claude-opus-4-6[1m]');
         });
     });
+
+    describe('family colors', () => {
+        const ORANGE = '\x1b[38;2;255;136;0m';
+        const BLUE = '\x1b[38;2;0;0;255m';
+        const BASE = '\x1b[38;2;17;34;51m';
+        const FG_RESET = '\x1b[39m';
+        // Custom colors, so the escape codes don't depend on the terminal's
+        // color support (named colors go through chalk)
+        const familyItem: WidgetItem = {
+            id: 'model',
+            type: 'model',
+            color: 'hex:112233',
+            metadata: { 'familyColors': 'true', 'familyColor.opus': 'hex:ff8800', 'familyColor.sonnet': 'hex:0000ff' }
+        };
+
+        it('colors the name by the model\'s family and keeps the label in the widget color', () => {
+            const ctx = makeContext({ data: { model: { id: 'claude-opus-5-5', display_name: 'Opus 5.5' } } });
+
+            expect(new ModelWidget().render(familyItem, ctx, DEFAULT_SETTINGS)).toBe(`${BASE}Model: ${FG_RESET}${ORANGE}Opus 5.5${FG_RESET}`);
+        });
+
+        it('finds the family in the model id when the display name doesn\'t name it', () => {
+            const ctx = makeContext({ data: { model: { id: 'claude-sonnet-4-6', display_name: 'Claude' } } });
+
+            expect(new ModelWidget().render({ ...familyItem, rawValue: true }, ctx, DEFAULT_SETTINGS)).toBe(`${BLUE}Claude${FG_RESET}`);
+        });
+
+        it('renders plain text when colors are off for the whole status line', () => {
+            const ctx = makeContext({ data: { model: { id: 'claude-opus-5-5', display_name: 'Opus 5.5' } } });
+
+            expect(new ModelWidget().render(familyItem, ctx, { ...DEFAULT_SETTINGS, colorLevel: 0 })).toBe('Model: Opus 5.5');
+        });
+
+        it('previews as Opus in its family color while family colors are on', () => {
+            const widget = new ModelWidget();
+
+            expect(widget.render(familyItem, makeContext({ isPreview: true }), DEFAULT_SETTINGS)).toBe(`${BASE}Model: ${FG_RESET}${ORANGE}Opus${FG_RESET}`);
+            expect(widget.render(ITEM, makeContext({ isPreview: true }), DEFAULT_SETTINGS)).toBe('Model: Claude');
+        });
+
+        it('opens the family colors editor with f and names the option on the editor row', () => {
+            const widget = new ModelWidget();
+
+            expect(widget.getCustomKeybinds()).toEqual([{ key: 'f', label: '(f)amily colors', action: 'edit-family-colors' }]);
+            expect(widget.getEditorDisplay(familyItem).modifierText).toBe('(family colors)');
+            expect(widget.getEditorDisplay(ITEM).modifierText).toBeUndefined();
+            expect(widget.renderEditor({ widget: ITEM, onComplete: () => undefined, onCancel: () => undefined })).toBeTruthy();
+        });
+
+        // Family colors embed their own foreground codes, so the renderer has
+        // to leave this widget's foreground alone
+        it('keeps its own colors only while family colors are on', () => {
+            const widget = new ModelWidget();
+
+            expect(widget.preservesRenderedColors(familyItem)).toBe(true);
+            expect(widget.preservesRenderedColors(ITEM)).toBe(false);
+        });
+    });
 });

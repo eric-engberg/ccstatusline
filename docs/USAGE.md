@@ -27,7 +27,7 @@ ccstatusline --version
 
 ### Claude & Session
 
-- **Model** / **Output Style** / **Version** - Show the active Claude model, output style, and Claude Code CLI version. Model names omit trailing context suffixes like `(1M context)`; use **Context Window** when you want the total window size shown.
+- **Model** / **Output Style** / **Version** - Show the active Claude model, output style, and Claude Code CLI version. Model names omit trailing context suffixes like `(1M context)`; use **Context Window** when you want the total window size shown. Model can color the name by family (Opus magenta, Sonnet cyan, Haiku green, Fable red by default, matched in the display name or id); the `Model: ` label keeps the widget color, and other models keep it too.
 - **Claude Session ID** / **Session Name** / **Claude Account Email** - Show session identifiers plus the currently signed-in Claude account email.
 - **Claude Status** - Show the current Claude/Anthropic service status from `status.claude.com` (`ok` when the indicator is `none`, otherwise the indicator word such as `minor`, `major`, `critical`, or `maintenance`). Press `h` in the editor to add a 48-hour incident-history strip of eight six-hour blocks (oldest to newest), each colored by the worst incident overlapping that block: green (none), yellow (minor), orange (major), red (critical). Responses are cached for about five minutes; on network failure the widget shows stale data when available or degrades to `?`. With the history strip enabled the widget colors itself by severity, so per-widget foreground colors and theme foregrounds are skipped, like Custom Command's preserve-colors mode.
 - **Voice Status** - Show whether Claude Code voice input is enabled. It can render as an icon, icon plus text, plain text, or `voice on/off`, with optional Nerd Font microphone icons.
@@ -265,6 +265,7 @@ The keybind footer in the TUI only shows shortcuts that apply to the currently s
 
 Widget-specific shortcuts:
 - **Glyph widgets** (Git Branch, Git Worktree, Git Worktree Mode, Git Staged, Git Unstaged, Git Untracked, Git Conflicts, Git Ahead/Behind, Git Status, Git Changes, Git Insertions, Git Deletions, Git Clean Status, JJ Revision, JJ Bookmarks, JJ Workspace, JJ Changes, JJ Insertions, JJ Deletions): `g` set custom glyphs for the widget's symbols; Backspace in the editor renders without one, and multi-symbol widgets (Ahead/Behind, Status, Conflicts, Changes, Clean Status) edit each part in one list
+- **Model**: `f` edit family colors: Space turns them on, ←→ cycle a family's named color, `x` sets a custom color (#RRGGBB or 0-255), `d` restores the defaults
 - **Git Branch**: `l` toggle clickable branch links (GitHub, GitLab, self-hosted), `w` set a maximum visible width (blank removes the limit)
 - **Git Root Dir**: `l` cycle IDE links (`off` → `VS Code` → `Cursor`), `w` set a maximum visible width (blank removes the limit)
 - **Git PR**: `s` toggle review status, `t` toggle title (renders "MR" for GitLab origins)
