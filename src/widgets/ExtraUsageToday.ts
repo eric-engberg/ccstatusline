@@ -16,10 +16,10 @@ import { isHidden } from './shared/hideable';
 import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
 import { USAGE_NO_DATA_HIDEABLE_STATE } from './shared/usage-display';
 
-export class ExtraUsageRemainingWidget implements Widget {
+export class ExtraUsageTodayWidget implements Widget {
     getDefaultColor(): string { return 'green'; }
-    getDescription(): string { return 'Shows what\'s left of your monthly extra usage limit (Pro/Max overage or Enterprise spend)'; }
-    getDisplayName(): string { return 'Extra Usage Remaining'; }
+    getDescription(): string { return 'Shows the extra usage spent today (since 00:00 UTC), including claude.ai and other machines'; }
+    getDisplayName(): string { return 'Extra Usage Today'; }
     getCategory(): string { return 'Usage'; }
 
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
@@ -31,10 +31,10 @@ export class ExtraUsageRemainingWidget implements Widget {
     }
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
-        const label = `${getExtraUsageLabel(context.usageData)} Left: `;
+        const label = `${getExtraUsageLabel(context.usageData)} Today: `;
         const format = resolveNumberFormat('cost', item, settings);
         if (context.isPreview) {
-            return formatRawOrLabeledValue(item, label, formatUsageCurrency(3894, undefined, format));
+            return formatRawOrLabeledValue(item, label, formatUsageCurrency(46.1, undefined, format));
         }
 
         const data = context.usageData ?? {};
@@ -43,7 +43,7 @@ export class ExtraUsageRemainingWidget implements Widget {
                 ? null
                 : formatRawOrLabeledValue(item, label, 'n/a');
         }
-        if (data.extraUsageEnabled !== true || data.extraUsageLimit === undefined || data.extraUsageUsed === undefined) {
+        if (data.extraUsageEnabled !== true || data.extraUsageUsed === undefined) {
             if (data.error) {
                 return isHidden(item, USAGE_NO_DATA_HIDEABLE_STATE.key)
                     ? null
@@ -52,12 +52,13 @@ export class ExtraUsageRemainingWidget implements Widget {
             return null;
         }
 
-        // Both extraUsageLimit and extraUsageUsed are in cents
-        const limitDollars = data.extraUsageLimit / 100;
-        const usedDollars = data.extraUsageUsed / 100;
-        const remaining = Math.max(0, limitDollars - usedDollars);
-        const formatted = formatUsageCurrency(remaining, data.extraUsageCurrency, format);
+        // Missing until a usage fetch has run since the UTC day began.
+        if (data.extraUsageUsedToday === undefined) {
+            return null;
+        }
 
+        // extraUsageUsedToday is in cents
+        const formatted = formatUsageCurrency(data.extraUsageUsedToday / 100, data.extraUsageCurrency, format);
         return formatRawOrLabeledValue(item, label, formatted);
     }
 

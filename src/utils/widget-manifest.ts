@@ -89,6 +89,7 @@ export const WIDGET_MANIFEST: WidgetManifestEntry[] = [
     { type: 'extra-usage-remaining', create: () => new widgets.ExtraUsageRemainingWidget() },
     { type: 'extra-usage-used', create: () => new widgets.ExtraUsageUsedWidget() },
     { type: 'extra-usage-daily-budget', create: () => new widgets.ExtraUsageDailyBudgetWidget() },
+    { type: 'extra-usage-today', create: () => new widgets.ExtraUsageTodayWidget() },
     { type: 'weekly-sonnet-usage', create: () => new widgets.WeeklySonnetUsageWidget() },
     { type: 'weekly-opus-usage', create: () => new widgets.WeeklyOpusUsageWidget() },
     { type: 'fable-weekly-usage', create: () => new widgets.FableWeeklyUsageWidget() },

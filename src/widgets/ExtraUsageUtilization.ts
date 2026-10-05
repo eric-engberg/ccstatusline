@@ -14,6 +14,7 @@ import {
 import { getUsageErrorMessage } from '../utils/usage';
 
 import { EXTRA_USAGE_DISABLED_HIDEABLE_STATE } from './shared/extra-usage-disabled';
+import { getExtraUsageLabel } from './shared/extra-usage-label';
 import {
     CYCLE_GRADIENT_ACTION,
     cycleGradientPreset
@@ -32,7 +33,7 @@ import {
 
 export class ExtraUsageUtilizationWidget implements Widget {
     getDefaultColor(): string { return 'green'; }
-    getDescription(): string { return 'Shows extra usage (pay-as-you-go) utilization percentage'; }
+    getDescription(): string { return 'Shows extra usage as a percentage of your monthly limit (Pro/Max overage or Enterprise spend)'; }
     getDisplayName(): string { return 'Extra Usage Utilization'; }
     getCategory(): string { return 'Usage'; }
 
@@ -64,6 +65,7 @@ export class ExtraUsageUtilizationWidget implements Widget {
     }
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
+        const label = `${getExtraUsageLabel(context.usageData)}: `;
         const inverted = isUsageInverted(item);
         const format = resolveNumberFormat('percent', item, settings);
 
@@ -73,17 +75,17 @@ export class ExtraUsageUtilizationWidget implements Widget {
 
             const bar = formatUsageBar(item, renderedPercent, format, settings, context);
             if (bar !== null) {
-                return formatRawOrLabeledValue(item, 'Overage: ', bar);
+                return formatRawOrLabeledValue(item, label, bar);
             }
 
-            return formatRawOrLabeledValue(item, 'Overage: ', formatPercent(renderedPercent, format));
+            return formatRawOrLabeledValue(item, label, formatPercent(renderedPercent, format));
         }
 
         const data = context.usageData ?? {};
         if (data.extraUsageEnabled === false) {
             return isHidden(item, EXTRA_USAGE_DISABLED_HIDEABLE_STATE.key)
                 ? null
-                : formatRawOrLabeledValue(item, 'Overage: ', 'n/a');
+                : formatRawOrLabeledValue(item, label, 'n/a');
         }
         if (data.extraUsageEnabled !== true || data.extraUsageUtilization === undefined) {
             if (data.error) {
@@ -100,10 +102,10 @@ export class ExtraUsageUtilizationWidget implements Widget {
 
         const bar = formatUsageBar(item, renderedPercent, format, settings, context);
         if (bar !== null) {
-            return formatRawOrLabeledValue(item, 'Overage: ', bar);
+            return formatRawOrLabeledValue(item, label, bar);
         }
 
-        return formatRawOrLabeledValue(item, 'Overage: ', formatPercent(renderedPercent, format));
+        return formatRawOrLabeledValue(item, label, formatPercent(renderedPercent, format));
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
