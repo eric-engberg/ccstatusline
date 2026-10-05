@@ -63,6 +63,21 @@ function showsValueColors(item: WidgetItem): boolean {
     return isValueColorsEnabled(item) && !showsUsageBar(item);
 }
 
+// The bar, or the percent in its value color. Value colors follow the used
+// percent, even while the widget shows what's left.
+function formatUsedPercent(item: WidgetItem, label: string, usedPercent: number, settings: Settings, context: RenderContext): string {
+    const format = resolveNumberFormat('percent', item, settings);
+    const renderedPercent = isUsageInverted(item) ? 100 - usedPercent : usedPercent;
+
+    const bar = formatUsageBar(item, renderedPercent, format, settings, context);
+    if (bar !== null) {
+        return formatRawOrLabeledValue(item, label, bar);
+    }
+
+    const formatOptions = getValueFormatOptions(settings, item.color ?? DEFAULT_COLOR);
+    return formatColoredValue(item, label, formatPercent(renderedPercent, format), usedPercent, UTILIZATION_SCALE, formatOptions);
+}
+
 export class ExtraUsageUtilizationWidget implements Widget {
     getDefaultColor(): string { return DEFAULT_COLOR; }
     getDescription(): string { return 'Shows extra usage as a percentage of your monthly limit (Pro/Max overage or Enterprise spend)'; }
@@ -101,29 +116,9 @@ export class ExtraUsageUtilizationWidget implements Widget {
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
         const label = `${getExtraUsageLabel(context.usageData)}: `;
-        const inverted = isUsageInverted(item);
-        const format = resolveNumberFormat('percent', item, settings);
-
-        // Value colors follow the used percent, even while showing what's left
-        const formatPercentText = (usedPercent: number, renderedPercent: number): string => formatColoredValue(
-            item,
-            label,
-            formatPercent(renderedPercent, format),
-            usedPercent,
-            UTILIZATION_SCALE,
-            getValueFormatOptions(settings, item.color ?? this.getDefaultColor())
-        );
 
         if (context.isPreview) {
-            const previewPercent = 85;
-            const renderedPercent = inverted ? 100 - previewPercent : previewPercent;
-
-            const bar = formatUsageBar(item, renderedPercent, format, settings, context);
-            if (bar !== null) {
-                return formatRawOrLabeledValue(item, label, bar);
-            }
-
-            return formatPercentText(previewPercent, renderedPercent);
+            return formatUsedPercent(item, label, 85, settings, context);
         }
 
         const data = context.usageData ?? {};
@@ -142,15 +137,7 @@ export class ExtraUsageUtilizationWidget implements Widget {
         }
 
         // extraUsageUtilization is already a percentage (0-100), not a fraction
-        const percent = Math.max(0, Math.min(100, data.extraUsageUtilization));
-        const renderedPercent = inverted ? 100 - percent : percent;
-
-        const bar = formatUsageBar(item, renderedPercent, format, settings, context);
-        if (bar !== null) {
-            return formatRawOrLabeledValue(item, label, bar);
-        }
-
-        return formatPercentText(percent, renderedPercent);
+        return formatUsedPercent(item, label, Math.max(0, Math.min(100, data.extraUsageUtilization)), settings, context);
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
