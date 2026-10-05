@@ -19,8 +19,8 @@ import {
     ESC,
     LEFT,
     RIGHT,
-    renderColorEditor
-} from './helpers/color-list-editor-harness';
+    renderWidgetEditor
+} from './helpers/widget-editor-harness';
 
 // Rows: mode, low, mid, high, mid from, high above, gradient
 const CONFIG = makeValueColorsConfig({
@@ -41,7 +41,7 @@ const today: WidgetItem = { id: 't', type: 'extra-usage-today', rawValue: true }
 
 function renderEditor(widget: WidgetItem, config = CONFIG) {
     const editor = (props: WidgetEditorProps) => renderValueColorsEditor(props, config);
-    return renderColorEditor(editor, widget);
+    return renderWidgetEditor(editor, widget);
 }
 
 describe('value colors editor', () => {
