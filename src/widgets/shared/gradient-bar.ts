@@ -36,6 +36,12 @@ const BAR_GRADIENTS: Record<BarGradientPreset, BarGradient> = {
     'mono': { stops: [hex('707070'), hex('B4B4B4'), hex('FFFFFF')] }
 };
 
+// The truecolor code at a position (0 to 1) along a preset, for widgets that
+// color a single value by how far along it is
+export function gradientPresetCodeAt(preset: BarGradientPreset, position: number): string {
+    return gradientCodeAt(BAR_GRADIENTS[preset].stops, position, 'truecolor');
+}
+
 export function isBarGradientPreset(value: string | undefined): value is BarGradientPreset {
     return (BAR_GRADIENT_PRESETS as readonly string[]).includes(value ?? '');
 }

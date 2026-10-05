@@ -22,7 +22,8 @@ import { parseCustomColor } from './custom-color';
 import { paintForeground } from './foreground';
 
 // An editor for a list of per-item colors that can be turned on and off as a
-// whole: Thinking Effort's level colors, the Model widget's family colors.
+// whole: Thinking Effort's level colors, the Model widget's family colors, the
+// usage widgets' value colors.
 
 // The editor has no access to the configured color level, so it previews at
 // the default (256 colors)
@@ -57,10 +58,11 @@ function getColorLabel(color: string): string {
 }
 
 // A color row cycles the named colors with ←→ and takes a custom color with
-// (x); a choice row flips between two settings with ←→.
+// (x); a setting row steps through its values with ←→, and some also take a
+// typed number.
 export type ColorListRow<C extends string, X extends string>
     = | { kind: 'color'; key: C; label: string }
-        | { kind: 'choice'; key: X; label: string };
+        | { kind: 'setting'; key: X; label: string };
 
 export interface ColorListEditorConfig<C extends string, X extends string = never> {
     title: string;
@@ -71,12 +73,29 @@ export interface ColorListEditorConfig<C extends string, X extends string = neve
     setEnabled: (item: WidgetItem, enabled: boolean) => WidgetItem;
     getColor: (item: WidgetItem, key: C) => string;
     setColor: (item: WidgetItem, key: C, color: string) => WidgetItem;
-    getChoiceLabel?: (item: WidgetItem, key: X) => string;
-    cycleChoice?: (item: WidgetItem, key: X) => WidgetItem;
-    /** (d)efaults: back to the default colors and choices. */
+    getSettingLabel?: (item: WidgetItem, key: X) => string;
+    cycleSetting?: (item: WidgetItem, key: X, direction: 1 | -1) => WidgetItem;
+    /** Settings that also take a typed number; a digit starts the input. */
+    typedSettings?: {
+        keys: readonly X[];
+        /** Describes the number in the input's prompt, e.g. "percent". */
+        hint: string;
+        /** The updated item, or the error to show. */
+        set: (item: WidgetItem, key: X, text: string) => WidgetItem | string;
+    };
+    /** (d)efaults: back to the default colors and settings. */
     resetColors: (item: WidgetItem) => WidgetItem;
     /** The sample shows the highlighted color row, or the last one highlighted. */
     renderSample: (item: WidgetItem, key: C) => string;
+    /** A second help line, for keys only this editor has. */
+    extraHelp?: string;
+}
+
+const CUSTOM_COLOR_ERROR = 'Not a color. Use #RRGGBB, or a number from 0 to 255.';
+
+interface TypedInput {
+    text: string;
+    error: string | null;
 }
 
 export interface ColorListEditorProps<C extends string, X extends string> extends WidgetEditorProps { config: ColorListEditorConfig<C, X> }
@@ -87,8 +106,7 @@ export function ColorListEditor<C extends string, X extends string = never>({ wi
     const [draft, setDraft] = useState(widget);
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [sampleKey, setSampleKey] = useState<C | undefined>(firstColorRow?.kind === 'color' ? firstColorRow.key : undefined);
-    const [customInput, setCustomInput] = useState<string | null>(null);
-    const [customError, setCustomError] = useState(false);
+    const [input, setInput] = useState<TypedInput | null>(null);
 
     const selectedRow = rows[selectedIndex];
     const enabled = config.isEnabled(draft);
@@ -101,30 +119,45 @@ export function ColorListEditor<C extends string, X extends string = never>({ wi
         }
     };
 
-    useInput((input, key) => {
-        if (customInput !== null) {
+    const typedSettings = config.typedSettings;
+    const takesTypedNumber = selectedRow?.kind === 'setting' && (typedSettings?.keys.includes(selectedRow.key) ?? false);
+
+    // A custom color on a color row, a number on a setting row
+    const applyInput = (text: string): string | null => {
+        if (selectedRow?.kind === 'color') {
+            const color = parseCustomColor(text);
+            if (!color) {
+                return CUSTOM_COLOR_ERROR;
+            }
+            setDraft(config.setColor(draft, selectedRow.key, color));
+            return null;
+        }
+        if (selectedRow?.kind === 'setting' && typedSettings) {
+            const result = typedSettings.set(draft, selectedRow.key, text);
+            if (typeof result === 'string') {
+                return result;
+            }
+            setDraft(result);
+        }
+        return null;
+    };
+
+    useInput((inputChar, key) => {
+        if (input !== null) {
             if (key.escape) {
-                setCustomInput(null);
-                setCustomError(false);
+                setInput(null);
             } else if (key.return) {
-                const color = parseCustomColor(customInput);
-                if (color && selectedRow?.kind === 'color') {
-                    setDraft(config.setColor(draft, selectedRow.key, color));
-                    setCustomInput(null);
-                    setCustomError(false);
-                } else {
-                    setCustomError(true);
-                }
+                const error = applyInput(input.text);
+                setInput(error === null ? null : { text: input.text, error });
             } else if (key.backspace || key.delete) {
-                setCustomInput(customInput.slice(0, -1));
-            } else if (shouldInsertInput(input, key)) {
-                setCustomInput(customInput + input);
-                setCustomError(false);
+                setInput({ text: input.text.slice(0, -1), error: null });
+            } else if (shouldInsertInput(inputChar, key)) {
+                setInput({ text: input.text + inputChar, error: null });
             }
             return;
         }
 
-        const shortcut = getPlainInput(input, key);
+        const shortcut = getPlainInput(inputChar, key);
 
         if (key.return) {
             onComplete(draft);
@@ -135,19 +168,21 @@ export function ColorListEditor<C extends string, X extends string = never>({ wi
         } else if (key.downArrow) {
             moveTo(selectedIndex + 1 > rows.length - 1 ? 0 : selectedIndex + 1);
         } else if (key.leftArrow || key.rightArrow) {
-            if (selectedRow?.kind === 'choice') {
-                if (config.cycleChoice) {
-                    setDraft(config.cycleChoice(draft, selectedRow.key));
+            const direction = key.rightArrow ? 1 : -1;
+            if (selectedRow?.kind === 'setting') {
+                if (config.cycleSetting) {
+                    setDraft(config.cycleSetting(draft, selectedRow.key, direction));
                 }
             } else if (selectedRow?.kind === 'color') {
                 const current = config.getColor(draft, selectedRow.key);
-                setDraft(config.setColor(draft, selectedRow.key, cycleNamedColor(current, key.rightArrow ? 1 : -1)));
+                setDraft(config.setColor(draft, selectedRow.key, cycleNamedColor(current, direction)));
             }
         } else if (shortcut === ' ') {
             setDraft(config.setEnabled(draft, !enabled));
         } else if (shortcut === 'x' && selectedRow?.kind === 'color') {
-            setCustomInput('');
-            setCustomError(false);
+            setInput({ text: '', error: null });
+        } else if (takesTypedNumber && /^\d$/.test(shortcut)) {
+            setInput({ text: shortcut, error: null });
         } else if (shortcut === 'd') {
             setDraft(config.resetColors(draft));
         }
@@ -159,6 +194,7 @@ export function ColorListEditor<C extends string, X extends string = never>({ wi
         <Box flexDirection='column'>
             <Text bold>{config.title}</Text>
             <Text dimColor>↑↓ select, ←→ change color, Space on/off, (x) custom color, (d)efaults, Enter save, ESC cancel</Text>
+            {config.extraHelp && <Text dimColor>{config.extraHelp}</Text>}
             <Box marginTop={1}>
                 <Text>Sample: </Text>
                 <Text>{sample}</Text>
@@ -168,21 +204,25 @@ export function ColorListEditor<C extends string, X extends string = never>({ wi
                 <Text color={enabled ? 'green' : 'red'}>{enabled ? 'On' : 'Off'}</Text>
                 {!enabled && <Text dimColor>  (Space to turn on; the widget uses its single color until then)</Text>}
             </Box>
-            {customInput !== null && selectedRow && (
+            {input !== null && selectedRow && (
                 <Box marginTop={1} flexDirection='column'>
                     <Box>
-                        <Text>{`Custom color for ${selectedRow.label} (#RRGGBB or 0-255): `}</Text>
-                        <Text color='cyan'>{customInput}</Text>
+                        <Text>
+                            {selectedRow.kind === 'color'
+                                ? `Custom color for ${selectedRow.label} (#RRGGBB or 0-255): `
+                                : `${selectedRow.label} (${typedSettings?.hint ?? 'number'}): `}
+                        </Text>
+                        <Text color='cyan'>{input.text}</Text>
                     </Box>
-                    {customError && <Text color='red'>Not a color. Use #RRGGBB, or a number from 0 to 255.</Text>}
+                    {input.error && <Text color='red'>{input.error}</Text>}
                 </Box>
             )}
             <Box marginTop={1} flexDirection='column'>
                 {rows.map((row, index) => {
                     const isSelected = index === selectedIndex;
                     let value: string;
-                    if (row.kind === 'choice') {
-                        value = config.getChoiceLabel ? config.getChoiceLabel(draft, row.key) : '';
+                    if (row.kind === 'setting') {
+                        value = config.getSettingLabel ? config.getSettingLabel(draft, row.key) : '';
                     } else {
                         const color = config.getColor(draft, row.key);
                         value = paintForeground(getColorLabel(color), color, EDITOR_COLOR_LEVEL);

@@ -1,3 +1,5 @@
+import type React from 'react';
+
 import type { RenderContext } from '../types/RenderContext';
 import type { Settings } from '../types/Settings';
 import type {
@@ -5,6 +7,7 @@ import type {
     HideableState,
     Widget,
     WidgetEditorDisplay,
+    WidgetEditorProps,
     WidgetItem
 } from '../types/Widget';
 import {
@@ -28,11 +31,40 @@ import {
     getUsageDisplayModifierText,
     getUsagePercentCustomKeybinds,
     isUsageInverted,
+    showsUsageBar,
     toggleUsageInverted
 } from './shared/usage-display';
+import {
+    formatColoredValue,
+    getValueColorsModifier,
+    getValueFormatOptions,
+    isValueColorsEnabled,
+    type ValueColorScale
+} from './shared/value-coloring';
+import {
+    VALUE_COLORS_KEYBIND,
+    makeValueColorsConfig,
+    renderValueColorsEditor
+} from './shared/value-colors-editor';
+
+// Green below 70% used, yellow below 90%, red from 90%
+const UTILIZATION_SCALE: ValueColorScale = { midFrom: 70, highFrom: 90, highEdge: 'from' };
+const DEFAULT_COLOR = 'green';
+const VALUE_COLORS_CONFIG = makeValueColorsConfig({
+    title: 'Extra Usage Utilization: value colors',
+    scale: UTILIZATION_SCALE,
+    sampleNote: 'used',
+    defaultColor: DEFAULT_COLOR,
+    maxPercent: 100
+});
+
+// Value colors apply to the plain percent; the bar modes have bar gradients
+function showsValueColors(item: WidgetItem): boolean {
+    return isValueColorsEnabled(item) && !showsUsageBar(item);
+}
 
 export class ExtraUsageUtilizationWidget implements Widget {
-    getDefaultColor(): string { return 'green'; }
+    getDefaultColor(): string { return DEFAULT_COLOR; }
     getDescription(): string { return 'Shows extra usage as a percentage of your monthly limit (Pro/Max overage or Enterprise spend)'; }
     getDisplayName(): string { return 'Extra Usage Utilization'; }
     getCategory(): string { return 'Usage'; }
@@ -40,7 +72,10 @@ export class ExtraUsageUtilizationWidget implements Widget {
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         return {
             displayText: this.getDisplayName(),
-            modifierText: getUsageDisplayModifierText(item, { showUsageDirection: true })
+            modifierText: getUsageDisplayModifierText(item, {
+                showUsageDirection: true,
+                extraModifiers: showsUsageBar(item) ? [] : [getValueColorsModifier(item)].filter((modifier): modifier is string => modifier !== null)
+            })
         };
     }
 
@@ -69,6 +104,16 @@ export class ExtraUsageUtilizationWidget implements Widget {
         const inverted = isUsageInverted(item);
         const format = resolveNumberFormat('percent', item, settings);
 
+        // Value colors follow the used percent, even while showing what's left
+        const formatPercentText = (usedPercent: number, renderedPercent: number): string => formatColoredValue(
+            item,
+            label,
+            formatPercent(renderedPercent, format),
+            usedPercent,
+            UTILIZATION_SCALE,
+            getValueFormatOptions(settings, item.color ?? this.getDefaultColor())
+        );
+
         if (context.isPreview) {
             const previewPercent = 85;
             const renderedPercent = inverted ? 100 - previewPercent : previewPercent;
@@ -78,7 +123,7 @@ export class ExtraUsageUtilizationWidget implements Widget {
                 return formatRawOrLabeledValue(item, label, bar);
             }
 
-            return formatRawOrLabeledValue(item, label, formatPercent(renderedPercent, format));
+            return formatPercentText(previewPercent, renderedPercent);
         }
 
         const data = context.usageData ?? {};
@@ -105,11 +150,22 @@ export class ExtraUsageUtilizationWidget implements Widget {
             return formatRawOrLabeledValue(item, label, bar);
         }
 
-        return formatRawOrLabeledValue(item, label, formatPercent(renderedPercent, format));
+        return formatPercentText(percent, renderedPercent);
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
-        return getUsagePercentCustomKeybinds(item, false);
+        const keybinds = getUsagePercentCustomKeybinds(item, false);
+        return item && showsUsageBar(item) ? keybinds : [...keybinds, VALUE_COLORS_KEYBIND];
+    }
+
+    renderEditor(props: WidgetEditorProps): React.ReactElement {
+        return renderValueColorsEditor(props, VALUE_COLORS_CONFIG);
+    }
+
+    // Value colors embed their own foreground codes, so the renderer must
+    // leave this widget's foreground alone while they show
+    preservesRenderedColors(item: WidgetItem): boolean {
+        return showsValueColors(item);
     }
 
     supportsRawValue(): boolean { return true; }

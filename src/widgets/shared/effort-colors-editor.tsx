@@ -30,14 +30,14 @@ const LEVEL_COLORS_CONFIG: ColorListEditorConfig<TranscriptThinkingEffort, 'brac
     toggleLabel: 'Level colors',
     rows: [
         ...KNOWN_THINKING_EFFORTS.map(level => ({ kind: 'color' as const, key: level, label: level })),
-        { kind: 'choice', key: 'brackets', label: 'brackets' }
+        { kind: 'setting', key: 'brackets', label: 'brackets' }
     ],
     isEnabled: isLevelColorsEnabled,
     setEnabled: setLevelColorsEnabled,
     getColor: (item, level) => getLevelColor(item, level, EDITOR_COLOR_LEVEL),
     setColor: setLevelColor,
-    getChoiceLabel: item => (getBracketColorMode(item) === 'effort' ? 'Match effort' : 'Widget color'),
-    cycleChoice: item => setBracketColorMode(item, getBracketColorMode(item) === 'effort' ? 'widget' : 'effort'),
+    getSettingLabel: item => (getBracketColorMode(item) === 'effort' ? 'Match effort' : 'Widget color'),
+    cycleSetting: item => setBracketColorMode(item, getBracketColorMode(item) === 'effort' ? 'widget' : 'effort'),
     resetColors: resetLevelColors,
     renderSample: (item, level) => formatThinkingEffort(item, { text: level, level }, {
         colorLevel: EDITOR_COLOR_LEVEL,
