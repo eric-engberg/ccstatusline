@@ -1,0 +1,53 @@
+# Fork-only: SonarQube Cloud analysis for eric-engberg/ccstatusline.
+#
+# This file lives only on the fork's `develop` (and so on `next`, which is built on it).
+# Feature branches are cut from `main`, so it never appears in an upstream PR.
+#
+# Automatic analysis only scans the main branch and pull requests. Running the
+# scanner here also scans `next`, which shows the issues left once every open
+# fork PR is applied. Automatic analysis must stay off in the project's
+# Analysis Method settings: SonarQube Cloud fails scanner runs while it's on.
+name: SonarQube (fork)
+
+on:
+  push:
+    branches: [develop, next]
+  pull_request:
+    branches: [develop]
+    types: [opened, synchronize, reopened]
+
+# The scanner only reads the repo. Results go to SonarQube Cloud with SONAR_TOKEN,
+# and its GitHub App posts the PR checks, not this token.
+permissions:
+  contents: read
+
+# `next` is force-pushed on every rebuild; only its newest push matters.
+concurrency:
+  group: fork-sonarqube-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: SonarQube analysis
+    if: github.repository == 'eric-engberg/ccstatusline'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history: new-code detection and issue attribution use git blame.
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          # Same scope automatic analysis used: the whole repo, with tests
+          # recognized by the project's Test File Inclusions pattern. Images are
+          # excluded: the scanner reads every source file as UTF-8 text.
+          args: >
+            -Dsonar.organization=eric-engberg
+            -Dsonar.projectKey=eric-engberg_ccstatusline
+            -Dsonar.sources=.
+            -Dsonar.tests=.
+            -Dsonar.test.inclusions=**/__tests__/**
+            -Dsonar.exclusions=**/__tests__/**,**/*.png,**/*.gif
