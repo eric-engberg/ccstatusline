@@ -94,7 +94,7 @@ describe('ExtraUsageUtilizationWidget', () => {
         const baseItem: WidgetItem = { id: 'extra', type: 'extra-usage-utilization' };
 
         expect(widget.getCustomKeybinds(baseItem)).toEqual([
-            { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
+            { key: 'p', label: '(p) bar style', action: 'toggle-progress' },
             { key: 'u', label: '(u) show remaining', action: 'toggle-invert' },
             { key: 'v', label: '(v)alue colors', action: 'edit-value-colors' }
         ]);
@@ -102,16 +102,17 @@ describe('ExtraUsageUtilizationWidget', () => {
             ...baseItem,
             metadata: { display: 'progress' }
         })).toEqual([
-            { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
+            { key: 'p', label: '(p) bar style', action: 'toggle-progress' },
             { key: 'u', label: '(u) show remaining', action: 'toggle-invert' },
             { key: 'g', label: '(g)radient', action: 'cycle-gradient' },
-            { key: 'b', label: '(b)ar width', action: 'edit-bar-width' }
+            { key: 'b', label: '(b)ar size', action: 'edit-bar-width' },
+            { key: 'n', label: '(n) hide numbers', action: 'toggle-bar-numbers' }
         ]);
         expect(widget.getCustomKeybinds({
             ...baseItem,
             metadata: { invert: 'true' }
         })).toEqual([
-            { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
+            { key: 'p', label: '(p) bar style', action: 'toggle-progress' },
             { key: 'u', label: '(u) show used', action: 'toggle-invert' },
             { key: 'v', label: '(v)alue colors', action: 'edit-value-colors' }
         ]);
@@ -275,7 +276,7 @@ describe('ExtraUsageUtilizationWidget', () => {
             expect(render(widget, item, used(25))).toBe('Overage: [████░░░░░░░░░░░░] 25.0%');
             expect(widget.preservesRenderedColors(item)).toBe(false);
             expect(widget.getCustomKeybinds(item).map(keybind => keybind.key)).not.toContain('v');
-            expect(widget.getEditorDisplay(item).modifierText).toBe('(medium bar, used)');
+            expect(widget.getEditorDisplay(item).modifierText).toBe('(block bar, medium, used)');
         });
 
         it('previews 85% in its color', () => {
