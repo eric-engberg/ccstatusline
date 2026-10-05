@@ -4,8 +4,12 @@ import type {
 } from '../types/StatusJSON';
 import type { WidgetItem } from '../types/Widget';
 
+import { observeExtraUsageSpend } from './daily-spend';
 import type { UsageData } from './usage';
-import { fetchUsageData } from './usage';
+import {
+    fetchUsageData,
+    getUsageAccountKey
+} from './usage';
 import type { UsageDataField } from './usage-types';
 import {
     WEEKLY_MODEL_USAGE_BUCKETS,
@@ -23,7 +27,8 @@ const BASE_USAGE_WIDGET_TYPES = [
     'weekly-reset-timer',
     'extra-usage-utilization',
     'extra-usage-remaining',
-    'extra-usage-used'
+    'extra-usage-used',
+    'extra-usage-today'
 ];
 
 const USAGE_WIDGET_TYPES = new Set<string>([
@@ -72,8 +77,34 @@ const USAGE_WIDGET_REQUIREMENTS: Record<string, UsageFieldRequirement[]> = {
     'extra-usage-used': [
         { field: 'extraUsageEnabled' },
         { field: 'extraUsageUsed' }
+    ],
+    'extra-usage-today': [
+        { field: 'extraUsageEnabled' },
+        { field: 'extraUsageUsed' }
     ]
 };
+
+const SPEND_TODAY_WIDGET_TYPES = new Set<string>(['extra-usage-today']);
+
+function needsSpendToday(lines: WidgetItem[][]): boolean {
+    return lines.some(line => line.some(item => SPEND_TODAY_WIDGET_TYPES.has(item.type)));
+}
+
+// Today's spend needs the month-to-date total and the login it belongs to: the
+// daily state file keeps each login's start-of-day total separately.
+function withSpendToday(data: UsageData, lines: WidgetItem[][]): UsageData {
+    if (!needsSpendToday(lines) || data.extraUsageUsed === undefined) {
+        return data;
+    }
+
+    const accountKey = getUsageAccountKey();
+    if (accountKey === null) {
+        return data;
+    }
+
+    const spentToday = observeExtraUsageSpend(accountKey, data.extraUsageUsed);
+    return spentToday === undefined ? data : { ...data, extraUsageUsedToday: spentToday };
+}
 
 const USAGE_CURSOR_REQUIREMENTS: Record<string, UsageFieldRequirement> = {
     'session-usage': { field: 'sessionResetAt' },
@@ -232,5 +263,5 @@ export async function prefetchUsageDataIfNeeded(lines: WidgetItem[][], data?: St
         return rateLimitsData;
     }
 
-    return mergeUsageData(rateLimitsData, apiData);
+    return withSpendToday(mergeUsageData(rateLimitsData, apiData), lines);
 }

@@ -1,4 +1,7 @@
-export { fetchUsageData } from './usage-fetch';
+export {
+    fetchUsageData,
+    getUsageAccountKey
+} from './usage-fetch';
 export {
     formatUsageDuration,
     formatUsageResetAt,

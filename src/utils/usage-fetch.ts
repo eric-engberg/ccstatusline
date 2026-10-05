@@ -811,6 +811,15 @@ async function fetchFromUsageApi(token: string): Promise<UsageApiFetchResult> {
     });
 }
 
+// The fingerprint of the login fetchUsageData last resolved, so per-login
+// state outside the usage cache (today's spend) stays with that login.
+let lastUsageAccountKey: string | null = null;
+
+/** The token fingerprint of the login the last usage fetch used, or null when none was found. */
+export function getUsageAccountKey(): string | null {
+    return lastUsageAccountKey;
+}
+
 export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promise<UsageData> {
     const now = Math.floor(Date.now() / 1000);
     const requiredFields = options.requiredFields ?? [];
@@ -833,6 +842,7 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
     const credentials = getUsageCredentials();
     const token = credentials?.accessToken ?? null;
     const cacheIdentity = credentials ? getUsageCacheIdentity(credentials) : null;
+    lastUsageAccountKey = cacheIdentity?.preferredHash ?? null;
 
     // Check file cache
     try {
