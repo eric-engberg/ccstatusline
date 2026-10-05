@@ -109,7 +109,7 @@ async function withEditor(steps: (tools: {
     try {
         const screen = () => stripAnsi(frame);
         await waitFor(() => {
-            expect(screen()).toContain('(b)ar width');
+            expect(screen()).toContain('(b)ar size');
         });
         await steps({ press: key => stdin.write(key), screen, onUpdate, onPreviewChange });
     } finally {
@@ -126,13 +126,18 @@ const lastPreviewWidth = (onPreviewChange: ReturnType<typeof vi.fn>): string | u
     return widgets?.[0]?.metadata?.barWidth;
 };
 
+const lastPreviewMetadata = (onPreviewChange: ReturnType<typeof vi.fn>): Record<string, string> | undefined => {
+    const widgets = onPreviewChange.mock.calls.at(-1)?.[0] as WidgetItem[] | null | undefined;
+    return widgets?.[0]?.metadata;
+};
+
 describe('ItemsEditor bar width', () => {
     it('steps the width with the arrows, previews it, and saves it on Enter', async () => {
         await withEditor(async ({ press, screen, onUpdate, onPreviewChange }) => {
             press('b');
             await waitFor(() => {
-                expect(screen()).toContain('Bar width');
-                expect(screen()).toContain('◀ default ▶');
+                expect(screen()).toContain('Bar size');
+                expect(screen()).toContain('◀ long ▶');
             });
 
             press(RIGHT);
@@ -148,7 +153,7 @@ describe('ItemsEditor bar width', () => {
             press(ENTER);
             await waitFor(() => {
                 expect(onUpdate).toHaveBeenCalledWith([{ ...bar, metadata: { display: 'progress', barWidth: '15' } }]);
-                expect(screen()).not.toContain('Bar width');
+                expect(screen()).not.toContain('Bar size');
                 expect(onPreviewChange.mock.calls.at(-1)?.[0]).toBeNull();
             });
         });
@@ -158,10 +163,8 @@ describe('ItemsEditor bar width', () => {
         await withEditor(async ({ press, screen, onUpdate, onPreviewChange }) => {
             press('b');
             await waitFor(() => {
-                expect(screen()).toContain('◀ default ▶');
+                expect(screen()).toContain('◀ long ▶');
             });
-            press(LEFT);
-            await letReactCatchUp();
             press(RIGHT);
             await waitFor(() => {
                 expect(lastPreviewWidth(onPreviewChange)).toBe('10');
@@ -169,10 +172,40 @@ describe('ItemsEditor bar width', () => {
 
             press(ESC);
             await waitFor(() => {
-                expect(screen()).not.toContain('Bar width');
+                expect(screen()).not.toContain('Bar size');
                 expect(onPreviewChange.mock.calls.at(-1)?.[0]).toBeNull();
             });
             expect(onUpdate).not.toHaveBeenCalled();
+        });
+    });
+
+    // A medium block bar is the display mode that has always meant one
+    it('saves a named size as the display mode that means it', async () => {
+        await withEditor(async ({ press, screen, onUpdate, onPreviewChange }) => {
+            press('b');
+            await waitFor(() => {
+                expect(screen()).toContain('◀ long ▶');
+            });
+            press(LEFT);
+            await waitFor(() => {
+                expect(screen()).toContain('◀ medium ▶');
+                expect(lastPreviewMetadata(onPreviewChange)).toEqual({ display: 'progress-short' });
+            });
+
+            press(ENTER);
+            await waitFor(() => {
+                expect(onUpdate).toHaveBeenCalledWith([{ ...bar, metadata: { display: 'progress-short' } }]);
+            });
+        });
+    });
+
+    it('hides the numbers after the bar with n', async () => {
+        await withEditor(async ({ press, screen, onUpdate }) => {
+            expect(screen()).toContain('(n) hide numbers');
+            press('n');
+            await waitFor(() => {
+                expect(onUpdate).toHaveBeenCalledWith([{ ...bar, metadata: { display: 'progress', barOnly: 'true' } }]);
+            });
         });
     });
 });

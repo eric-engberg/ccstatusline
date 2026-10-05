@@ -9,67 +9,95 @@ import {
     EDIT_BAR_WIDTH_ACTION,
     MIN_BAR_CELLS,
     allocateBarCells,
-    formatBarWidth,
-    getBarWidth,
+    formatBarSize,
+    getBarSize,
+    getBarSizeModifier,
     getBarWidthKeybinds,
-    getBarWidthModifier,
     getDesiredBarCells,
-    setBarWidth,
-    stepBarWidth
+    getFixedBarCells,
+    getLineBarWidth,
+    getStoredBarSize,
+    stepBarSize
 } from '../bar-width';
 
-const item = (barWidth?: string): WidgetItem => ({
+const item = (barWidth?: string, display?: string): WidgetItem => ({
     id: 'w',
     type: 'context-bar',
-    metadata: barWidth === undefined ? undefined : { barWidth }
+    metadata: {
+        ...(barWidth === undefined ? {} : { barWidth }),
+        ...(display === undefined ? {} : { display })
+    }
 });
 
-describe('bar width setting', () => {
-    it('reads a percentage, fill, or the default', () => {
-        expect(getBarWidth(item())).toBe('default');
-        expect(getBarWidth(item('50'))).toBe(50);
-        expect(getBarWidth(item('fill'))).toBe('fill');
+describe('bar size setting', () => {
+    it('reads a named size, a percentage or fill', () => {
+        expect(getBarSize(item('short'))).toBe('short');
+        expect(getBarSize(item('long'))).toBe('long');
+        expect(getBarSize(item('50'))).toBe(50);
+        expect(getBarSize(item('fill'))).toBe('fill');
     });
 
-    it('treats values outside 10-100% as the default', () => {
-        expect(getBarWidth(item('5'))).toBe('default');
-        expect(getBarWidth(item('101'))).toBe('default');
-        expect(getBarWidth(item('wide'))).toBe('default');
-        expect(getBarWidth(item('12.5'))).toBe('default');
+    // Saved configs from before sizes keep the size their display mode meant
+    it('falls back to the size the display mode implies', () => {
+        expect(getBarSize(item())).toBe('medium');
+        expect(getBarSize(item(undefined, 'progress'))).toBe('long');
+        expect(getBarSize(item(undefined, 'progress-short'))).toBe('medium');
+        expect(getBarSize(item(undefined, 'slider'))).toBe('short');
+        expect(getBarSize(item(undefined, 'slider-only'))).toBe('short');
+        expect(getStoredBarSize(item(undefined, 'progress'))).toBeNull();
     });
 
-    it('stores percentages and fill, and drops the key for the default', () => {
-        expect(setBarWidth(item(), 40).metadata).toEqual({ barWidth: '40' });
-        expect(setBarWidth(item(), 'fill').metadata).toEqual({ barWidth: 'fill' });
-        expect(setBarWidth(item('40'), 'default').metadata).toBeUndefined();
+    it('ignores values that are no size', () => {
+        expect(getBarSize(item('5', 'progress'))).toBe('long');
+        expect(getBarSize(item('101', 'progress'))).toBe('long');
+        expect(getBarSize(item('wide', 'slider'))).toBe('short');
+        expect(getBarSize(item('12.5', 'slider'))).toBe('short');
     });
 
-    it('steps from the default through 10-100% in fives to fill, stopping at both ends', () => {
-        expect(stepBarWidth('default', 1)).toBe(10);
-        expect(stepBarWidth(10, 1)).toBe(15);
-        expect(stepBarWidth(100, 1)).toBe('fill');
-        expect(stepBarWidth('fill', 1)).toBe('fill');
-        expect(stepBarWidth('fill', -1)).toBe(100);
-        expect(stepBarWidth(10, -1)).toBe('default');
-        expect(stepBarWidth('default', -1)).toBe('default');
+    it('sizes named bars in fixed cells, and leaves only percentages and fill to the line', () => {
+        expect(getFixedBarCells(item('short', 'progress'))).toBe(10);
+        expect(getFixedBarCells(item('medium', 'slider'))).toBe(16);
+        expect(getFixedBarCells(item(undefined, 'progress'))).toBe(32);
+        expect(getLineBarWidth(item('short'))).toBeNull();
+        expect(getLineBarWidth(item('40'))).toBe(40);
+        expect(getLineBarWidth(item('fill'))).toBe('fill');
+    });
+
+    // When the line's width is unknown, a percentage or fill bar can't be sized
+    it('falls back to the display mode\'s cells for a bar sized to the line', () => {
+        expect(getFixedBarCells(item('40', 'progress'))).toBe(32);
+        expect(getFixedBarCells(item('fill', 'slider'))).toBe(10);
+    });
+
+    it('steps from short through medium, long and 10-100% in fives to fill, stopping at both ends', () => {
+        expect(stepBarSize('short', -1)).toBe('short');
+        expect(stepBarSize('short', 1)).toBe('medium');
+        expect(stepBarSize('medium', 1)).toBe('long');
+        expect(stepBarSize('long', 1)).toBe(10);
+        expect(stepBarSize(10, 1)).toBe(15);
+        expect(stepBarSize(100, 1)).toBe('fill');
+        expect(stepBarSize('fill', 1)).toBe('fill');
+        expect(stepBarSize('fill', -1)).toBe(100);
+        expect(stepBarSize(10, -1)).toBe('long');
+        expect(stepBarSize('medium', -1)).toBe('short');
     });
 
     it('steps a hand-edited percentage to the neighboring fives', () => {
-        expect(stepBarWidth(37, 1)).toBe(40);
-        expect(stepBarWidth(37, -1)).toBe(35);
+        expect(stepBarSize(37, 1)).toBe(40);
+        expect(stepBarSize(37, -1)).toBe(35);
     });
 
     it('labels the setting for the editor and the line editor', () => {
-        expect(formatBarWidth('default')).toBe('default');
-        expect(formatBarWidth(45)).toBe('45%');
-        expect(formatBarWidth('fill')).toBe('fill');
-        expect(getBarWidthModifier(item())).toBeNull();
-        expect(getBarWidthModifier(item('45'))).toBe('45% width');
-        expect(getBarWidthModifier(item('fill'))).toBe('fill width');
+        expect(formatBarSize('medium')).toBe('medium');
+        expect(formatBarSize(45)).toBe('45%');
+        expect(formatBarSize('fill')).toBe('fill');
+        expect(getBarSizeModifier(item(undefined, 'progress'))).toBe('long');
+        expect(getBarSizeModifier(item('45'))).toBe('45% width');
+        expect(getBarSizeModifier(item('fill'))).toBe('fill width');
     });
 
     it('offers (b) only while a bar is shown', () => {
-        expect(getBarWidthKeybinds(true)).toEqual([{ key: 'b', label: '(b)ar width', action: EDIT_BAR_WIDTH_ACTION }]);
+        expect(getBarWidthKeybinds(true)).toEqual([{ key: 'b', label: '(b)ar size', action: EDIT_BAR_WIDTH_ACTION }]);
         expect(getBarWidthKeybinds(false)).toEqual([]);
     });
 });
