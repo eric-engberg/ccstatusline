@@ -57,22 +57,22 @@ function makeDeps(initial: object | null, now = NOW): DailyStateDeps & { writes:
     return deps;
 }
 
-function seen(day: string, baselineUsed: number, lastSeenUsed: number): SpendDayRecord {
-    return { day, baselineUsed, lastSeenDay: day, lastSeenUsed };
+function seen(day: string, baselineUsed: number, lastSeenUsed: number, lastSeenAt = Date.parse(`${day}T12:00:00Z`)): SpendDayRecord {
+    return { day, baselineUsed, lastSeenDay: day, lastSeenUsed, lastSeenAt };
 }
 
 describe('advanceSpendRecord', () => {
     it('starts today at the first value seen when there is no earlier record', () => {
         const record = advanceSpendRecord(undefined, 12345, NOW);
 
-        expect(record).toEqual(seen('2026-10-05', 12345, 12345));
+        expect(record).toEqual(seen('2026-10-05', 12345, 12345, NOW));
         expect(getSpentToday(record, NOW)).toBe(0);
     });
 
     it('starts today at the last value seen yesterday', () => {
         const record = advanceSpendRecord(seen('2026-10-04', 5000, 9000), 12345, NOW);
 
-        expect(record).toEqual(seen('2026-10-05', 9000, 12345));
+        expect(record).toEqual(seen('2026-10-05', 9000, 12345, NOW));
         expect(getSpentToday(record, NOW)).toBe(3345);
     });
 
@@ -89,7 +89,7 @@ describe('advanceSpendRecord', () => {
         const firstOfMonth = Date.parse('2026-11-01T00:05:00Z');
 
         const afterLastMonth = advanceSpendRecord(seen('2026-10-31', 95000, 99000), 150, firstOfMonth);
-        expect(afterLastMonth).toEqual(seen('2026-11-01', 0, 150));
+        expect(afterLastMonth).toEqual(seen('2026-11-01', 0, 150, firstOfMonth));
         expect(getSpentToday(afterLastMonth, firstOfMonth)).toBe(150);
 
         expect(advanceSpendRecord(undefined, 150, firstOfMonth).baselineUsed).toBe(0);
@@ -98,7 +98,7 @@ describe('advanceSpendRecord', () => {
     it('keeps the starting point through the day', () => {
         const record = advanceSpendRecord(seen('2026-10-05', 12345, 12345), 12800, NOW);
 
-        expect(record).toEqual(seen('2026-10-05', 12345, 12800));
+        expect(record).toEqual(seen('2026-10-05', 12345, 12800, NOW));
         expect(getSpentToday(record, NOW)).toBe(455);
     });
 
@@ -107,6 +107,15 @@ describe('advanceSpendRecord', () => {
 
         expect(record.baselineUsed).toBe(9000);
         expect(getSpentToday(record, NOW)).toBe(0);
+    });
+
+    // Concurrent renders can replay an older cached fetch after a newer one was
+    // recorded; the older value must not move the record back.
+    it('ignores an observation fetched before the one already stored', () => {
+        const stored = seen('2026-10-05', 12345, 12800, NOW);
+
+        expect(advanceSpendRecord(stored, 12500, NOW - 3 * 60 * 1000)).toEqual(stored);
+        expect(advanceSpendRecord(stored, 12500, Date.parse('2026-10-04T23:58:00Z'))).toEqual(stored);
     });
 });
 
@@ -125,19 +134,19 @@ describe('observeExtraUsageSpend', () => {
     it('keeps a separate record per login', () => {
         const deps = makeDeps({ version: 1, spend: { work: seen('2026-10-04', 5000, 9000) } });
 
-        expect(observeExtraUsageSpend('work', 12345, deps)).toBe(3345);
-        expect(observeExtraUsageSpend('personal', 300, deps)).toBe(0);
+        expect(observeExtraUsageSpend('work', 12345, NOW, deps)).toBe(3345);
+        expect(observeExtraUsageSpend('personal', 300, NOW, deps)).toBe(0);
 
         expect(readDailyState(deps).spend).toEqual({
-            work: seen('2026-10-05', 9000, 12345),
-            personal: seen('2026-10-05', 300, 300)
+            work: seen('2026-10-05', 9000, 12345, NOW),
+            personal: seen('2026-10-05', 300, 300, NOW)
         });
     });
 
-    it('writes nothing when the observation changes nothing', () => {
-        const deps = makeDeps({ version: 1, spend: { work: seen('2026-10-05', 9000, 12345) } });
+    it('writes nothing when the same fetch is observed again', () => {
+        const deps = makeDeps({ version: 1, spend: { work: seen('2026-10-05', 9000, 12345, NOW) } });
 
-        expect(observeExtraUsageSpend('work', 12345, deps)).toBe(3345);
+        expect(observeExtraUsageSpend('work', 12345, NOW, deps)).toBe(3345);
         expect(deps.writes).toBe(0);
     });
 
@@ -145,7 +154,28 @@ describe('observeExtraUsageSpend', () => {
         const deps = makeDeps({ version: 1, spend: { work: seen('2026-10-04', 5000, 9000) } });
         fs.writeFileSync(LOCK_PATH, '');
 
-        expect(observeExtraUsageSpend('work', 12345, deps)).toBe(3345);
+        expect(observeExtraUsageSpend('work', 12345, NOW, deps)).toBe(3345);
         expect(deps.writes).toBe(0);
+    });
+
+    // The usage cache is reused for up to three minutes, and a stale copy is
+    // served while the API is unreachable. A value fetched yesterday is
+    // yesterday's, even when it's rendered after midnight.
+    it('records a value fetched before midnight as yesterday\'s, showing nothing for today yet', () => {
+        const justAfterMidnight = Date.parse('2026-10-05T00:01:00Z');
+        const deps = makeDeps({ version: 1, spend: { work: seen('2026-10-04', 5000, 11000, Date.parse('2026-10-04T23:50:00Z')) } }, justAfterMidnight);
+
+        expect(observeExtraUsageSpend('work', 12000, Date.parse('2026-10-04T23:58:00Z'), deps)).toBeUndefined();
+        expect(readDailyState(deps).spend.work).toEqual(seen('2026-10-04', 5000, 12000, Date.parse('2026-10-04T23:58:00Z')));
+    });
+
+    it('never shows last month\'s total as the 1st of the month\'s spend', () => {
+        const lastFetchOfMonth = Date.parse('2026-10-31T23:58:00Z');
+        const deps = makeDeps({ version: 1, spend: { work: seen('2026-10-31', 95000, 99000, lastFetchOfMonth) } }, Date.parse('2026-11-01T00:01:00Z'));
+
+        // The cache from 23:58 replayed at 00:01: nothing for the 1st yet.
+        expect(observeExtraUsageSpend('work', 99000, lastFetchOfMonth, deps)).toBeUndefined();
+        // The first fresh fetch of the month.
+        expect(observeExtraUsageSpend('work', 150, Date.parse('2026-11-01T00:01:00Z'), deps)).toBe(150);
     });
 });

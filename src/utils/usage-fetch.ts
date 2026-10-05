@@ -366,6 +366,10 @@ export function parseUsageApiResponse(rawJson: string): UsageData | null {
 
 // Memory caches
 let cachedUsageData: UsageData | null = null;
+// When the data fetchUsageData last returned came from the usage API, so a
+// cached or stale total is never taken for a fresh one.
+let cachedUsageFetchedAtMs: number | null = null;
+let lastUsageFetchedAtMs: number | null = null;
 let usageCacheTime = 0;
 let usageErrorCacheMaxAge = LOCK_MAX_AGE;
 
@@ -387,13 +391,19 @@ function ensureCacheDirExists(): void {
 function setCachedUsageError(error: UsageError, now: number, maxAge = LOCK_MAX_AGE): UsageData {
     const errorData: UsageData = { error };
     cachedUsageData = errorData;
+    cachedUsageFetchedAtMs = null;
+    lastUsageFetchedAtMs = null;
     usageCacheTime = now;
     usageErrorCacheMaxAge = maxAge;
     return errorData;
 }
 
-function cacheUsageData(data: UsageData, now: number): UsageData {
+// fetchedAtMs is when the usage API returned this data: now for a fresh fetch,
+// the cache file's write time for a cache hit or a stale fallback.
+function cacheUsageData(data: UsageData, now: number, fetchedAtMs: number): UsageData {
     cachedUsageData = data;
+    cachedUsageFetchedAtMs = fetchedAtMs;
+    lastUsageFetchedAtMs = fetchedAtMs;
     usageCacheTime = now;
     usageErrorCacheMaxAge = LOCK_MAX_AGE;
     return data;
@@ -434,8 +444,8 @@ function getStaleUsageOrError(
     requiredFields: readonly UsageDataField[] = []
 ): UsageData {
     const stale = readStaleUsageCache(cacheIdentity);
-    if (stale && !stale.error && hasRequiredUsageFields(stale, requiredFields)) {
-        return cacheUsageData(stale, now);
+    if (stale && !stale.data.error && hasRequiredUsageFields(stale.data, requiredFields)) {
+        return cacheUsageData(stale.data, now, stale.fetchedAtMs);
     }
 
     return setCachedUsageError(error, now, errorCacheMaxAge);
@@ -632,13 +642,14 @@ export function getUsageToken(): string | null {
     return getUsageCredentials()?.accessToken ?? null;
 }
 
-function readStaleUsageCache(cacheIdentity: UsageCacheIdentity | null): UsageData | null {
+function readStaleUsageCache(cacheIdentity: UsageCacheIdentity | null): { data: UsageData; fetchedAtMs: number } | null {
     try {
         const rawCache = fs.readFileSync(CACHE_FILE, 'utf8');
         if (!tokenHashMatches(readCachedTokenHash(rawCache), cacheIdentity)) {
             return null;
         }
-        return parseCachedUsageData(rawCache);
+        const data = parseCachedUsageData(rawCache);
+        return data ? { data, fetchedAtMs: fs.statSync(CACHE_FILE).mtimeMs } : null;
     } catch {
         return null;
     }
@@ -820,6 +831,11 @@ export function getUsageAccountKey(): string | null {
     return lastUsageAccountKey;
 }
 
+/** When the usage API returned the data the last fetch returned (ms), or null when it returned an error. */
+export function getUsageFetchedAt(): number | null {
+    return lastUsageFetchedAtMs;
+}
+
 export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promise<UsageData> {
     const now = Math.floor(Date.now() / 1000);
     const requiredFields = options.requiredFields ?? [];
@@ -828,9 +844,11 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
     if (cachedUsageData) {
         const cacheAge = now - usageCacheTime;
         if (!cachedUsageData.error && cacheAge < CACHE_MAX_AGE && hasRequiredUsageFields(cachedUsageData, requiredFields)) {
+            lastUsageFetchedAtMs = cachedUsageFetchedAtMs;
             return cachedUsageData;
         }
         if (cachedUsageData.error && cacheAge < usageErrorCacheMaxAge) {
+            lastUsageFetchedAtMs = null;
             return cachedUsageData;
         }
     }
@@ -854,7 +872,7 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
             if (fileData && !fileData.error
                 && tokenHashMatches(readCachedTokenHash(rawCache), cacheIdentity)
                 && hasRequiredUsageFields(fileData, requiredFields)) {
-                return cacheUsageData(fileData, now);
+                return cacheUsageData(fileData, now, stat.mtimeMs);
             }
         }
     } catch {
@@ -918,7 +936,7 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
             clearUsageLock();
         }
 
-        return cacheUsageData(usageData, now);
+        return cacheUsageData(usageData, now, now * 1000);
     } catch {
         writeUsageLock(now + LOCK_MAX_AGE, 'parse-error');
         return getStaleUsageOrError('parse-error', now, cacheIdentity, LOCK_MAX_AGE, requiredFields);

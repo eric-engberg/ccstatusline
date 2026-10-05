@@ -19,25 +19,38 @@ import {
 //     00:00 UTC on the 1st;
 //   - otherwise the first value seen today, which misses any spend before it.
 
-/** Folds one observation of the month-to-date total (cents) into a login's record. */
-export function advanceSpendRecord(record: SpendDayRecord | undefined, used: number, nowMs: number): SpendDayRecord {
-    const today = utcDayKey(nowMs);
-    if (record?.day === today) {
+/**
+ * Folds one observation of the month-to-date total (cents) into a login's
+ * record. `fetchedAtMs` is when the usage API returned the total, not when it
+ * was rendered: the usage cache replays a fetch for up to three minutes and
+ * serves a stale one while the API is unreachable, and a total fetched before
+ * midnight belongs to the day before.
+ */
+export function advanceSpendRecord(record: SpendDayRecord | undefined, used: number, fetchedAtMs: number): SpendDayRecord {
+    // Concurrent renders can replay an older fetch after a newer one was
+    // recorded; it must not move the record back.
+    if (record && fetchedAtMs < record.lastSeenAt) {
+        return record;
+    }
+
+    const day = utcDayKey(fetchedAtMs);
+    const seen = { lastSeenDay: day, lastSeenUsed: used, lastSeenAt: fetchedAtMs };
+    if (record?.day === day) {
         // A total that drops mid-day (a refund, an admin reset) moves the
         // starting point down with it, so today's spend never goes negative.
-        return { ...record, baselineUsed: Math.min(record.baselineUsed, used), lastSeenDay: today, lastSeenUsed: used };
+        return { ...record, ...seen, baselineUsed: Math.min(record.baselineUsed, used) };
     }
 
     let baselineUsed = used;
-    const seenYesterdayThisMonth = record?.lastSeenDay === previousUtcDayKey(nowMs)
-        && record.lastSeenDay.slice(0, 7) === today.slice(0, 7);
-    if (seenYesterdayThisMonth) {
+    const seenDayBeforeThisMonth = record?.lastSeenDay === previousUtcDayKey(fetchedAtMs)
+        && record.lastSeenDay.slice(0, 7) === day.slice(0, 7);
+    if (seenDayBeforeThisMonth) {
         baselineUsed = Math.min(record.lastSeenUsed, used);
-    } else if (today.endsWith('-01')) {
+    } else if (day.endsWith('-01')) {
         baselineUsed = 0;
     }
 
-    return { day: today, baselineUsed, lastSeenDay: today, lastSeenUsed: used };
+    return { day, baselineUsed, ...seen };
 }
 
 /** Extra usage spent today (cents), or undefined when the record isn't today's. */
@@ -52,22 +65,24 @@ function isSameRecord(a: SpendDayRecord, b: SpendDayRecord): boolean {
     return a.day === b.day
         && a.baselineUsed === b.baselineUsed
         && a.lastSeenDay === b.lastSeenDay
-        && a.lastSeenUsed === b.lastSeenUsed;
+        && a.lastSeenUsed === b.lastSeenUsed
+        && a.lastSeenAt === b.lastSeenAt;
 }
 
 /**
- * Records the month-to-date total (cents) seen for a login and returns the
- * extra usage spent today. When another ccstatusline process holds the state
- * lock, this observation isn't stored, but today's spend is still worked out
- * from it.
+ * Records the month-to-date total (cents) a login's usage fetch returned at
+ * `fetchedAtMs`, and returns the extra usage spent today, or undefined until a
+ * total fetched today has been seen. When another ccstatusline process holds
+ * the state lock, this observation isn't stored, but today's spend is still
+ * worked out from it.
  */
-export function observeExtraUsageSpend(accountKey: string, used: number, deps?: DailyStateDeps): number | undefined {
+export function observeExtraUsageSpend(accountKey: string, used: number, fetchedAtMs: number, deps?: DailyStateDeps): number | undefined {
     const nowMs = deps ? deps.now() : Date.now();
     const result: { record?: SpendDayRecord } = {};
 
     const ran = updateDailyState((state) => {
         const current = state.spend[accountKey];
-        const next = advanceSpendRecord(current, used, nowMs);
+        const next = advanceSpendRecord(current, used, fetchedAtMs);
         result.record = next;
         if (current && isSameRecord(current, next)) {
             return null;
@@ -76,7 +91,7 @@ export function observeExtraUsageSpend(accountKey: string, used: number, deps?: 
     }, deps);
 
     if (!ran || !result.record) {
-        result.record = advanceSpendRecord(readDailyState(deps).spend[accountKey], used, nowMs);
+        result.record = advanceSpendRecord(readDailyState(deps).spend[accountKey], used, fetchedAtMs);
     }
     return getSpentToday(result.record, nowMs);
 }

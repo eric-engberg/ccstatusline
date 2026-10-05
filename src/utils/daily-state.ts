@@ -18,6 +18,8 @@ export interface SpendDayRecord {
     baselineUsed: number;
     lastSeenDay: string;
     lastSeenUsed: number;
+    /** When the last value seen was fetched from the usage API. */
+    lastSeenAt: number;
 }
 
 export interface DailyState {
@@ -67,7 +69,8 @@ function isSpendDayRecord(value: unknown): value is SpendDayRecord {
     return typeof entry.day === 'string'
         && isFiniteNumber(entry.baselineUsed)
         && typeof entry.lastSeenDay === 'string'
-        && isFiniteNumber(entry.lastSeenUsed);
+        && isFiniteNumber(entry.lastSeenUsed)
+        && isFiniteNumber(entry.lastSeenAt);
 }
 
 function emptyState(): DailyState {

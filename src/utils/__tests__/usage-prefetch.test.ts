@@ -601,6 +601,8 @@ describe('usage prefetch', () => {
 });
 
 describe('today\'s extra usage spend', () => {
+    // When the usage API returned the data, as fetchUsageData reports it.
+    const FETCHED_AT = Date.parse('2026-10-05T14:58:00Z');
     let mockFetchUsageData: {
         mock: { calls: unknown[][] };
         mockResolvedValue: (value: UsageData) => void;
@@ -624,6 +626,7 @@ describe('today\'s extra usage spend', () => {
 
     it('works out today\'s spend for the Extra Usage Today widget', async () => {
         vi.spyOn(usage, 'getUsageAccountKey').mockReturnValue('work-login');
+        vi.spyOn(usage, 'getUsageFetchedAt').mockReturnValue(FETCHED_AT);
 
         const usageData = await prefetchUsageDataIfNeeded(makeLines([{ id: '1', type: 'extra-usage-today' }]), {});
 
@@ -632,7 +635,7 @@ describe('today\'s extra usage spend', () => {
             extraUsageUsed: 12345,
             extraUsageUsedToday: 825
         });
-        expect(mockObserveSpend.mock.calls).toEqual([['work-login', 12345]]);
+        expect(mockObserveSpend.mock.calls).toEqual([['work-login', 12345, FETCHED_AT]]);
         expect(mockFetchUsageData.mock.calls).toEqual([
             [{ requiredFields: ['extraUsageEnabled', 'extraUsageUsed'] }]
         ]);
@@ -640,6 +643,17 @@ describe('today\'s extra usage spend', () => {
 
     it('leaves today\'s spend out when the login is unknown', async () => {
         vi.spyOn(usage, 'getUsageAccountKey').mockReturnValue(null);
+        vi.spyOn(usage, 'getUsageFetchedAt').mockReturnValue(FETCHED_AT);
+
+        const usageData = await prefetchUsageDataIfNeeded(makeLines([{ id: '1', type: 'extra-usage-today' }]), {});
+
+        expect(usageData).toEqual({ extraUsageEnabled: true, extraUsageUsed: 12345 });
+        expect(mockObserveSpend.mock.calls).toEqual([]);
+    });
+
+    it('leaves today\'s spend out when the fetch returned no data time', async () => {
+        vi.spyOn(usage, 'getUsageAccountKey').mockReturnValue('work-login');
+        vi.spyOn(usage, 'getUsageFetchedAt').mockReturnValue(null);
 
         const usageData = await prefetchUsageDataIfNeeded(makeLines([{ id: '1', type: 'extra-usage-today' }]), {});
 

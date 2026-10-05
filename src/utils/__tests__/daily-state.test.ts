@@ -57,7 +57,7 @@ function makeDeps(initial: string | null, now = NOW): DailyStateDeps & { files: 
 }
 
 function record(lastSeenDay: string, used = 1000): SpendDayRecord {
-    return { day: lastSeenDay, baselineUsed: used, lastSeenDay, lastSeenUsed: used };
+    return { day: lastSeenDay, baselineUsed: used, lastSeenDay, lastSeenUsed: used, lastSeenAt: Date.parse(`${lastSeenDay}T12:00:00Z`) };
 }
 
 describe('UTC day keys', () => {

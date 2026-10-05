@@ -8,7 +8,8 @@ import { observeExtraUsageSpend } from './daily-spend';
 import type { UsageData } from './usage';
 import {
     fetchUsageData,
-    getUsageAccountKey
+    getUsageAccountKey,
+    getUsageFetchedAt
 } from './usage';
 import type { UsageDataField } from './usage-types';
 import {
@@ -90,19 +91,22 @@ function needsSpendToday(lines: WidgetItem[][]): boolean {
     return lines.some(line => line.some(item => SPEND_TODAY_WIDGET_TYPES.has(item.type)));
 }
 
-// Today's spend needs the month-to-date total and the login it belongs to: the
-// daily state file keeps each login's start-of-day total separately.
+// Today's spend needs the month-to-date total, the login it belongs to (the
+// daily state file keeps each login's start-of-day total separately), and when
+// the usage API returned it: a cached total fetched before midnight is not
+// today's.
 function withSpendToday(data: UsageData, lines: WidgetItem[][]): UsageData {
     if (!needsSpendToday(lines) || data.extraUsageUsed === undefined) {
         return data;
     }
 
     const accountKey = getUsageAccountKey();
-    if (accountKey === null) {
+    const fetchedAtMs = getUsageFetchedAt();
+    if (accountKey === null || fetchedAtMs === null) {
         return data;
     }
 
-    const spentToday = observeExtraUsageSpend(accountKey, data.extraUsageUsed);
+    const spentToday = observeExtraUsageSpend(accountKey, data.extraUsageUsed, fetchedAtMs);
     return spentToday === undefined ? data : { ...data, extraUsageUsedToday: spentToday };
 }
 
