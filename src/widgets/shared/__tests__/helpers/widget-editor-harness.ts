@@ -1,5 +1,4 @@
-// Drives a widget editor rendered with Ink the way the line editor shows it,
-// for the Thinking Effort level colors and Model family colors editors.
+// Drives a widget editor rendered with Ink the way the line editor shows it.
 import { render } from 'ink';
 import { PassThrough } from 'node:stream';
 import React from 'react';
@@ -91,8 +90,8 @@ export const DOWN = '\x1b[B';
 export const RIGHT = '\x1b[C';
 export const LEFT = '\x1b[D';
 
-/** Renders a widget's editor (such as a ColorListEditor config) the way the line editor does. */
-export function renderColorEditor(editor: React.FC<WidgetEditorProps>, widget: WidgetItem) {
+/** Renders a widget's editor the way the line editor does. */
+export function renderWidgetEditor(editor: React.FC<WidgetEditorProps>, widget: WidgetItem) {
     const stdin = new MockTtyStream() as unknown as NodeJS.ReadStream;
     const stdout = createMockStdout();
     const stderr = createMockStdout();
