@@ -6,14 +6,18 @@ import {
 
 import type { WidgetItem } from '../../../types/Widget';
 import {
+    CYCLE_BAR_NUMBERS_ACTION,
     TOGGLE_BAR_NUMBERS_ACTION,
-    areBarNumbersShown,
+    cycleBarNumbers,
     getBarLayoutModifiers,
+    getBarNumbers,
     getBarNumbersKeybinds,
     getBarStyle,
     keepBarLayout,
     setBarSize,
     setBarStyle,
+    showsBarCounts,
+    showsBarPercent,
     toggleBarNumbers
 } from '../bar-layout';
 
@@ -49,7 +53,8 @@ describe('keepBarLayout', () => {
     // So (p) brings the bar back as it was
     it('stores the size and numbers setting for the text mode to keep', () => {
         expect(keepBarLayout(item({ display: 'slider' })).metadata).toEqual({ display: 'slider', barWidth: 'short' });
-        expect(keepBarLayout(item({ display: 'slider-only' })).metadata).toEqual({ display: 'slider-only', barWidth: 'short', barOnly: 'true' });
+        expect(keepBarLayout(item({ display: 'slider-only' })).metadata).toEqual({ display: 'slider-only', barWidth: 'short', barNumbers: 'none' });
+        expect(keepBarLayout(item({ display: 'progress', barNumbers: 'counts' })).metadata).toEqual({ display: 'progress', barWidth: 'long', barNumbers: 'counts' });
         expect(keepBarLayout(item({ display: 'progress', barWidth: '40' })).metadata).toEqual({ display: 'progress', barWidth: '40' });
     });
 });
@@ -77,28 +82,57 @@ describe('bar size', () => {
 });
 
 describe('bar numbers', () => {
-    it('shows the numbers unless turned off, as the short bar only mode always did', () => {
-        expect(areBarNumbersShown(item({ display: 'progress' }))).toBe(true);
-        expect(areBarNumbersShown(item({ display: 'progress', barOnly: 'true' }))).toBe(false);
-        expect(areBarNumbersShown(item({ display: 'slider-only' }))).toBe(false);
+    it('shows all the numbers unless some are turned off, as the short bar only mode always did', () => {
+        expect(getBarNumbers(item({ display: 'progress' }))).toBe('all');
+        expect(getBarNumbers(item({ display: 'progress', barNumbers: 'percent' }))).toBe('percent');
+        expect(getBarNumbers(item({ display: 'progress', barNumbers: 'counts' }))).toBe('counts');
+        expect(getBarNumbers(item({ display: 'progress', barNumbers: 'none' }))).toBe('none');
+        expect(getBarNumbers(item({ display: 'slider-only' }))).toBe('none');
+        expect(getBarNumbers(item({ display: 'progress', barNumbers: 'loud' }))).toBe('all');
     });
 
+    // barOnly was the setting's first name, saved by early builds of the fork
+    it('reads the earlier barOnly flag as no numbers', () => {
+        expect(getBarNumbers(item({ display: 'progress', barOnly: 'true' }))).toBe('none');
+    });
+
+    it('says which numbers show', () => {
+        expect([showsBarPercent(item({ display: 'slider' })), showsBarCounts(item({ display: 'slider' }))]).toEqual([true, true]);
+        expect([showsBarPercent(item({ barNumbers: 'percent' })), showsBarCounts(item({ barNumbers: 'percent' }))]).toEqual([true, false]);
+        expect([showsBarPercent(item({ barNumbers: 'counts' })), showsBarCounts(item({ barNumbers: 'counts' }))]).toEqual([false, true]);
+        expect([showsBarPercent(item({ barNumbers: 'none' })), showsBarCounts(item({ barNumbers: 'none' }))]).toEqual([false, false]);
+    });
+
+    // For bars with only a percent after them
     it('toggles the numbers off and back on', () => {
         const off = toggleBarNumbers(item({ display: 'progress' }));
-        expect(off.metadata).toEqual({ display: 'progress', barOnly: 'true' });
+        expect(off.metadata).toEqual({ display: 'progress', barNumbers: 'none' });
         expect(toggleBarNumbers(off).metadata).toEqual({ display: 'progress' });
+        expect(toggleBarNumbers(item({ display: 'progress', barOnly: 'true' })).metadata).toEqual({ display: 'progress' });
+    });
+
+    // For the Context Bar's token counts and percent
+    it('cycles both numbers, the percent only, the counts only, and none', () => {
+        const percent = cycleBarNumbers(item({ display: 'progress-short' }));
+        const counts = cycleBarNumbers(percent);
+        const none = cycleBarNumbers(counts);
+        expect(percent.metadata).toEqual({ display: 'progress-short', barNumbers: 'percent' });
+        expect(counts.metadata).toEqual({ display: 'progress-short', barNumbers: 'counts' });
+        expect(none.metadata).toEqual({ display: 'progress-short', barNumbers: 'none' });
+        expect(cycleBarNumbers(none).metadata).toEqual({ display: 'progress-short' });
     });
 
     // The short bar only mode becomes a slider with its numbers off once edited
     it('turns a short bar only setting into a slider without numbers', () => {
         expect(toggleBarNumbers(item({ display: 'slider-only' })).metadata).toEqual({ display: 'slider' });
-        expect(setBarSize(item({ display: 'slider-only' }), 'long').metadata).toEqual({ display: 'slider', barWidth: 'long', barOnly: 'true' });
-        expect(setBarStyle(item({ display: 'slider-only' }), 'block').metadata).toEqual({ display: 'progress-short', barWidth: 'short', barOnly: 'true' });
+        expect(setBarSize(item({ display: 'slider-only' }), 'long').metadata).toEqual({ display: 'slider', barWidth: 'long', barNumbers: 'none' });
+        expect(setBarStyle(item({ display: 'slider-only' }), 'block').metadata).toEqual({ display: 'progress-short', barWidth: 'short', barNumbers: 'none' });
     });
 
-    it('offers (n) only while a bar is shown, named for what it does next', () => {
+    it('offers (n) only while a bar is shown, as a toggle or, with counts, a cycle', () => {
         expect(getBarNumbersKeybinds(item({ display: 'progress' }), true)).toEqual([{ key: 'n', label: '(n) hide numbers', action: TOGGLE_BAR_NUMBERS_ACTION }]);
         expect(getBarNumbersKeybinds(item({ display: 'slider-only' }), true)).toEqual([{ key: 'n', label: '(n) show numbers', action: TOGGLE_BAR_NUMBERS_ACTION }]);
+        expect(getBarNumbersKeybinds(item({ display: 'slider' }), true, true)).toEqual([{ key: 'n', label: '(n)umbers', action: CYCLE_BAR_NUMBERS_ACTION }]);
         expect(getBarNumbersKeybinds(item(), false)).toEqual([]);
     });
 });
@@ -107,7 +141,9 @@ describe('getBarLayoutModifiers', () => {
     it('names the style, the size, and numbers that are off', () => {
         expect(getBarLayoutModifiers(item({ display: 'progress' }))).toEqual(['block bar', 'long']);
         expect(getBarLayoutModifiers(item({ display: 'slider-only' }))).toEqual(['slider bar', 'short', 'numbers off']);
-        expect(getBarLayoutModifiers(item({ display: 'progress-short', barWidth: '20', barOnly: 'true' }))).toEqual(['block bar', '20% width', 'numbers off']);
+        expect(getBarLayoutModifiers(item({ display: 'progress-short', barWidth: '20', barNumbers: 'none' }))).toEqual(['block bar', '20% width', 'numbers off']);
+        expect(getBarLayoutModifiers(item({ display: 'progress', barNumbers: 'percent' }))).toEqual(['block bar', 'long', '% only']);
+        expect(getBarLayoutModifiers(item({ display: 'slider', barNumbers: 'counts' }))).toEqual(['slider bar', 'short', 'counts only']);
         expect(getBarLayoutModifiers(item())).toEqual([]);
     });
 });

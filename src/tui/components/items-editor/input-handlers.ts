@@ -16,7 +16,9 @@ import {
     type WidgetCatalogEntry
 } from '../../../utils/widgets';
 import {
+    CYCLE_BAR_NUMBERS_ACTION,
     TOGGLE_BAR_NUMBERS_ACTION,
+    cycleBarNumbers,
     toggleBarNumbers
 } from '../../../widgets/shared/bar-layout';
 import { EDIT_BAR_WIDTH_ACTION } from '../../../widgets/shared/bar-width';
@@ -26,7 +28,8 @@ import { EDIT_HIDE_STATES_ACTION } from '../../../widgets/shared/hideable';
 // widget's handleEditorAction
 const SHARED_ACTIONS: Record<string, ((widget: WidgetItem) => WidgetItem) | undefined> = {
     [CYCLE_NUMBER_STYLE_ACTION]: cycleNumberStyle,
-    [TOGGLE_BAR_NUMBERS_ACTION]: toggleBarNumbers
+    [TOGGLE_BAR_NUMBERS_ACTION]: toggleBarNumbers,
+    [CYCLE_BAR_NUMBERS_ACTION]: cycleBarNumbers
 };
 
 export type WidgetPickerAction = 'change' | 'add' | 'insert';
@@ -510,7 +513,7 @@ export function handleNormalInputMode({
                     return;
                 }
 
-                // The precision cycle and the bar numbers toggle (see SHARED_ACTIONS)
+                // The precision cycle and the bar numbers keys (see SHARED_ACTIONS)
                 const sharedAction = SHARED_ACTIONS[matchedKeybind.action];
                 if (sharedAction) {
                     const newWidgets = [...widgets];
