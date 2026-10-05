@@ -18,7 +18,7 @@ import {
     resolveWeeklyUsageWindow
 } from '../utils/usage';
 
-import { getBarWidthModifier } from './shared/bar-width';
+import { getBarLayoutModifiers } from './shared/bar-layout';
 import { makeModifierText } from './shared/editor-display';
 import {
     CYCLE_GRADIENT_ACTION,
@@ -79,17 +79,7 @@ function getWeeklyResetModifierText(item: WidgetItem): string | undefined {
     const displayMode = getUsageDisplayMode(item);
     const dateMode = isUsageDateMode(item);
     const isBarMode = isUsageProgressMode(displayMode) || isUsageSliderMode(displayMode);
-    const modifiers: string[] = [];
-
-    if (displayMode === 'progress') {
-        modifiers.push('long bar');
-    } else if (displayMode === 'progress-short') {
-        modifiers.push('medium bar');
-    } else if (displayMode === 'slider') {
-        modifiers.push('short bar');
-    } else if (displayMode === 'slider-only') {
-        modifiers.push('short bar only');
-    }
+    const modifiers = getBarLayoutModifiers(item);
 
     if (isUsageInverted(item)) {
         modifiers.push('inverted');
@@ -125,8 +115,9 @@ function getWeeklyResetModifierText(item: WidgetItem): string | undefined {
         modifiers.push(localeModifier);
     }
 
-    if (isBarMode) {
-        modifiers.push(...[getBarWidthModifier(item), getGradientModifier(item)].filter((modifier): modifier is string => modifier !== null));
+    const gradientModifier = getGradientModifier(item);
+    if (isBarMode && gradientModifier) {
+        modifiers.push(gradientModifier);
     }
 
     return makeModifierText(modifiers);

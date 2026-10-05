@@ -153,19 +153,18 @@ describe('ContextBarWidget', () => {
         }, context, DEFAULT_SETTINGS)).toBe('Context: [bar:15.0:32] 30k/200k (15%)');
     });
 
-    it('cycles display modes in the expected order', () => {
+    // (p) switches between a block bar and a slider of the same size
+    it('switches between a block bar and a slider, keeping the size', () => {
         const widget = new ContextBarWidget();
         const base: WidgetItem = { id: 'ctx', type: 'context-bar' };
 
-        const first = widget.handleEditorAction('toggle-progress', base);
-        const second = widget.handleEditorAction('toggle-progress', first ?? base);
-        const third = widget.handleEditorAction('toggle-progress', second ?? base);
-        const fourth = widget.handleEditorAction('toggle-progress', third ?? base);
+        const slider = widget.handleEditorAction('toggle-progress', base);
+        const block = widget.handleEditorAction('toggle-progress', slider ?? base);
 
-        expect(first?.metadata?.display).toBe('progress');
-        expect(second?.metadata?.display).toBe('slider');
-        expect(third?.metadata?.display).toBe('slider-only');
-        expect(fourth?.metadata?.display).toBe('progress-short');
+        expect(slider?.metadata).toEqual({ display: 'slider', barWidth: 'medium' });
+        expect(block?.metadata).toEqual({ display: 'progress-short' });
+        expect(widget.handleEditorAction('toggle-progress', { ...base, metadata: { display: 'slider-only' } })?.metadata)
+            .toEqual({ display: 'progress-short', barWidth: 'short', barOnly: 'true' });
     });
 
     it('formats context preview samples with the selected styles', () => {

@@ -17,8 +17,8 @@ import {
     EDIT_BAR_WIDTH_ACTION,
     MIN_BAR_CELLS,
     allocateBarCells,
-    getBarWidth,
-    getDesiredBarCells
+    getDesiredBarCells,
+    getLineBarWidth
 } from '../widgets/shared/bar-width';
 import {
     MERGE_TARGET_HIDDEN_HIDEABLE_STATE,
@@ -887,8 +887,8 @@ interface SizedBar {
 // on a line whose width is known. Widgets offer (b) only while they show a bar,
 // so a width kept from a bar mode is ignored in their other modes.
 function findSizedBar(widgetImpl: Widget, item: WidgetItem, index: number, getLineWidth: () => number | null): SizedBar | null {
-    const width = getBarWidth(item);
-    if (width === 'default') {
+    const width = getLineBarWidth(item);
+    if (width === null) {
         return null;
     }
     const showsBar = widgetImpl.getCustomKeybinds?.(item).some(keybind => keybind.action === EDIT_BAR_WIDTH_ACTION) ?? false;
