@@ -286,7 +286,7 @@ export function cycleUsageDisplayMode(item: WidgetItem, disabledInProgressKeys: 
     }
 
     const nextItem = removeMetadataKeys(keepBarLayout(item), preserveInvertInTime ? ['cursor'] : ['invert', 'cursor']);
-    return { ...nextItem, metadata: { ...(nextItem.metadata ?? {}), display: 'time' } };
+    return { ...nextItem, metadata: { ...nextItem.metadata, display: 'time' } };
 }
 
 export function toggleUsageInverted(item: WidgetItem): WidgetItem {
