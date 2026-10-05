@@ -11,7 +11,6 @@ import type {
 } from '../../types/Widget';
 import {
     getAvailableColorsForUI,
-    getColorAnsiCode,
     getColorDisplayName
 } from '../../utils/colors';
 import {
@@ -20,6 +19,7 @@ import {
 } from '../../utils/input-guards';
 
 import { parseCustomColor } from './custom-color';
+import { paintForeground } from './foreground';
 
 // An editor for a list of per-item colors that can be turned on and off as a
 // whole: Thinking Effort's level colors, the Model widget's family colors.
@@ -54,11 +54,6 @@ function getColorLabel(color: string): string {
         return `#${color.substring(4).toUpperCase()}`;
     }
     return getColorDisplayName(color);
-}
-
-function paint(text: string, color: string): string {
-    const code = getColorAnsiCode(color, EDITOR_COLOR_LEVEL);
-    return code ? `${code}${text}\x1b[39m` : text;
 }
 
 // A color row cycles the named colors with ←→ and takes a custom color with
@@ -190,7 +185,7 @@ export function ColorListEditor<C extends string, X extends string = never>({ wi
                         value = config.getChoiceLabel ? config.getChoiceLabel(draft, row.key) : '';
                     } else {
                         const color = config.getColor(draft, row.key);
-                        value = paint(getColorLabel(color), color);
+                        value = paintForeground(getColorLabel(color), color, EDITOR_COLOR_LEVEL);
                     }
                     return (
                         <Box key={row.key} flexDirection='row' flexWrap='nowrap'>

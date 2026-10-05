@@ -1,8 +1,8 @@
 import type { ColorLevelString } from '../../types/ColorLevel';
 import type { WidgetItem } from '../../types/Widget';
-import { getColorAnsiCode } from '../../utils/colors';
 import type { TranscriptThinkingEffort } from '../../utils/jsonl-metadata';
 
+import { paintForeground } from './foreground';
 import {
     removeMetadataKeys,
     setMetadataValue
@@ -107,11 +107,7 @@ export function formatThinkingEffort(item: WidgetItem, effort: EffortDisplay, op
         return `${open}${label}${effort.text}${close}`;
     }
 
-    // Restore only the default foreground so powerline backgrounds survive
-    const paint = (text: string, color: string): string => {
-        const code = getColorAnsiCode(color, options.colorLevel);
-        return text && code ? `${code}${text}\x1b[39m` : text;
-    };
+    const paint = (text: string, color: string): string => paintForeground(text, color, options.colorLevel);
     const valueColor = effort.level ? getLevelColor(item, effort.level, options.colorLevel) : options.baseColor;
     const bracketColor = getBracketColorMode(item) === 'effort' ? valueColor : options.baseColor;
 
