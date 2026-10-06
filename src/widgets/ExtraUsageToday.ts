@@ -11,10 +11,11 @@ import { getUsageErrorMessage } from '../utils/usage';
 
 import { formatUsageCurrency } from './shared/currency';
 import { EXTRA_USAGE_DISABLED_HIDEABLE_STATE } from './shared/extra-usage-disabled';
-import { getExtraUsageLabel } from './shared/extra-usage-label';
 import { isHidden } from './shared/hideable';
 import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
 import { USAGE_NO_DATA_HIDEABLE_STATE } from './shared/usage-display';
+
+const LABEL = 'Overage Today: ';
 
 export class ExtraUsageTodayWidget implements Widget {
     getDefaultColor(): string { return 'green'; }
@@ -31,17 +32,16 @@ export class ExtraUsageTodayWidget implements Widget {
     }
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
-        const label = `${getExtraUsageLabel(context.usageData)} Today: `;
         const format = resolveNumberFormat('cost', item, settings);
         if (context.isPreview) {
-            return formatRawOrLabeledValue(item, label, formatUsageCurrency(46.1, undefined, format));
+            return formatRawOrLabeledValue(item, LABEL, formatUsageCurrency(46.1, undefined, format));
         }
 
         const data = context.usageData ?? {};
         if (data.extraUsageEnabled === false) {
             return isHidden(item, EXTRA_USAGE_DISABLED_HIDEABLE_STATE.key)
                 ? null
-                : formatRawOrLabeledValue(item, label, 'n/a');
+                : formatRawOrLabeledValue(item, LABEL, 'n/a');
         }
         if (data.extraUsageEnabled !== true || data.extraUsageUsed === undefined) {
             if (data.error) {
@@ -59,7 +59,7 @@ export class ExtraUsageTodayWidget implements Widget {
 
         // extraUsageUsedToday is in cents
         const formatted = formatUsageCurrency(data.extraUsageUsedToday / 100, data.extraUsageCurrency, format);
-        return formatRawOrLabeledValue(item, label, formatted);
+        return formatRawOrLabeledValue(item, LABEL, formatted);
     }
 
     supportsRawValue(): boolean { return true; }
