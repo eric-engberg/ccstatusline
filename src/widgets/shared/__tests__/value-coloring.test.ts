@@ -32,6 +32,11 @@ import {
     typeGradientEnd,
     type ValueColorScale
 } from '../value-coloring';
+import {
+    COUNT_UNIT,
+    DOLLAR_UNIT,
+    makeTokenUnit
+} from '../value-units';
 
 const base: WidgetItem = { id: 'v', type: 'extra-usage-today' };
 // Extra Usage Today: red only above the budget
@@ -162,24 +167,24 @@ describe('value color settings', () => {
 
     // 100%: the whole limit, or Extra Usage Today's whole budget
     it('steps and takes a typed gradient end, starting at 100%', () => {
-        expect(getGradientEnd(base)).toBe(100);
+        expect(getGradientEnd(base, BUDGET)).toBe(100);
 
-        const lower = stepGradientEnd(base, -1);
+        const lower = stepGradientEnd(base, BUDGET, -1);
         expect(lower.metadata).toEqual({ valueGradientEnd: '95' });
-        expect(stepGradientEnd(lower, 1).metadata).toBeUndefined();
-        expect(getGradientEnd(stepGradientEnd({ ...base, metadata: { valueGradientEnd: '72' } }, 1))).toBe(75);
-        expect(getGradientEnd(stepGradientEnd({ ...base, metadata: { valueGradientEnd: '1' } }, -1))).toBe(1);
+        expect(stepGradientEnd(lower, BUDGET, 1).metadata).toBeUndefined();
+        expect(getGradientEnd(stepGradientEnd({ ...base, metadata: { valueGradientEnd: '72' } }, BUDGET, 1), BUDGET)).toBe(75);
+        expect(getGradientEnd(stepGradientEnd({ ...base, metadata: { valueGradientEnd: '1' } }, BUDGET, -1), BUDGET)).toBe(1);
 
-        expect(typeGradientEnd(base, '150')).toEqual({ ...base, metadata: { valueGradientEnd: '150' } });
-        expect(typeGradientEnd(base, '0')).toBe('Use a whole number from 1 to 999.');
+        expect(typeGradientEnd(base, BUDGET, '150')).toEqual({ ...base, metadata: { valueGradientEnd: '150' } });
+        expect(typeGradientEnd(base, BUDGET, '0')).toBe('Use a whole number from 1 to 999.');
     });
 
     // The break points belong to break points mode
     it('keeps the gradient end apart from the break points', () => {
         const item = { ...base, metadata: { valueMidFrom: '20', valueHighFrom: '40' } };
 
-        expect(getGradientEnd(item)).toBe(100);
-        expect(getGradientEnd(stepGradientEnd(item, -1))).toBe(95);
+        expect(getGradientEnd(item, BUDGET)).toBe(100);
+        expect(getGradientEnd(stepGradientEnd(item, BUDGET, -1), BUDGET)).toBe(95);
     });
 
     it('resets everything but the on/off switch', () => {
@@ -255,6 +260,12 @@ describe('formatColoredValue', () => {
     it('renders plain text when colors are off for the whole status line', () => {
         expect(formatColoredValue(colored, 'Spend Today: ', '$90.00', 90, BUDGET, { ...options, colorsDisabled: true })).toBe('Spend Today: $90.00');
     });
+
+    // Compaction Counter's trigger split, after the count
+    it('keeps a suffix in the widget color too', () => {
+        expect(formatColoredValue(colored, '↻ ', '2', 90, BUDGET, options, ' (2 auto)')).toBe(`${BASE}↻ ${FG_RESET}${MID}2${FG_RESET}${BASE} (2 auto)${FG_RESET}`);
+        expect(formatColoredValue(base, '↻ ', '2', 90, BUDGET, options, ' (2 auto)')).toBe('↻ 2 (2 auto)');
+    });
 });
 
 // Cache Hit Rate: a higher value is the good one
@@ -275,5 +286,50 @@ describe('a scale where higher is better', () => {
         expect(getValueColorCode(on, 100, HIT_RATE, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 0, 'truecolor'));
         expect(getValueColorCode(on, 25, HIT_RATE, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 0.75, 'truecolor'));
         expect(getValueColorCode(on, 0, HIT_RATE, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 1, 'truecolor'));
+    });
+});
+
+// Break points in dollars, tokens or a count instead of a percent
+describe('an amount scale', () => {
+    const COST: ValueColorScale = { midFrom: 5, highFrom: 20, highEdge: 'from', unit: DOLLAR_UNIT, gradientEnd: 20 };
+    const TOKENS: ValueColorScale = { midFrom: 100000, highFrom: 500000, highEdge: 'from', unit: makeTokenUnit(10000), gradientEnd: 500000 };
+    const COUNT: ValueColorScale = { midFrom: 1, highFrom: 3, highEdge: 'from', unit: COUNT_UNIT, gradientEnd: 3 };
+
+    it('bands the value in the scale\'s unit', () => {
+        expect(getValueBand(base, 4.99, COST)).toBe('low');
+        expect(getValueBand(base, 5, COST)).toBe('mid');
+        expect(getValueBand(base, 20, COST)).toBe('high');
+        expect(getValueBand(base, 0, COUNT)).toBe('low');
+        expect(getValueBand(base, 1, COUNT)).toBe('mid');
+        expect(getValueBand(base, 3, COUNT)).toBe('high');
+    });
+
+    it('steps break points by the unit\'s step and keeps them a cent apart', () => {
+        expect(stepBreakPoint(base, COST, 'midFrom', 1).metadata).toEqual({ valueMidFrom: '6' });
+        expect(stepBreakPoint(base, TOKENS, 'highFrom', -1).metadata).toEqual({ valueHighFrom: '490000' });
+        expect(getBreakPoints(stepBreakPoint({ ...base, metadata: { valueMidFrom: '19.5' } }, COST, 'midFrom', 1), COST).midFrom).toBe(19.99);
+        expect(getBreakPoints(stepBreakPoint({ ...base, metadata: { valueMidFrom: '2.5' } }, COST, 'midFrom', -1), COST).midFrom).toBe(2);
+        expect(getBreakPoints(stepBreakPoint({ ...base, metadata: { valueHighFrom: '2' } }, COUNT, 'highFrom', -1), COUNT).highFrom).toBe(2);
+    });
+
+    it('takes typed amounts and says what\'s wrong in the unit', () => {
+        expect(typeBreakPoint(base, COST, 'midFrom', '$2.50')).toEqual({ ...base, metadata: { valueMidFrom: '2.5' } });
+        expect(typeBreakPoint(base, TOKENS, 'highFrom', '1.5M')).toEqual({ ...base, metadata: { valueHighFrom: '1500000' } });
+        expect(typeBreakPoint(base, COST, 'midFrom', '2.555')).toBe(DOLLAR_UNIT.error);
+        expect(typeBreakPoint(base, COST, 'midFrom', '25')).toBe('Mid has to start below high ($20).');
+        expect(typeBreakPoint(base, TOKENS, 'highFrom', '50k')).toBe('High has to start above mid (100k).');
+    });
+
+    it('ends the gradient at the scale\'s own default and steps it by the unit', () => {
+        expect(getGradientEnd(base, COST)).toBe(20);
+        expect(stepGradientEnd(base, COST, 1).metadata).toEqual({ valueGradientEnd: '21' });
+        expect(stepGradientEnd(stepGradientEnd(base, COST, 1), COST, -1).metadata).toBeUndefined();
+        expect(typeGradientEnd(base, TOKENS, '2M')).toEqual({ ...base, metadata: { valueGradientEnd: '2000000' } });
+        expect(typeGradientEnd(base, TOKENS, 'lots')).toBe(TOKENS.unit?.error);
+    });
+
+    it('reaches the gradient\'s end color at the scale\'s gradient end', () => {
+        expect(getValueColorCode(gradient, 10, COST, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 0.5, 'truecolor'));
+        expect(getValueColorCode(gradient, 40, COST, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 1, 'truecolor'));
     });
 });
