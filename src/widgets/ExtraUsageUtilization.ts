@@ -85,11 +85,18 @@ function formatUsedPercent(item: WidgetItem, label: string, usedPercent: number,
     return formatColoredValue(item, label, formatPercent(renderedPercent, format), usedPercent, LIMIT_SCALE, formatOptions);
 }
 
+// "Overage: ", or "Spend: " on accounts without plan limits
+function getLabelFor(usageData: RenderContext['usageData']): string {
+    return `${getExtraUsageLabel(usageData)}: `;
+}
+
 export class ExtraUsageUtilizationWidget implements Widget {
     getDefaultColor(): string { return DEFAULT_COLOR; }
     getDescription(): string { return 'Shows extra usage as a percentage of your monthly limit (Pro/Max overage or Enterprise spend)'; }
     getDisplayName(): string { return 'Extra Usage Utilization'; }
     getCategory(): string { return 'Usage'; }
+    // The editor has no usage data, so it offers the Overage label
+    getLabelPrefix(): string { return getLabelFor(undefined); }
 
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         return {
@@ -122,7 +129,7 @@ export class ExtraUsageUtilizationWidget implements Widget {
     }
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
-        const label = `${getExtraUsageLabel(context.usageData)}: `;
+        const label = getLabelFor(context.usageData);
 
         if (context.isPreview) {
             return formatUsedPercent(item, label, 85, settings, context);

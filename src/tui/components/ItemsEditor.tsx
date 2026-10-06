@@ -41,10 +41,16 @@ import {
     getHideKeybind,
     getHideModifierText
 } from '../../widgets/shared/hideable';
+import {
+    EDIT_LABEL_ACTION,
+    getLabelKeybind,
+    getLabelModifierText
+} from '../../widgets/shared/raw-or-labeled';
 
 import { BarWidthEditor } from './BarWidthEditor';
 import { ConfirmDialog } from './ConfirmDialog';
 import { HideStatesEditor } from './HideStatesEditor';
+import { LabelEditor } from './LabelEditor';
 import {
     handleMoveInputMode,
     handleNormalInputMode,
@@ -235,6 +241,12 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
         // a registry-wide test in utils/__tests__/widgets.test.ts)
         if ((widgetImpl.getHideableStates?.().length ?? 0) > 0) {
             keybinds.push(getHideKeybind());
+        }
+
+        // The label only shows when raw value is off, so the editor is offered
+        // only then. Like 'h', widgets must leave this key unbound.
+        if (widgetImpl.getLabelPrefix && !widget.rawValue) {
+            keybinds.push(getLabelKeybind());
         }
 
         return keybinds;
@@ -478,6 +490,17 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
         return sharedEditor;
     }
 
+    if (customEditorWidget?.action === EDIT_LABEL_ACTION && customEditorWidget.impl.getLabelPrefix) {
+        return (
+            <LabelEditor
+                widget={customEditorWidget.widget}
+                defaultLabel={customEditorWidget.impl.getLabelPrefix(customEditorWidget.widget)}
+                onComplete={handleEditorComplete}
+                onCancel={handleEditorCancel}
+            />
+        );
+    }
+
     // If custom editor is active, render it instead of the normal UI
     if (customEditorWidget?.impl.renderEditor) {
         return customEditorWidget.impl.renderEditor({
@@ -712,6 +735,7 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
                                     ? getNumberFormatModifierText(widget)
                                     : undefined;
                                 const hideModifierText = widgetImpl ? getHideModifierText(widget, widgetImpl.getHideableStates?.() ?? []) : undefined;
+                                const labelModifierText = widgetImpl?.getLabelPrefix && !widget.rawValue ? getLabelModifierText(widget) : undefined;
 
                                 return (
                                     <Box key={widget.id} flexDirection='row' flexWrap='nowrap'>
@@ -739,6 +763,12 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
                                             <Text dimColor>
                                                 {' '}
                                                 {hideModifierText}
+                                            </Text>
+                                        )}
+                                        {labelModifierText && (
+                                            <Text dimColor>
+                                                {' '}
+                                                {labelModifierText}
                                             </Text>
                                         )}
                                         {supportsRawValue && widget.rawValue && <Text dimColor> (raw value)</Text>}

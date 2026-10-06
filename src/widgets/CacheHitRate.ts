@@ -52,11 +52,14 @@ const VALUE_COLORS_EDITOR: ValueColorsEditorOptions = {
     maxPercent: 100
 };
 
+const LABEL = 'Cache Hit: ';
+
 export class CacheHitRateWidget implements Widget {
     getDefaultColor(): string { return DEFAULT_COLOR; }
     getDescription(): string { return 'Shows prompt cache hit rate (cache reads vs cache writes)'; }
     getDisplayName(): string { return 'Cache Hit Rate'; }
     getCategory(): string { return 'Cache'; }
+    getLabelPrefix(): string { return LABEL; }
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         const modifiers = [isCacheSessionScope(item) ? 'session' : null, getValueColorsModifier(item)].filter((modifier): modifier is string => modifier !== null);
         return { displayText: this.getDisplayName(), modifierText: makeModifierText(modifiers) };
@@ -74,25 +77,25 @@ export class CacheHitRateWidget implements Widget {
         const format = resolveNumberFormat('percent', item, settings);
         const formatOptions = getValueFormatOptions(settings, item.color ?? DEFAULT_COLOR);
         if (context.isPreview) {
-            return formatColoredValue(item, 'Cache Hit: ', formatPercent(87, format), 87, HIT_RATE_SCALE, formatOptions);
+            return formatColoredValue(item, this.getLabelPrefix(), formatPercent(87, format), 87, HIT_RATE_SCALE, formatOptions);
         }
 
         const hideWhenEmpty = isHidden(item, CACHE_EMPTY_HIDEABLE_STATE.key);
         const tokens = getCacheTokens(context, isCacheSessionScope(item));
         if (!tokens) {
-            return hideWhenEmpty ? null : formatRawOrLabeledValue(item, 'Cache Hit: ', 'n/a');
+            return hideWhenEmpty ? null : formatRawOrLabeledValue(item, this.getLabelPrefix(), 'n/a');
         }
 
         const hitRate = getCacheHitRate(tokens);
         if (hitRate === null) {
-            return hideWhenEmpty ? null : formatRawOrLabeledValue(item, 'Cache Hit: ', formatPercent(0, format));
+            return hideWhenEmpty ? null : formatRawOrLabeledValue(item, this.getLabelPrefix(), formatPercent(0, format));
         }
 
         if (hitRate === 0 && hideWhenEmpty) {
             return null;
         }
 
-        return formatColoredValue(item, 'Cache Hit: ', formatPercent(hitRate, format), hitRate, HIT_RATE_SCALE, formatOptions);
+        return formatColoredValue(item, this.getLabelPrefix(), formatPercent(hitRate, format), hitRate, HIT_RATE_SCALE, formatOptions);
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
