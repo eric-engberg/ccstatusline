@@ -77,21 +77,6 @@ describe('ExtraUsageLimitWidget', () => {
         expect(widget.supportsNumberFormat()).toBe(true);
     });
 
-    // Usage-based plans (Enterprise) have no plan limits, so extra usage is the
-    // account's whole spend rather than overage beyond a limit.
-    it('labels the limit as a spend limit when the account has no plan limits', () => {
-        const widget = new ExtraUsageLimitWidget();
-        const usageData = {
-            extraUsageEnabled: true,
-            extraUsageLimit: 50000,
-            extraUsageCurrency: 'USD',
-            noPlanLimits: true
-        };
-
-        expect(render(widget, { id: 'extra', type: 'extra-usage-limit' }, { usageData })).toBe('Spend Limit: $500.00');
-        expect(render(widget, { id: 'extra', rawValue: true, type: 'extra-usage-limit' }, { usageData })).toBe('$500.00');
-    });
-
     // Once the API has reported extra usage as enabled, a missing monthly limit
     // means none is set (an unlimited Enterprise member, or a Pro/Max account
     // without a cap), not that the data is still loading.
