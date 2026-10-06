@@ -30,7 +30,8 @@ const BASE_USAGE_WIDGET_TYPES = [
     'extra-usage-remaining',
     'extra-usage-used',
     'extra-usage-daily-budget',
-    'extra-usage-today'
+    'extra-usage-today',
+    'extra-usage-limit'
 ];
 
 const USAGE_WIDGET_TYPES = new Set<string>([
@@ -88,6 +89,10 @@ const USAGE_WIDGET_REQUIREMENTS: Record<string, UsageFieldRequirement[]> = {
     'extra-usage-today': [
         { field: 'extraUsageEnabled' },
         { field: 'extraUsageUsed' }
+    ],
+    'extra-usage-limit': [
+        { field: 'extraUsageEnabled' },
+        { field: 'extraUsageLimit' }
     ]
 };
 
