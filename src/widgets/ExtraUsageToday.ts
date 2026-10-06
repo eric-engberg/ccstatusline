@@ -69,11 +69,18 @@ function getBudgetPercent(data: UsageData, spentToday: number, weekdaysOnly: boo
     return spentToday * countBudgetDaysLeft(Date.now(), weekdaysOnly) * 100 / leftAtDayStart;
 }
 
+// "Overage Today: ", or "Spend Today: " on accounts without plan limits
+function getLabelFor(usageData: RenderContext['usageData']): string {
+    return `${getExtraUsageLabel(usageData)} Today: `;
+}
+
 export class ExtraUsageTodayWidget implements Widget {
     getDefaultColor(): string { return DEFAULT_COLOR; }
     getDescription(): string { return 'Shows the extra usage spent today (since 00:00 UTC), including claude.ai and other machines'; }
     getDisplayName(): string { return 'Extra Usage Today'; }
     getCategory(): string { return 'Usage'; }
+    // The editor has no usage data, so it offers the Overage label
+    getLabelPrefix(): string { return getLabelFor(undefined); }
 
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         const valueColors = getValueColorsModifier(item);
@@ -105,7 +112,7 @@ export class ExtraUsageTodayWidget implements Widget {
     }
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
-        const label = `${getExtraUsageLabel(context.usageData)} Today: `;
+        const label = getLabelFor(context.usageData);
         const format = resolveNumberFormat('cost', item, settings);
         const formatOptions = getValueFormatOptions(settings, item.color ?? this.getDefaultColor());
         if (context.isPreview) {
