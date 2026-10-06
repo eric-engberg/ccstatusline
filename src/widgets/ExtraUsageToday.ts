@@ -24,7 +24,6 @@ import {
 } from './shared/daily-budget';
 import { makeModifierText } from './shared/editor-display';
 import { EXTRA_USAGE_DISABLED_HIDEABLE_STATE } from './shared/extra-usage-disabled';
-import { getExtraUsageLabel } from './shared/extra-usage-label';
 import { isHidden } from './shared/hideable';
 import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
 import { USAGE_NO_DATA_HIDEABLE_STATE } from './shared/usage-display';
@@ -69,6 +68,8 @@ function getBudgetPercent(data: UsageData, spentToday: number, weekdaysOnly: boo
     return spentToday * countBudgetDaysLeft(Date.now(), weekdaysOnly) * 100 / leftAtDayStart;
 }
 
+const LABEL = 'Overage Today: ';
+
 export class ExtraUsageTodayWidget implements Widget {
     getDefaultColor(): string { return DEFAULT_COLOR; }
     getDescription(): string { return 'Shows the extra usage spent today (since 00:00 UTC), including claude.ai and other machines'; }
@@ -105,18 +106,17 @@ export class ExtraUsageTodayWidget implements Widget {
     }
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
-        const label = `${getExtraUsageLabel(context.usageData)} Today: `;
         const format = resolveNumberFormat('cost', item, settings);
         const formatOptions = getValueFormatOptions(settings, item.color ?? this.getDefaultColor());
         if (context.isPreview) {
-            return formatColoredValue(item, label, formatUsageCurrency(46.1, undefined, format), PREVIEW_PERCENT, BUDGET_SCALE, formatOptions);
+            return formatColoredValue(item, LABEL, formatUsageCurrency(46.1, undefined, format), PREVIEW_PERCENT, BUDGET_SCALE, formatOptions);
         }
 
         const data = context.usageData ?? {};
         if (data.extraUsageEnabled === false) {
             return isHidden(item, EXTRA_USAGE_DISABLED_HIDEABLE_STATE.key)
                 ? null
-                : formatRawOrLabeledValue(item, label, 'n/a');
+                : formatRawOrLabeledValue(item, LABEL, 'n/a');
         }
         if (data.extraUsageEnabled !== true || data.extraUsageUsed === undefined) {
             if (data.error) {
@@ -135,7 +135,7 @@ export class ExtraUsageTodayWidget implements Widget {
         // extraUsageUsedToday is in cents
         const formatted = formatUsageCurrency(data.extraUsageUsedToday / 100, data.extraUsageCurrency, format);
         const percent = getBudgetPercent(data, data.extraUsageUsedToday, isWeekdaysOnly(item));
-        return formatColoredValue(item, label, formatted, percent, BUDGET_SCALE, formatOptions);
+        return formatColoredValue(item, LABEL, formatted, percent, BUDGET_SCALE, formatOptions);
     }
 
     supportsRawValue(): boolean { return true; }
