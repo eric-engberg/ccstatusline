@@ -25,6 +25,10 @@ import {
 import { GRADIENT_PRESET_NAMES } from '../../utils/gradient';
 import { shouldInsertInput } from '../../utils/input-guards';
 import { getNextNumberStyle } from '../../utils/number-format';
+import {
+    isEveryLinePowerline,
+    isPowerlineLine
+} from '../../utils/powerline-lines';
 
 import { ConfirmDialog } from './ConfirmDialog';
 
@@ -76,7 +80,10 @@ export const GlobalOverridesMenu: React.FC<GlobalOverridesMenuProps> = ({ settin
     const [gradientCustomStep, setGradientCustomStep] = useState<'start' | 'end' | null>(null);
     const [gradientStartHex, setGradientStartHex] = useState('');
     const [gradientHexInput, setGradientHexInput] = useState('');
-    const isPowerlineEnabled = settings.powerline.enabled;
+    // Separators and background overrides are plain-mode options, so they're
+    // off only when every line is Powerline
+    const isPowerlineEnabled = isEveryLinePowerline(settings);
+    const hasMixedLines = !isPowerlineEnabled && settings.lines.some((_, index) => isPowerlineLine(settings, index));
 
     // Check if there are any manual separators in the current configuration
     const hasManualSeparators = settings.lines.some(line => line.some(item => item.type === 'separator')
@@ -383,6 +390,11 @@ export const GlobalOverridesMenu: React.FC<GlobalOverridesMenuProps> = ({ settin
             {isPowerlineEnabled && (
                 <Box marginTop={1}>
                     <Text color='yellow'>⚠ Some options are disabled while Powerline mode is active</Text>
+                </Box>
+            )}
+            {hasMixedLines && (
+                <Box marginTop={1}>
+                    <Text dimColor>Separator and background options apply to the plain lines</Text>
                 </Box>
             )}
             <Box marginTop={1} />

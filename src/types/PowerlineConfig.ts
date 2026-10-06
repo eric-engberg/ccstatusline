@@ -9,7 +9,9 @@ export const PowerlineConfigSchema = z.object({
     endCaps: z.array(z.string()).default([]),
     theme: z.string().optional(),
     autoAlign: z.boolean().default(false),
-    continueThemeAcrossLines: z.boolean().default(false)
+    continueThemeAcrossLines: z.boolean().default(false),
+    // Per line: true or false sets that line's mode, null or missing follows `enabled`
+    lineEnabled: z.array(z.boolean().nullable()).optional()
 });
 
 // Inferred type from schema

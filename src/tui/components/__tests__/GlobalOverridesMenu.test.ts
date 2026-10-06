@@ -428,4 +428,40 @@ describe('GlobalOverridesMenu', () => {
             stderr.destroy();
         }
     });
+
+    // Separators and background overrides are plain-mode options: they stay
+    // available while any line is plain
+    it.each([
+        { name: 'every line is Powerline', lineEnabled: undefined, disabled: true },
+        { name: 'a line is plain', lineEnabled: [null, false], disabled: false }
+    ])('disables the plain-line options only when $name', async ({ lineEnabled, disabled }) => {
+        const stdin = createMockStdin();
+        const stdout = createMockStdout();
+        const stderr = createMockStdout();
+        const settings = {
+            ...DEFAULT_SETTINGS,
+            powerline: { ...DEFAULT_SETTINGS.powerline, enabled: true, lineEnabled }
+        };
+
+        const instance = render(
+            React.createElement(GlobalOverridesMenu, { settings, onUpdate: vi.fn(), onBack: vi.fn() }),
+            { stdin, stdout, stderr, debug: true, exitOnCtrlC: false, patchConsole: false }
+        );
+
+        try {
+            await waitFor(() => {
+                expect(stdout.getOutput()).toContain('Default Separator:');
+            });
+            const output = stdout.getOutput();
+            expect(output.includes('[disabled - Powerline active]')).toBe(disabled);
+            expect(output.includes('Some options are disabled while Powerline mode is active')).toBe(disabled);
+            expect(output.includes('Separator and background options apply to the plain lines')).toBe(!disabled);
+        } finally {
+            instance.unmount();
+            instance.cleanup();
+            stdin.destroy();
+            stdout.destroy();
+            stderr.destroy();
+        }
+    });
 });

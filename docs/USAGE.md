@@ -94,7 +94,16 @@ On Linux, width detection first uses `/proc` and the terminal device directly, a
 
 ## Powerline Auto-Alignment
 
-Powerline Setup can align widgets into shared columns across multiple status lines; press `a` there to toggle **Align Widgets**. When auto-alignment makes a naturally wide value stretch later columns, select that widget in the line editor and press `x` (**exclude align**). The selected widget and everything after it on that line keep their natural widths, while earlier columns remain aligned. This control is available only when Powerline auto-alignment is enabled and the selected widget is not merged into the previous widget.
+Powerline Setup can align widgets into shared columns across multiple status lines; press `a` there to toggle **Align Widgets**. Only Powerline lines take part (see Powerline Per Line). When auto-alignment makes a naturally wide value stretch later columns, select that widget in the line editor and press `x` (**exclude align**). The selected widget and everything after it on that line keep their natural widths, while earlier columns remain aligned. This control is available only when Powerline auto-alignment is enabled and the selected widget is not merged into the previous widget.
+
+## Powerline Per Line
+
+Each status line can be Powerline or plain. In **Edit Lines**, select a line and press `p` to switch it; once any line is Powerline, the list shows each line's mode, and a line keeps its mode when it's moved. Powerline Setup's switch is the default for lines you haven't switched.
+
+- A plain line keeps its manual separators and draws its widgets in their own text colors, without the Powerline backgrounds. In plain mode, backgrounds you set yourself still show.
+- Align Widgets, Continue Theme, and start/end caps run across the Powerline lines only, skipping plain lines.
+- Turning Powerline on removes manual separators only from the lines it applies to.
+- Under a Powerline theme, Edit Colors still edits the plain lines, and Global Overrides keeps the separator and background options for them.
 
 ## Global Options
 
