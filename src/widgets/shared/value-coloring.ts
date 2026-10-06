@@ -20,6 +20,7 @@ import {
     removeMetadataKeys,
     setMetadataValue
 } from './metadata';
+import { getLabel } from './raw-or-labeled';
 
 // Optional coloring of a widget's value by how high it runs: green, yellow and
 // red bands split at two break points, or a gradient that reaches its end color
@@ -247,7 +248,7 @@ export function formatColoredValue(
     scale: ValueColorScale,
     options: ValueFormatOptions
 ): string {
-    const shownLabel = item.rawValue ? '' : label;
+    const shownLabel = item.rawValue ? '' : getLabel(item, label);
     if (!isValueColorsEnabled(item) || options.colorsDisabled) {
         return `${shownLabel}${value}`;
     }
