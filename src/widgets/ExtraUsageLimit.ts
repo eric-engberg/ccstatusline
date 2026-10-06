@@ -15,12 +15,12 @@ import { isHidden } from './shared/hideable';
 import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
 import { USAGE_NO_DATA_HIDEABLE_STATE } from './shared/usage-display';
 
-const LABEL = 'Overage Left: ';
+const LABEL = 'Overage Limit: ';
 
-export class ExtraUsageRemainingWidget implements Widget {
+export class ExtraUsageLimitWidget implements Widget {
     getDefaultColor(): string { return 'green'; }
-    getDescription(): string { return 'Shows what\'s left of your monthly extra usage limit (Pro/Max overage or Enterprise spend)'; }
-    getDisplayName(): string { return 'Extra Usage Remaining'; }
+    getDescription(): string { return 'Shows your monthly extra usage limit (Pro/Max overage or Enterprise spend)'; }
+    getDisplayName(): string { return 'Extra Usage Limit'; }
     getCategory(): string { return 'Usage'; }
     getLabelPrefix(): string { return LABEL; }
 
@@ -35,16 +35,17 @@ export class ExtraUsageRemainingWidget implements Widget {
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
         const format = resolveNumberFormat('cost', item, settings);
         if (context.isPreview) {
-            return formatRawOrLabeledValue(item, this.getLabelPrefix(), formatUsageCurrency(3894, undefined, format));
+            // Matches the Extra Usage Used ($106) and Remaining ($3,894) samples.
+            return formatRawOrLabeledValue(item, LABEL, formatUsageCurrency(4000, undefined, format));
         }
 
         const data = context.usageData ?? {};
         if (data.extraUsageEnabled === false) {
             return isHidden(item, EXTRA_USAGE_DISABLED_HIDEABLE_STATE.key)
                 ? null
-                : formatRawOrLabeledValue(item, this.getLabelPrefix(), 'n/a');
+                : formatRawOrLabeledValue(item, LABEL, 'n/a');
         }
-        if (data.extraUsageEnabled !== true || data.extraUsageLimit === undefined || data.extraUsageUsed === undefined) {
+        if (data.extraUsageEnabled !== true) {
             if (data.error) {
                 return isHidden(item, USAGE_NO_DATA_HIDEABLE_STATE.key)
                     ? null
@@ -53,13 +54,17 @@ export class ExtraUsageRemainingWidget implements Widget {
             return null;
         }
 
-        // Both extraUsageLimit and extraUsageUsed are in cents
-        const limitDollars = data.extraUsageLimit / 100;
-        const usedDollars = data.extraUsageUsed / 100;
-        const remaining = Math.max(0, limitDollars - usedDollars);
-        const formatted = formatUsageCurrency(remaining, data.extraUsageCurrency, format);
+        // Once extra usage is known to be on, a missing monthly limit means
+        // none is set, not that the data is still loading (#413).
+        if (data.extraUsageLimit === undefined) {
+            return formatRawOrLabeledValue(item, LABEL, 'none');
+        }
 
-        return formatRawOrLabeledValue(item, this.getLabelPrefix(), formatted);
+        // extraUsageLimit is in cents
+        const limitDollars = data.extraUsageLimit / 100;
+        const formatted = formatUsageCurrency(limitDollars, data.extraUsageCurrency, format);
+
+        return formatRawOrLabeledValue(item, LABEL, formatted);
     }
 
     supportsRawValue(): boolean { return true; }

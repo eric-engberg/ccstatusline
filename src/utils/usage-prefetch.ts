@@ -4,8 +4,13 @@ import type {
 } from '../types/StatusJSON';
 import type { WidgetItem } from '../types/Widget';
 
+import { observeExtraUsageSpend } from './daily-spend';
 import type { UsageData } from './usage';
-import { fetchUsageData } from './usage';
+import {
+    fetchUsageData,
+    getUsageAccountKey,
+    getUsageFetchedAt
+} from './usage';
 import type { UsageDataField } from './usage-types';
 import {
     WEEKLY_MODEL_USAGE_BUCKETS,
@@ -23,7 +28,10 @@ const BASE_USAGE_WIDGET_TYPES = [
     'weekly-reset-timer',
     'extra-usage-utilization',
     'extra-usage-remaining',
-    'extra-usage-used'
+    'extra-usage-used',
+    'extra-usage-daily-budget',
+    'extra-usage-today',
+    'extra-usage-limit'
 ];
 
 const USAGE_WIDGET_TYPES = new Set<string>([
@@ -71,8 +79,57 @@ const USAGE_WIDGET_REQUIREMENTS: Record<string, UsageFieldRequirement[]> = {
     'extra-usage-used': [
         { field: 'extraUsageEnabled' },
         { field: 'extraUsageUsed' }
+    ],
+    'extra-usage-daily-budget': [
+        { field: 'extraUsageEnabled' },
+        { field: 'extraUsageLimit' },
+        { field: 'extraUsageUsed' }
+    ],
+    'extra-usage-today': [
+        { field: 'extraUsageEnabled' },
+        { field: 'extraUsageUsed' }
+    ],
+    'extra-usage-limit': [
+        { field: 'extraUsageEnabled' },
+        { field: 'extraUsageLimit' }
     ]
 };
+
+const SPEND_TODAY_WIDGET_TYPES = new Set<string>(['extra-usage-today']);
+
+// Daily Cost Rate only needs the usage fetch when it divides billed spend;
+// with Claude Code's own session costs it needs nothing from the API.
+const BILLED_SPEND_REQUIREMENTS: UsageFieldRequirement[] = [
+    { field: 'extraUsageEnabled' },
+    { field: 'extraUsageUsed' }
+];
+
+function isBilledDailyCostRate(item: WidgetItem): boolean {
+    return item.type === 'daily-cost-rate' && item.metadata?.billedSpend === 'true';
+}
+
+function needsSpendToday(lines: WidgetItem[][]): boolean {
+    return lines.some(line => line.some(item => SPEND_TODAY_WIDGET_TYPES.has(item.type) || isBilledDailyCostRate(item)));
+}
+
+// Today's spend needs the month-to-date total, the login it belongs to (the
+// daily state file keeps each login's start-of-day total separately), and when
+// the usage API returned it: a cached total fetched before midnight is not
+// today's.
+function withSpendToday(data: UsageData, lines: WidgetItem[][]): UsageData {
+    if (!needsSpendToday(lines) || data.extraUsageUsed === undefined) {
+        return data;
+    }
+
+    const accountKey = getUsageAccountKey();
+    const fetchedAtMs = getUsageFetchedAt();
+    if (accountKey === null || fetchedAtMs === null) {
+        return data;
+    }
+
+    const spentToday = observeExtraUsageSpend(accountKey, data.extraUsageUsed, fetchedAtMs);
+    return spentToday === undefined ? data : { ...data, extraUsageUsedToday: spentToday };
+}
 
 const USAGE_CURSOR_REQUIREMENTS: Record<string, UsageFieldRequirement> = {
     'session-usage': { field: 'sessionResetAt' },
@@ -80,12 +137,20 @@ const USAGE_CURSOR_REQUIREMENTS: Record<string, UsageFieldRequirement> = {
     ...Object.fromEntries(WEEKLY_MODEL_USAGE_BUCKETS.map(bucket => [bucket.widgetType, { field: bucket.resetField, alternatives: ['weeklyResetAt'] }]))
 };
 
+// Extra Usage Today's value colors measure today's spend against what was left
+// of the monthly limit when the day began
+const VALUE_COLORS_REQUIREMENTS: Record<string, UsageFieldRequirement> = { 'extra-usage-today': { field: 'extraUsageLimit' } };
+
 export function hasUsageDependentWidgets(lines: WidgetItem[][]): boolean {
-    return lines.some(line => line.some(item => USAGE_WIDGET_TYPES.has(item.type)));
+    return lines.some(line => line.some(item => USAGE_WIDGET_TYPES.has(item.type) || isBilledDailyCostRate(item)));
 }
 
 function isUsageCursorEnabled(item: WidgetItem): boolean {
     return item.metadata?.cursor === 'true';
+}
+
+function isValueColorsEnabled(item: WidgetItem): boolean {
+    return item.metadata?.valueColors === 'true';
 }
 
 function getUsageFieldRequirements(lines: WidgetItem[][]): UsageFieldRequirement[] {
@@ -98,6 +163,15 @@ function getUsageFieldRequirements(lines: WidgetItem[][]): UsageFieldRequirement
             const cursorRequirement = USAGE_CURSOR_REQUIREMENTS[item.type];
             if (cursorRequirement && isUsageCursorEnabled(item)) {
                 requirements.push(cursorRequirement);
+            }
+
+            if (isBilledDailyCostRate(item)) {
+                requirements.push(...BILLED_SPEND_REQUIREMENTS);
+            }
+
+            const valueColorsRequirement = VALUE_COLORS_REQUIREMENTS[item.type];
+            if (valueColorsRequirement && isValueColorsEnabled(item)) {
+                requirements.push(valueColorsRequirement);
             }
         }
     }
@@ -231,5 +305,5 @@ export async function prefetchUsageDataIfNeeded(lines: WidgetItem[][], data?: St
         return rateLimitsData;
     }
 
-    return mergeUsageData(rateLimitsData, apiData);
+    return withSpendToday(mergeUsageData(rateLimitsData, apiData), lines);
 }

@@ -521,7 +521,8 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
             widget: customEditorWidget.widget,
             onComplete: handleEditorComplete,
             onCancel: handleEditorCancel,
-            action: customEditorWidget.action
+            action: customEditorWidget.action,
+            settings
         });
     }
 

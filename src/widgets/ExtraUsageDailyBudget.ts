@@ -1,6 +1,7 @@
 import type { RenderContext } from '../types/RenderContext';
 import type { Settings } from '../types/Settings';
 import type {
+    CustomKeybind,
     HideableState,
     Widget,
     WidgetEditorDisplay,
@@ -10,22 +11,40 @@ import { resolveNumberFormat } from '../utils/number-format';
 import { getUsageErrorMessage } from '../utils/usage';
 
 import { formatUsageCurrency } from './shared/currency';
+import {
+    TOGGLE_WEEKDAYS_ACTION,
+    countBudgetDaysLeft,
+    getWeekdaysKeybind,
+    isWeekdaysOnly,
+    toggleWeekdaysOnly
+} from './shared/daily-budget';
 import { EXTRA_USAGE_DISABLED_HIDEABLE_STATE } from './shared/extra-usage-disabled';
 import { isHidden } from './shared/hideable';
 import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
 import { USAGE_NO_DATA_HIDEABLE_STATE } from './shared/usage-display';
 
-const LABEL = 'Overage Left: ';
+const LABEL = 'Daily Budget: ';
 
-export class ExtraUsageRemainingWidget implements Widget {
+export class ExtraUsageDailyBudgetWidget implements Widget {
     getDefaultColor(): string { return 'green'; }
-    getDescription(): string { return 'Shows what\'s left of your monthly extra usage limit (Pro/Max overage or Enterprise spend)'; }
-    getDisplayName(): string { return 'Extra Usage Remaining'; }
+    getDescription(): string { return 'Shows what\'s left of your monthly extra usage limit per day left in the month, optionally counting weekdays only'; }
+    getDisplayName(): string { return 'Extra Usage Daily Budget'; }
     getCategory(): string { return 'Usage'; }
     getLabelPrefix(): string { return LABEL; }
 
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
-        return { displayText: this.getDisplayName() };
+        return {
+            displayText: this.getDisplayName(),
+            modifierText: isWeekdaysOnly(item) ? '(weekdays)' : undefined
+        };
+    }
+
+    getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
+        return [getWeekdaysKeybind(item)];
+    }
+
+    handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
+        return action === TOGGLE_WEEKDAYS_ACTION ? toggleWeekdaysOnly(item) : null;
     }
 
     getHideableStates(): HideableState[] {
@@ -35,14 +54,16 @@ export class ExtraUsageRemainingWidget implements Widget {
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
         const format = resolveNumberFormat('cost', item, settings);
         if (context.isPreview) {
-            return formatRawOrLabeledValue(item, this.getLabelPrefix(), formatUsageCurrency(3894, undefined, format));
+            // The Extra Usage Remaining sample ($3,894) over 20 days, so the
+            // preview doesn't change with the date.
+            return formatRawOrLabeledValue(item, LABEL, formatUsageCurrency(3894 / 20, undefined, format));
         }
 
         const data = context.usageData ?? {};
         if (data.extraUsageEnabled === false) {
             return isHidden(item, EXTRA_USAGE_DISABLED_HIDEABLE_STATE.key)
                 ? null
-                : formatRawOrLabeledValue(item, this.getLabelPrefix(), 'n/a');
+                : formatRawOrLabeledValue(item, LABEL, 'n/a');
         }
         if (data.extraUsageEnabled !== true || data.extraUsageLimit === undefined || data.extraUsageUsed === undefined) {
             if (data.error) {
@@ -54,12 +75,11 @@ export class ExtraUsageRemainingWidget implements Widget {
         }
 
         // Both extraUsageLimit and extraUsageUsed are in cents
-        const limitDollars = data.extraUsageLimit / 100;
-        const usedDollars = data.extraUsageUsed / 100;
-        const remaining = Math.max(0, limitDollars - usedDollars);
-        const formatted = formatUsageCurrency(remaining, data.extraUsageCurrency, format);
+        const remainingDollars = Math.max(0, data.extraUsageLimit - data.extraUsageUsed) / 100;
+        const daysLeft = countBudgetDaysLeft(Date.now(), isWeekdaysOnly(item));
+        const formatted = formatUsageCurrency(remainingDollars / daysLeft, data.extraUsageCurrency, format);
 
-        return formatRawOrLabeledValue(item, this.getLabelPrefix(), formatted);
+        return formatRawOrLabeledValue(item, LABEL, formatted);
     }
 
     supportsRawValue(): boolean { return true; }

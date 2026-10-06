@@ -82,6 +82,8 @@ export interface WidgetEditorProps {
     onComplete: (updatedWidget: WidgetItem) => void;
     onCancel: () => void;
     action?: string;
+    /** The settings being edited, for editors that depend on them (e.g. the color level). */
+    settings?: Settings;
 }
 
 export interface CustomKeybind {
