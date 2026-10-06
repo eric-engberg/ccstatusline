@@ -25,7 +25,10 @@ import {
     getGradientModifier,
     paintWidgetBar
 } from './shared/gradient-bar';
+import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
 import { makeSliderBar } from './shared/usage-display';
+
+const LABEL = 'Context: ';
 
 type DisplayMode = 'progress' | 'progress-short' | 'slider' | 'slider-only';
 
@@ -51,6 +54,7 @@ export class ContextBarWidget implements Widget {
     getDescription(): string { return 'Shows context usage as a progress bar'; }
     getDisplayName(): string { return 'Context Bar'; }
     getCategory(): string { return 'Context'; }
+    getLabelPrefix(): string { return LABEL; }
 
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         const mode = getDisplayMode(item);
@@ -112,11 +116,11 @@ export class ContextBarWidget implements Widget {
             if (isBarSliderMode(displayMode)) {
                 const slider = paintWidgetBar(makeSliderBar(PREVIEW_PERCENT), item, settings);
                 const sliderDisplay = displayMode === 'slider' ? `${slider} ${usedDisplay}/${totalDisplay} (${percentDisplay})` : slider;
-                return item.rawValue ? sliderDisplay : `Context: ${sliderDisplay}`;
+                return formatRawOrLabeledValue(item, this.getLabelPrefix(), sliderDisplay);
             }
             const barWidth = displayMode === 'progress' ? 32 : 16;
             const previewDisplay = `${paintWidgetBar(makeUsageProgressBar(PREVIEW_PERCENT, barWidth), item, settings)} ${usedDisplay}/${totalDisplay} (${percentDisplay})`;
-            return item.rawValue ? previewDisplay : `Context: ${previewDisplay}`;
+            return formatRawOrLabeledValue(item, this.getLabelPrefix(), previewDisplay);
         }
 
         const contextWindowMetrics = getContextWindowMetrics(context.data);
@@ -146,13 +150,13 @@ export class ContextBarWidget implements Widget {
         if (isBarSliderMode(displayMode)) {
             const slider = paintWidgetBar(makeSliderBar(clampedPercent), item, settings);
             const sliderDisplay = displayMode === 'slider' ? `${slider} ${usedDisplay}/${totalDisplay} (${percentDisplay})` : slider;
-            return item.rawValue ? sliderDisplay : `Context: ${sliderDisplay}`;
+            return formatRawOrLabeledValue(item, this.getLabelPrefix(), sliderDisplay);
         }
 
         const barWidth = displayMode === 'progress' ? 32 : 16;
         const display = `${paintWidgetBar(makeUsageProgressBar(clampedPercent, barWidth), item, settings)} ${usedDisplay}/${totalDisplay} (${percentDisplay})`;
 
-        return item.rawValue ? display : `Context: ${display}`;
+        return formatRawOrLabeledValue(item, this.getLabelPrefix(), display);
     }
 
     getCustomKeybinds(): CustomKeybind[] {
@@ -163,6 +167,7 @@ export class ContextBarWidget implements Widget {
     }
 
     supportsRawValue(): boolean { return true; }
+
     supportsColors(item: WidgetItem): boolean { return true; }
     supportsNumberFormat(): boolean { return true; }
 }

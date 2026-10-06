@@ -129,6 +129,10 @@ export function getUsagePercentWidgetDisplayName(kind: UsagePercentWidgetKind): 
     return USAGE_PERCENT_WIDGET_CONFIG[kind].displayName;
 }
 
+export function getUsagePercentWidgetLabel(kind: UsagePercentWidgetKind): string {
+    return USAGE_PERCENT_WIDGET_CONFIG[kind].label;
+}
+
 export function getUsagePercentWidgetDescription(kind: UsagePercentWidgetKind): string {
     return USAGE_PERCENT_WIDGET_CONFIG[kind].description;
 }
@@ -213,6 +217,7 @@ export class UsagePercentWidget implements Widget {
     getDescription(): string { return getUsagePercentWidgetDescription(this.kind); }
     getDisplayName(): string { return getUsagePercentWidgetDisplayName(this.kind); }
     getCategory(): string { return 'Usage'; }
+    getLabelPrefix(): string { return getUsagePercentWidgetLabel(this.kind); }
 
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         return getUsagePercentWidgetEditorDisplay(this.kind, item);
