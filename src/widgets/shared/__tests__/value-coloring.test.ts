@@ -256,3 +256,24 @@ describe('formatColoredValue', () => {
         expect(formatColoredValue(colored, 'Spend Today: ', '$90.00', 90, BUDGET, { ...options, colorsDisabled: true })).toBe('Spend Today: $90.00');
     });
 });
+
+// Cache Hit Rate: a higher value is the good one
+describe('a scale where higher is better', () => {
+    const HIT_RATE: ValueColorScale = { midFrom: 50, highFrom: 80, highEdge: 'from', higherIsBetter: true };
+
+    it('defaults its bands to red, yellow and green, and stores only colors that differ', () => {
+        expect(getBandColor(base, 'low', HIT_RATE)).toBe('red');
+        expect(getBandColor(base, 'mid', HIT_RATE)).toBe('yellow');
+        expect(getBandColor(base, 'high', HIT_RATE)).toBe('green');
+        expect(setBandColor(base, 'high', 'green', HIT_RATE).metadata).toBeUndefined();
+        expect(setBandColor(base, 'high', 'red', HIT_RATE).metadata).toEqual({ 'valueColor.high': 'red' });
+    });
+
+    it('runs a gradient from its urgent end, so 100% is the calm color', () => {
+        const on = { ...base, metadata: { valueColors: 'true', valueColorMode: 'gradient' } };
+
+        expect(getValueColorCode(on, 100, HIT_RATE, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 0, 'truecolor'));
+        expect(getValueColorCode(on, 25, HIT_RATE, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 0.75, 'truecolor'));
+        expect(getValueColorCode(on, 0, HIT_RATE, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 1, 'truecolor'));
+    });
+});

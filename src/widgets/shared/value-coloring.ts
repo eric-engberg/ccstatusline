@@ -44,6 +44,12 @@ const DEFAULT_BAND_COLORS: Record<ValueBand, string> = {
     mid: 'yellow',
     high: 'red'
 };
+// For a scale where higher is better, e.g. a cache hit rate
+const HIGHER_IS_BETTER_BAND_COLORS: Record<ValueBand, string> = {
+    low: 'red',
+    mid: 'yellow',
+    high: 'green'
+};
 const DEFAULT_GRADIENT: BarGradientPreset = 'traffic';
 // Break points and the gradient's end are whole percents. Every widget's
 // gradient ends by default at the whole of what it measures against: the limit,
@@ -60,6 +66,9 @@ export interface ValueColorScale {
     highFrom: number;
     // 'from': high starts at highFrom; 'above': highFrom itself is still mid
     highEdge: 'from' | 'above';
+    // A higher value is the good one (Cache Hit Rate): the bands default to
+    // red, yellow and green, and a gradient runs from its urgent end
+    higherIsBetter?: boolean;
 }
 
 /** Spend against the monthly limit (Extra Usage Utilization and Used): green below 70%, yellow below 90%, red from 90%. */
@@ -92,12 +101,16 @@ export function cycleValueGradient(item: WidgetItem, direction: 1 | -1): WidgetI
     return setMetadataValue(item, GRADIENT_KEY, next === DEFAULT_GRADIENT ? null : next);
 }
 
-export function getBandColor(item: WidgetItem, band: ValueBand): string {
-    return item.metadata?.[`${BAND_COLOR_KEY_PREFIX}${band}`] ?? DEFAULT_BAND_COLORS[band];
+function getDefaultBandColor(band: ValueBand, scale: ValueColorScale | undefined): string {
+    return (scale?.higherIsBetter ? HIGHER_IS_BETTER_BAND_COLORS : DEFAULT_BAND_COLORS)[band];
 }
 
-export function setBandColor(item: WidgetItem, band: ValueBand, color: string): WidgetItem {
-    return setMetadataValue(item, `${BAND_COLOR_KEY_PREFIX}${band}`, color === DEFAULT_BAND_COLORS[band] ? null : color);
+export function getBandColor(item: WidgetItem, band: ValueBand, scale?: ValueColorScale): string {
+    return item.metadata?.[`${BAND_COLOR_KEY_PREFIX}${band}`] ?? getDefaultBandColor(band, scale);
+}
+
+export function setBandColor(item: WidgetItem, band: ValueBand, color: string, scale?: ValueColorScale): WidgetItem {
+    return setMetadataValue(item, `${BAND_COLOR_KEY_PREFIX}${band}`, color === getDefaultBandColor(band, scale) ? null : color);
 }
 
 function readBreakPoint(item: WidgetItem, which: BreakPoint, fallback: number): number {
@@ -216,10 +229,11 @@ export function getValueColorCode(item: WidgetItem, percent: number, scale: Valu
         if (colorLevel === 'ansi16') {
             return null;
         }
-        const position = Math.min(1, Math.max(0, percent / getGradientEnd(item)));
+        const share = Math.min(1, Math.max(0, percent / getGradientEnd(item)));
+        const position = scale.higherIsBetter ? 1 - share : share;
         return gradientPresetCodeAt(getValueGradient(item), position, colorLevel);
     }
-    return getColorAnsiCode(getBandColor(item, getValueBand(item, percent, scale)), colorLevel);
+    return getColorAnsiCode(getBandColor(item, getValueBand(item, percent, scale), scale), colorLevel);
 }
 
 export interface ValueFormatOptions {

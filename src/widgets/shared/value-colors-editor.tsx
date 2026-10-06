@@ -108,8 +108,8 @@ export function makeValueColorsConfig(options: ValueColorsEditorOptions, setting
         getNotice: item => (isGradient(item) ? getGradientNotice(settings) : null),
         isEnabled: isValueColorsEnabled,
         setEnabled: setValueColorsEnabled,
-        getColor: getBandColor,
-        setColor: setBandColor,
+        getColor: (item, band) => getBandColor(item, band, scale),
+        setColor: (item, band, color) => setBandColor(item, band, color, scale),
         getSettingLabel: (item, setting) => {
             if (setting === 'mode') {
                 return isGradient(item) ? 'Gradient' : 'Break points';
