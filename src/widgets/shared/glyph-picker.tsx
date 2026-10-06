@@ -18,6 +18,7 @@ import type { GlyphEntry } from './glyph-groups';
 
 const COLUMNS = 10;
 const VISIBLE_ROWS = 6;
+const PAGE = COLUMNS * VISIBLE_ROWS;
 // Every glyph takes two cells in the grid, so one-cell glyphs line up too
 const CELL_WIDTH = 2;
 
@@ -94,8 +95,6 @@ const GlyphGrid: React.FC<GlyphPickerProps & { catalog: GlyphCatalog }> = ({ cat
             search(query.slice(0, -1));
         } else if (!searching && key.tab) {
             changeGroup(key.shift ? -1 : 1);
-        } else if (!searching && (key.pageDown || key.pageUp)) {
-            changeGroup(key.pageDown ? 1 : -1);
         } else if (shouldInsertInput(input, key)) {
             search(query + input);
         }
@@ -119,6 +118,8 @@ const GlyphGrid: React.FC<GlyphPickerProps & { catalog: GlyphCatalog }> = ({ cat
         } else if (key.downArrow) {
             // Down from past the end of a short last row lands on its last glyph
             moveTo(Math.min(position.index + COLUMNS, glyphs.length - 1));
+        } else if (key.pageDown || key.pageUp) {
+            moveTo(key.pageDown ? Math.min(position.index + PAGE, glyphs.length - 1) : Math.max(position.index - PAGE, 0));
         } else {
             handleModeKey(input, key);
         }
@@ -137,8 +138,8 @@ const GlyphGrid: React.FC<GlyphPickerProps & { catalog: GlyphCatalog }> = ({ cat
             </Text>
             <Text dimColor>
                 {searching
-                    ? '←→↑↓ move, type to refine, Backspace edit, Enter pick, ESC clear search'
-                    : '←→↑↓ move, Tab/Shift+Tab or PgDn/PgUp group, type to search by name, Enter pick, ESC back'}
+                    ? '←→↑↓ move, PgUp/PgDn page, type to refine, Backspace edit, Enter pick, ESC clear search'
+                    : '←→↑↓ move, PgUp/PgDn page, Tab/Shift+Tab group, type to search by name, Enter pick, ESC back'}
             </Text>
             {(searching ? selected?.name.includes('(nf-') : group?.needsNerdFont) && (
                 <Text dimColor>Needs a Nerd Font; shows boxes without one.</Text>

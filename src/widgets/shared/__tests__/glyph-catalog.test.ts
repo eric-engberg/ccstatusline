@@ -11,8 +11,15 @@ const catalog = createGlyphCatalog();
 const glyphsFor = (query: string): string[] => catalog.search(query).map(entry => entry.glyph);
 
 describe('glyph catalog', () => {
-    it('browses the curated groups', () => {
-        expect(catalog.groups).toBe(GLYPH_GROUPS);
+    it('browses the curated groups, then every Nerd Font icon set as a group', () => {
+        const setGroups = catalog.groups.slice(GLYPH_GROUPS.length);
+
+        expect(catalog.groups.slice(0, GLYPH_GROUPS.length)).toEqual(GLYPH_GROUPS);
+        expect(setGroups.map(group => group.name)).toContain('Nerd Font: Octicons');
+        expect(setGroups.every(group => group.needsNerdFont)).toBe(true);
+        expect(setGroups.reduce((count, group) => count + group.glyphs.length, 0)).toBeGreaterThan(10000);
+        expect(setGroups.find(group => group.name === 'Nerd Font: Material Design')?.glyphs).toHaveLength(6896);
+        expect(setGroups.find(group => group.name === 'Nerd Font: Octicons')?.glyphs.map(entry => entry.glyph)).toContain('\uF4C9');
     });
 
     it('finds Nerd Font glyphs the groups leave out, by any words of their name', () => {
