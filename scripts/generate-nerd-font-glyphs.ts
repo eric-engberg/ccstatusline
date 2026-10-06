@@ -4,11 +4,14 @@
 // Nerd Font set, from Nerd Fonts' glyph names:
 //
 //   curl -sLO https://raw.githubusercontent.com/ryanoasis/nerd-fonts/master/glyphnames.json
-//   bun scripts/generate-nerd-font-glyphs.ts glyphnames.json
+//   bun scripts/generate-nerd-font-glyphs.ts
+//
+// It reads glyphnames.json from the current directory (the repo root).
 //
 // Names that share a codepoint (aliases across icon sets) become one entry.
 
 import {
+    existsSync,
     readFileSync,
     writeFileSync
 } from 'node:fs';
@@ -19,13 +22,13 @@ interface GlyphName {
 }
 
 const OUTPUT = 'src/widgets/shared/nerd-font-glyphs.ts';
-const source = process.argv[2];
-if (!source) {
-    console.error('Usage: bun scripts/generate-nerd-font-glyphs.ts <glyphnames.json>');
+const SOURCE = 'glyphnames.json';
+if (!existsSync(SOURCE)) {
+    console.error(`No ${SOURCE} here: download it into the repo root first (see the top of this script).`);
     process.exit(1);
 }
 
-const data = JSON.parse(readFileSync(source, 'utf-8')) as Record<string, GlyphName | { version?: string }>;
+const data = JSON.parse(readFileSync(SOURCE, 'utf-8')) as Record<string, GlyphName | { version?: string }>;
 const version = (data.METADATA as { version?: string } | undefined)?.version ?? 'unknown';
 
 // Codepoint → its names, in the file's order
