@@ -11,6 +11,7 @@ import {
 
 import { DEFAULT_SETTINGS } from '../../../types/Settings';
 import { getPowerlineThemes } from '../../../utils/colors';
+import { waitFor } from '../../__tests__/helpers/wait-for-ink';
 import {
     PowerlineThemeSelector,
     applyCustomPowerlineTheme,
@@ -55,35 +56,6 @@ function createMockStdout(): CapturedWriteStream {
             return chunks.join('');
         }
     });
-}
-
-function flushInk() {
-    return new Promise((resolve) => {
-        setTimeout(resolve, 25);
-    });
-}
-
-/**
- * Ink renders asynchronously, so a fixed sleep makes these tests fail whenever the
- * machine is busy. Poll for the state the step is waiting on instead, and name the step
- * so a stall reports which one stalled rather than failing an assertion further down.
- */
-async function waitForInkCondition(
-    condition: () => boolean,
-    label = 'the ink render to settle',
-    timeoutMs = 2000
-): Promise<void> {
-    const startedAt = Date.now();
-
-    while (!condition()) {
-        if (Date.now() - startedAt > timeoutMs) {
-            throw new Error(`Timed out waiting for ${label}`);
-        }
-
-        await new Promise((resolve) => {
-            setTimeout(resolve, 5);
-        });
-    }
 }
 
 describe('PowerlineThemeSelector helpers', () => {
@@ -234,6 +206,10 @@ describe('PowerlineThemeSelector helpers', () => {
         const onUpdate = vi.fn<PowerlineThemeSelectorProps['onUpdate']>();
         const onBack = vi.fn();
         const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        const frames: string[] = [];
+        stdout.on('data', (chunk: Buffer | string) => {
+            frames.push(chunk.toString());
+        });
         const instance = render(
             React.createElement(PowerlineThemeSelector, {
                 settings: {
@@ -258,13 +234,15 @@ describe('PowerlineThemeSelector helpers', () => {
         );
 
         try {
-            await flushInk();
+            await waitFor(() => {
+                expect(frames.join('')).toContain('(original)');
+            });
             expect(onUpdate).not.toHaveBeenCalled();
 
             stdin.write('\u001B[B');
-            await waitForInkCondition(() => onUpdate.mock.calls.length > 0, 'the theme preview update');
-            // Settle, so an extra (unwanted) preview update would still be caught below
-            await flushInk();
+            await waitFor(() => {
+                expect(onUpdate).toHaveBeenCalled();
+            });
 
             expect(onUpdate).toHaveBeenCalledTimes(1);
             expect(onUpdate.mock.calls[0]?.[0]?.powerline.theme).toBe(themes[1]);
@@ -323,15 +301,21 @@ describe('PowerlineThemeSelector helpers', () => {
         );
 
         try {
-            await flushInk();
+            await waitFor(() => {
+                expect(stdout.getOutput()).toContain('(original)');
+            });
             stdin.write('\x1B[B'); // change the theme (live preview)
-            await waitForInkCondition(() => onUpdate.mock.calls.length > 0, 'the theme preview update');
-            await flushInk();
+            await waitFor(() => {
+                expect(onUpdate).toHaveBeenCalled();
+            });
             stdin.write('\r'); // Enter: commit -> keep/remove prompt
-            await waitForInkCondition(() => stdout.getOutput().includes('Remove them so the new theme fully applies?'), 'the remove-pins prompt');
-            await flushInk();
+            await waitFor(() => {
+                expect(stdout.getOutput()).toContain('Remove them so the new theme fully applies?');
+            });
             stdin.write('\x1B'); // ESC: the screen promises this cancels
-            await waitForInkCondition(() => onBack.mock.calls.length > 0, 'the selector to close');
+            await waitFor(() => {
+                expect(onBack).toHaveBeenCalled();
+            });
 
             // Both Yes and No commit the theme, so ESC is the only abort - it must undo the
             // live preview rather than leaving the previewed theme applied.
@@ -381,20 +365,27 @@ describe('PowerlineThemeSelector helpers', () => {
         );
 
         try {
-            await flushInk();
-            stdin.write('[B'); // change the theme (live preview)
-            await waitForInkCondition(() => onUpdate.mock.calls.length > 0, 'the theme preview update');
-            // Ink writes the frame before the next screen's input handler attaches
-            await flushInk();
+            await waitFor(() => {
+                expect(stdout.getOutput()).toContain('(original)');
+            });
+            stdin.write('\x1B[B'); // change the theme (live preview)
+            await waitFor(() => {
+                expect(onUpdate).toHaveBeenCalled();
+            });
             stdin.write('\r'); // Enter: commit -> keep/remove prompt (pins present, theme changed)
-            await waitForInkCondition(() => stdout.getOutput().includes('Remove them so the new theme fully applies?'), 'the remove-pins prompt');
-            await flushInk();
+            await waitFor(() => {
+                expect(stdout.getOutput()).toContain('Remove them so the new theme fully applies?');
+            });
             // The prompt starts on "No", so removing the pins takes a deliberate move up
             // first - the same Enter that opened it must not be able to destroy them.
             stdin.write('\x1B[B');
-            await flushInk();
+            await waitFor(() => {
+                expect(stdout.getOutput()).toContain('▶  Yes');
+            });
             stdin.write('\r'); // Enter: choose "Yes" -> remove overrides
-            await waitForInkCondition(() => onBack.mock.calls.length > 0, 'the selector to close');
+            await waitFor(() => {
+                expect(onBack).toHaveBeenCalled();
+            });
 
             const lastSettings = onUpdate.mock.calls.at(-1)?.[0];
             expect(lastSettings?.lines[0]?.[0]?.pinColor).toBeUndefined();

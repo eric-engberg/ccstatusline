@@ -22,6 +22,7 @@ import {
 import { getNumberFormatModifierText } from '../../utils/number-format';
 import { getWidget } from '../../utils/widgets';
 import { getHideModifierText } from '../../widgets/shared/hideable';
+import { getLabelModifierText } from '../../widgets/shared/raw-or-labeled';
 
 export interface WidgetRowProps {
     /** 1-based position of the widget in its line. */
@@ -92,6 +93,14 @@ export function getWidgetRowTags(widgets: WidgetItem[], index: number, settings:
         const hideModifierText = getHideModifierText(widget, widgetImpl.getHideableStates?.() ?? []);
         if (hideModifierText) {
             tags.push(hideModifierText);
+        }
+    }
+
+    // A label override, while the label shows (not in raw value mode)
+    if (widgetImpl?.getLabelPrefix && !widget.rawValue) {
+        const labelModifierText = getLabelModifierText(widget);
+        if (labelModifierText) {
+            tags.push(labelModifierText);
         }
     }
 

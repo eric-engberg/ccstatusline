@@ -312,7 +312,6 @@ function clearInstallationMetadata(settings: Settings | null): Settings | null {
     }
 
     const { installation, ...next } = settings;
-    void installation;
     return next;
 }
 
@@ -422,7 +421,8 @@ export function getConfirmCancelScreen(confirmDialog: ConfirmDialogState | null)
 
 /**
  * Screen a main menu option navigates to directly, or null when the option
- * needs a handler of its own (dialogs, installs, exiting).
+ * needs a handler of its own (dialogs, installs, exiting). Every option has a
+ * case: a new one fails to compile until it is classified here.
  */
 export function getMainMenuScreenTarget(value: MainMenuOption): AppScreen | null {
     switch (value) {
@@ -452,12 +452,6 @@ export function getMainMenuScreenTarget(value: MainMenuOption): AppScreen | null
         case 'save':
         case 'exit':
             return null;
-        default: {
-            // A new MainMenuOption must be classified here rather than silently doing nothing.
-            const exhaustive: never = value;
-            void exhaustive;
-            return null;
-        }
     }
 }
 
@@ -575,7 +569,8 @@ export const App: React.FC = () => {
             terminalWidth,
             isPreview: true,
             minimalist: settings.minimalistMode,
-            gitCacheTtlSeconds: settings.gitCacheTtlSeconds
+            gitCacheTtlSeconds: settings.gitCacheTtlSeconds,
+            customCommandCacheTtlSeconds: settings.customCommandCacheTtlSeconds
         });
     }, [settings, terminalWidth]);
 
@@ -1452,6 +1447,8 @@ export const App: React.FC = () => {
                         currentInterval={currentRefreshInterval}
                         supportsRefreshInterval={supportsRefreshInterval}
                         gitCacheTtlSeconds={settings.gitCacheTtlSeconds}
+                        terminalWidthCacheTtlSeconds={settings.terminalWidthCacheTtlSeconds}
+                        customCommandCacheTtlSeconds={settings.customCommandCacheTtlSeconds}
                         onUpdate={(interval) => {
                             const previous = currentRefreshInterval;
                             setCurrentRefreshInterval(interval);
@@ -1478,6 +1475,28 @@ export const App: React.FC = () => {
                             });
                             setFlashMessage({
                                 text: '✓ Git cache TTL updated',
+                                color: 'green'
+                            });
+                            setScreen('main');
+                        }}
+                        onTerminalWidthCacheTtlUpdate={(ttlSeconds) => {
+                            setSettings({
+                                ...settings,
+                                terminalWidthCacheTtlSeconds: ttlSeconds
+                            });
+                            setFlashMessage({
+                                text: '✓ Terminal Width cache TTL updated',
+                                color: 'green'
+                            });
+                            setScreen('main');
+                        }}
+                        onCustomCommandCacheTtlUpdate={(ttlSeconds) => {
+                            setSettings({
+                                ...settings,
+                                customCommandCacheTtlSeconds: ttlSeconds
+                            });
+                            setFlashMessage({
+                                text: '✓ Custom command cache TTL updated',
                                 color: 'green'
                             });
                             setScreen('main');

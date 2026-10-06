@@ -97,8 +97,6 @@ export function applyCustomPowerlineTheme(
                 pinBackgroundColor,
                 ...restWidget
             } = widget;
-            void pinColor; // Intentionally unused
-            void pinBackgroundColor; // Intentionally unused
 
             return {
                 ...restWidget,

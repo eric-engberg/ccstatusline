@@ -53,6 +53,7 @@ const renderSingleLine = (
         isPreview: true,
         minimalist: settings.minimalistMode,
         gitCacheTtlSeconds: settings.gitCacheTtlSeconds,
+        customCommandCacheTtlSeconds: settings.customCommandCacheTtlSeconds,
         lineIndex,
         globalSeparatorIndex,
         globalPowerlineThemeIndex,

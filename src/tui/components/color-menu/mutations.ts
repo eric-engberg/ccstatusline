@@ -61,12 +61,10 @@ export function unpinWidgetColor(
     return updateWidgetById(widgets, widgetId, (widget) => {
         if (isBackground) {
             const { pinBackgroundColor, ...restWidget } = widget;
-            void pinBackgroundColor; // Intentionally unused
             return restWidget;
         }
 
         const { pinColor, ...restWidget } = widget;
-        void pinColor; // Intentionally unused
         return restWidget;
     });
 }
@@ -78,8 +76,6 @@ export function clearAllPins(widgets: WidgetItem[]): WidgetItem[] {
             pinBackgroundColor,
             ...restWidget
         } = widget;
-        void pinColor; // Intentionally unused
-        void pinBackgroundColor; // Intentionally unused
         return restWidget;
     });
 }
@@ -103,7 +99,6 @@ export function cycleWidgetDim(widgets: WidgetItem[], widgetId: string): WidgetI
 
         if (widget.dim === 'parens') {
             const { dim, ...restWidget } = widget;
-            void dim; // Intentionally unused
             return restWidget;
         }
 
@@ -132,15 +127,8 @@ function stripWidgetStyling(widget: WidgetItem, themeActive: boolean): WidgetIte
         pinBackgroundColor,
         ...restWidget
     } = widget;
-    void bold; // Intentionally unused
-    void dim; // Intentionally unused
-    void numberFormat; // Intentionally unused
 
     if (!themeActive) {
-        void color; // Intentionally unused
-        void backgroundColor; // Intentionally unused
-        void pinColor; // Intentionally unused
-        void pinBackgroundColor; // Intentionally unused
         return restWidget;
     }
 
