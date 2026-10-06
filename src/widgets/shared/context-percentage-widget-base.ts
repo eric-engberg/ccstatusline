@@ -21,6 +21,7 @@ import {
 } from './context-inverse';
 import {
     getContextSliderKeybinds,
+    getContextSliderMode,
     getContextSliderModifierText,
     handleContextSliderAction,
     renderContextSlider
@@ -32,6 +33,22 @@ import {
 } from './level-glyph';
 import { renderLevelGlyphEditor } from './level-glyph-editor';
 import { formatRawOrLabeledValue } from './raw-or-labeled';
+import {
+    LIMIT_SCALE,
+    formatColoredValue,
+    getValueColorsModifier,
+    getValueFormatOptions,
+    isValueColorsEnabled
+} from './value-coloring';
+import {
+    renderValueColorsEditor,
+    withValueColorsKeybind
+} from './value-colors-editor';
+
+// The plain percent: neither the slider nor the level glyph, so value colors apply
+function showsPlainPercent(item: WidgetItem): boolean {
+    return getContextSliderMode(item) === 'none' && !isLevelGlyphMode(item);
+}
 
 // Context % and Context % (usable) differ only in their name, color, label, preview
 // sample and how they measure the used share of the context window
@@ -53,7 +70,8 @@ export abstract class ContextPercentageWidgetBase implements Widget {
         // The level glyph always measures what's used, so used/remaining doesn't apply
         const modifiers = [
             isLevelGlyphMode(item) ? undefined : getContextInverseModifierText(item),
-            getContextSliderModifierText(item)
+            getContextSliderModifierText(item),
+            showsPlainPercent(item) ? getValueColorsModifier(item) ?? undefined : undefined
         ].filter((m): m is string => m !== undefined);
 
         return {
@@ -81,23 +99,39 @@ export abstract class ContextPercentageWidgetBase implements Widget {
         const displayPercentage = isInverse ? 100 - usedPercentage : usedPercentage;
         const format = resolveNumberFormat('percent', item, settings);
         const slider = renderContextSlider(item, displayPercentage, format, context.barCells);
-        const sliderResult = slider === null ? null : paintWidgetBar(slider, item, settings, isInverse);
-        return formatRawOrLabeledValue(item, label, sliderResult ?? formatPercent(displayPercentage, format));
+        if (slider !== null) {
+            return formatRawOrLabeledValue(item, label, paintWidgetBar(slider, item, settings, isInverse));
+        }
+        // Value colors follow the used percent, even while the widget shows what's left
+        const formatOptions = getValueFormatOptions(settings, item.color ?? this.getDefaultColor());
+        return formatColoredValue(item, label, formatPercent(displayPercentage, format), usedPercentage, LIMIT_SCALE, formatOptions);
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
         if (item && isLevelGlyphMode(item)) {
             return getContextSliderKeybinds(item);
         }
-        return [
+        return withValueColorsKeybind([
             { key: 'u', label: '(u)sed/remaining', action: 'toggle-inverse' },
             ...getContextSliderKeybinds(item)
-        ];
+        ], item === undefined || showsPlainPercent(item));
     }
 
-    // The level glyph mode's glyph and break point editors
+    // The level glyph mode's glyph and break point editors, or value colors
     renderEditor(props: WidgetEditorProps): React.ReactElement | null {
-        return renderLevelGlyphEditor(props);
+        return renderLevelGlyphEditor(props) ?? renderValueColorsEditor(props, {
+            title: `${this.getDisplayName()}: value colors`,
+            scale: LIMIT_SCALE,
+            sampleNote: 'used',
+            defaultColor: this.getDefaultColor(),
+            maxPercent: 100
+        });
+    }
+
+    // Value colors embed their own foreground codes, so the renderer must
+    // leave this widget's foreground alone while they show
+    preservesRenderedColors(item: WidgetItem): boolean {
+        return isValueColorsEnabled(item) && showsPlainPercent(item);
     }
 
     supportsRawValue(): boolean { return true; }
