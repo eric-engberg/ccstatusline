@@ -23,6 +23,7 @@ import {
 } from '../../../widgets/shared/bar-layout';
 import { EDIT_BAR_WIDTH_ACTION } from '../../../widgets/shared/bar-width';
 import { EDIT_HIDE_STATES_ACTION } from '../../../widgets/shared/hideable';
+import { EDIT_LABEL_ACTION } from '../../../widgets/shared/raw-or-labeled';
 
 // Keys every widget offering them shares, applied here rather than in each
 // widget's handleEditorAction
@@ -505,10 +506,12 @@ export function handleNormalInputMode({
             const matchedKeybind = customKeybinds.find(kb => kb.key === shortcut);
 
             if (matchedKeybind) {
-                // The hide-state checklist and the bar width editor are rendered
-                // by the items editor for every widget that offers them, so they
-                // bypass widget-level action handling.
-                if (matchedKeybind.action === EDIT_HIDE_STATES_ACTION || matchedKeybind.action === EDIT_BAR_WIDTH_ACTION) {
+                // The hide-state checklist, the bar size editor and the label editor
+                // are rendered by the items editor for every widget that offers
+                // them, so they bypass widget-level action handling.
+                if (matchedKeybind.action === EDIT_HIDE_STATES_ACTION
+                    || matchedKeybind.action === EDIT_BAR_WIDTH_ACTION
+                    || matchedKeybind.action === EDIT_LABEL_ACTION) {
                     setCustomEditorWidget({ widget: currentWidget, impl: widgetImpl, action: matchedKeybind.action });
                     return;
                 }

@@ -44,11 +44,18 @@ const VALUE_COLORS_EDITOR: ValueColorsEditorOptions = {
 // The preview's $106.00 of a limit that leaves Remaining's $3,894.00 sample
 const PREVIEW_PERCENT = 106 / 4000 * 100;
 
+// "Overage Used: ", or "Spend Used: " on accounts without plan limits
+function getLabelFor(usageData: RenderContext['usageData']): string {
+    return `${getExtraUsageLabel(usageData)} Used: `;
+}
+
 export class ExtraUsageUsedWidget implements Widget {
     getDefaultColor(): string { return DEFAULT_COLOR; }
     getDescription(): string { return 'Shows extra usage spent: overage beyond Pro/Max plan limits, or your spend on Enterprise'; }
     getDisplayName(): string { return 'Extra Usage Used'; }
     getCategory(): string { return 'Usage'; }
+    // The editor has no usage data, so it offers the Overage label
+    getLabelPrefix(): string { return getLabelFor(undefined); }
 
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         const valueColors = getValueColorsModifier(item);
@@ -74,7 +81,7 @@ export class ExtraUsageUsedWidget implements Widget {
     }
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
-        const label = `${getExtraUsageLabel(context.usageData)} Used: `;
+        const label = getLabelFor(context.usageData);
         const format = resolveNumberFormat('cost', item, settings);
         const formatOptions = getValueFormatOptions(settings, item.color ?? DEFAULT_COLOR);
         if (context.isPreview) {
