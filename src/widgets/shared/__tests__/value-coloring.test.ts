@@ -125,6 +125,27 @@ describe('value color settings', () => {
         expect(getBreakPoints(stepBreakPoint(nearHigh, BUDGET, 'highFrom', -1), BUDGET).highFrom).toBe(98);
     });
 
+    // A break point off the multiples of 5, held next to the other one or typed, steps back onto them
+    it('steps an off-step break point to the next multiple of 5', () => {
+        const step = (item: WidgetItem, which: 'midFrom' | 'highFrom', direction: 1 | -1, times = 1): WidgetItem => (
+            times === 0 ? item : step(stepBreakPoint(item, UTILIZATION, which, direction), which, direction, times - 1)
+        );
+        const highAgainstMid = step(base, 'highFrom', -1, 5);
+
+        expect(getBreakPoints(highAgainstMid, UTILIZATION).highFrom).toBe(71);
+        expect(getBreakPoints(step(highAgainstMid, 'highFrom', 1), UTILIZATION).highFrom).toBe(75);
+        // Back on the default (90), so nothing is stored
+        expect(step(highAgainstMid, 'highFrom', 1, 4).metadata).toBeUndefined();
+
+        const typed = { ...base, metadata: { valueMidFrom: '72' } };
+        expect(getBreakPoints(step(typed, 'midFrom', 1), UTILIZATION).midFrom).toBe(75);
+        expect(getBreakPoints(step(typed, 'midFrom', -1), UTILIZATION).midFrom).toBe(70);
+
+        const lowestMid = step(base, 'midFrom', -1, 20);
+        expect(getBreakPoints(lowestMid, UTILIZATION).midFrom).toBe(1);
+        expect(getBreakPoints(step(lowestMid, 'midFrom', 1), UTILIZATION).midFrom).toBe(5);
+    });
+
     it('takes a typed break point and says what\'s wrong with a bad one', () => {
         expect(typeBreakPoint(base, BUDGET, 'highFrom', '120')).toEqual({ ...base, metadata: { valueHighFrom: '120' } });
         expect(typeBreakPoint({ ...base, metadata: { valueHighFrom: '120' } }, BUDGET, 'highFrom', '100')).toEqual({ ...base, metadata: undefined });

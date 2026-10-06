@@ -114,9 +114,14 @@ function getBreakPointRange(item: WidgetItem, scale: ValueColorScale, which: Bre
         : { min: midFrom + 1, max: MAX_BREAK_POINT };
 }
 
+// Steps land on multiples of the step, so a break point that's off them (held
+// next to the other one, or typed) steps back onto them
 export function stepBreakPoint(item: WidgetItem, scale: ValueColorScale, which: BreakPoint, direction: 1 | -1): WidgetItem {
     const { min, max } = getBreakPointRange(item, scale, which);
-    const stepped = getBreakPoints(item, scale)[which] + direction * BREAK_POINT_STEP;
+    const current = getBreakPoints(item, scale)[which];
+    const stepped = direction === 1
+        ? (Math.floor(current / BREAK_POINT_STEP) + 1) * BREAK_POINT_STEP
+        : (Math.ceil(current / BREAK_POINT_STEP) - 1) * BREAK_POINT_STEP;
     return setBreakPoint(item, scale, which, Math.min(max, Math.max(min, stepped)));
 }
 
