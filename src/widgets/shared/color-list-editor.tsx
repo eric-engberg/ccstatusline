@@ -109,7 +109,7 @@ export interface ColorListEditorProps<C extends string, X extends string> extend
 export function ColorListEditor<C extends string, X extends string = never>({ widget, onComplete, onCancel, config }: Readonly<ColorListEditorProps<C, X>>): React.ReactElement {
     const firstColorRow = config.rows.find(row => row.kind === 'color');
     const [draft, setDraft] = useState(widget);
-    const [selection, setSelectedIndex] = useState(0);
+    const [selection, setSelection] = useState(0);
     const [sampleKey, setSampleKey] = useState<C | undefined>(firstColorRow?.kind === 'color' ? firstColorRow.key : undefined);
     const [input, setInput] = useState<TypedInput | null>(null);
 
@@ -120,7 +120,7 @@ export function ColorListEditor<C extends string, X extends string = never>({ wi
     const enabled = config.isEnabled(draft);
 
     const moveTo = (index: number) => {
-        setSelectedIndex(index);
+        setSelection(index);
         const row = rows[index];
         if (row?.kind === 'color') {
             setSampleKey(row.key);

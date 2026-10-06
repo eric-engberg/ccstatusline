@@ -41,12 +41,12 @@ export const EDIT_VALUE_COLORS_ACTION = 'edit-value-colors';
 export const VALUE_COLORS_KEYBIND: CustomKeybind = { key: 'v', label: '(v)alue colors', action: EDIT_VALUE_COLORS_ACTION };
 
 type ValueSetting = 'mode' | BreakPoint | 'gradient' | 'gradientEnd';
-const BREAK_POINTS: readonly BreakPoint[] = ['midFrom', 'highFrom'];
+const BREAK_POINTS: ReadonlySet<ValueSetting> = new Set<BreakPoint>(['midFrom', 'highFrom']);
 // Gradient mode's own rows; the band colors and break points are break points mode's
-const GRADIENT_ROWS: readonly (ValueBand | ValueSetting)[] = ['gradient', 'gradientEnd'];
+const GRADIENT_ROWS: ReadonlySet<ValueBand | ValueSetting> = new Set(['gradient', 'gradientEnd']);
 
 function isBreakPoint(setting: ValueSetting): setting is BreakPoint {
-    return BREAK_POINTS.includes(setting as BreakPoint);
+    return BREAK_POINTS.has(setting);
 }
 
 export interface ValueColorsEditorOptions {
@@ -104,7 +104,7 @@ export function makeValueColorsConfig(options: ValueColorsEditorOptions, setting
             { kind: 'setting', key: 'highFrom', label: scale.highEdge === 'from' ? 'high from' : 'high above' }
         ],
         // Each mode shows only its own rows
-        isRowShown: (item, row) => row.key === 'mode' || isGradient(item) === GRADIENT_ROWS.includes(row.key),
+        isRowShown: (item, row) => row.key === 'mode' || isGradient(item) === GRADIENT_ROWS.has(row.key),
         getNotice: item => (isGradient(item) ? getGradientNotice(settings) : null),
         isEnabled: isValueColorsEnabled,
         setEnabled: setValueColorsEnabled,
