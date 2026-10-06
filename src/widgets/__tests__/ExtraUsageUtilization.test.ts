@@ -257,12 +257,13 @@ describe('ExtraUsageUtilizationWidget', () => {
             expect(render(new ExtraUsageUtilizationWidget(), item, used(95))).toBe(`${HIGH}5.0%${FG_RESET}`);
         });
 
-        it('places the percent along a gradient on truecolor and falls back to the break points below it', () => {
+        it('places the percent along a gradient at 256 colors and up, and keeps the widget color at 16', () => {
             const widget = new ExtraUsageUtilizationWidget();
             const item = { ...colored, rawValue: true, metadata: { ...colored.metadata, valueColorMode: 'gradient' } };
 
-            expect(widget.render(item, used(45), { ...DEFAULT_SETTINGS, colorLevel: 3 })).toBe(`${gradientPresetCodeAt('traffic', 0.5)}45.0%${FG_RESET}`);
-            expect(widget.render(item, used(45), { ...DEFAULT_SETTINGS, colorLevel: 2 })).toBe(`${LOW}45.0%${FG_RESET}`);
+            expect(widget.render(item, used(45), { ...DEFAULT_SETTINGS, colorLevel: 3 })).toBe(`${gradientPresetCodeAt('traffic', 0.5, 'truecolor')}45.0%${FG_RESET}`);
+            expect(widget.render(item, used(45), { ...DEFAULT_SETTINGS, colorLevel: 2 })).toBe(`${gradientPresetCodeAt('traffic', 0.5, 'ansi256')}45.0%${FG_RESET}`);
+            expect(widget.render(item, used(45), { ...DEFAULT_SETTINGS, colorLevel: 1 })).toBe(`${BASE}45.0%${FG_RESET}`);
         });
 
         it('renders plain text when colors are off for the whole status line', () => {
@@ -290,7 +291,7 @@ describe('ExtraUsageUtilizationWidget', () => {
             const widget = new ExtraUsageUtilizationWidget();
 
             expect(widget.getEditorDisplay(colored).modifierText).toBe('(used, value colors)');
-            expect(widget.getEditorDisplay({ ...colored, metadata: { valueColors: 'true', valueColorMode: 'gradient' } }).modifierText).toBe('(used, value gradient: traffic)');
+            expect(widget.getEditorDisplay({ ...colored, metadata: { valueColors: 'true', valueColorMode: 'gradient' } }).modifierText).toBe('(used, value colors: traffic gradient)');
             expect(widget.handleEditorAction('edit-value-colors', colored)).toBeNull();
             expect(widget.renderEditor({ widget: colored, onComplete: () => undefined, onCancel: () => undefined })).toBeTruthy();
         });

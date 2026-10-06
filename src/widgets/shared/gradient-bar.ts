@@ -36,10 +36,11 @@ const BAR_GRADIENTS: Record<BarGradientPreset, BarGradient> = {
     'mono': { stops: [hex('707070'), hex('B4B4B4'), hex('FFFFFF')] }
 };
 
-// The truecolor code at a position (0 to 1) along a preset, for widgets that
-// color a single value by how far along it is
-export function gradientPresetCodeAt(preset: BarGradientPreset, position: number): string {
-    return gradientCodeAt(BAR_GRADIENTS[preset].stops, position, 'truecolor');
+// The code at a position (0 to 1) along a preset, for widgets that color a
+// single value by how far along it is. One color at a time needs no smooth
+// blend, so 256 colors will do.
+export function gradientPresetCodeAt(preset: BarGradientPreset, position: number, colorLevel: 'ansi256' | 'truecolor'): string {
+    return gradientCodeAt(BAR_GRADIENTS[preset].stops, position, colorLevel);
 }
 
 export function isBarGradientPreset(value: string | undefined): value is BarGradientPreset {

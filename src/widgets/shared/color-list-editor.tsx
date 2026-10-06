@@ -71,6 +71,10 @@ export interface ColorListEditorConfig<C extends string, X extends string = neve
     /** Names the on/off switch, e.g. "Level colors". */
     toggleLabel: string;
     rows: readonly ColorListRow<C, X>[];
+    /** Hides rows that don't apply, e.g. another mode's settings; without it every row shows. */
+    isRowShown?: (item: WidgetItem, row: ColorListRow<C, X>) => boolean;
+    /** A warning about the draft, e.g. a setting the color level can't show. */
+    getNotice?: (item: WidgetItem) => string | null;
     isEnabled: (item: WidgetItem) => boolean;
     setEnabled: (item: WidgetItem, enabled: boolean) => WidgetItem;
     getColor: (item: WidgetItem, key: C) => string;
@@ -103,13 +107,15 @@ interface TypedInput {
 export interface ColorListEditorProps<C extends string, X extends string> extends WidgetEditorProps { config: ColorListEditorConfig<C, X> }
 
 export function ColorListEditor<C extends string, X extends string = never>({ widget, onComplete, onCancel, config }: Readonly<ColorListEditorProps<C, X>>): React.ReactElement {
-    const { rows } = config;
-    const firstColorRow = rows.find(row => row.kind === 'color');
+    const firstColorRow = config.rows.find(row => row.kind === 'color');
     const [draft, setDraft] = useState(widget);
-    const [selectedIndex, setSelectedIndex] = useState(0);
+    const [selection, setSelectedIndex] = useState(0);
     const [sampleKey, setSampleKey] = useState<C | undefined>(firstColorRow?.kind === 'color' ? firstColorRow.key : undefined);
     const [input, setInput] = useState<TypedInput | null>(null);
 
+    const rows = config.rows.filter(row => config.isRowShown?.(draft, row) ?? true);
+    // A change can hide rows; the selection stays on one that shows
+    const selectedIndex = Math.min(selection, rows.length - 1);
     const selectedRow = rows[selectedIndex];
     const enabled = config.isEnabled(draft);
 
@@ -198,6 +204,7 @@ export function ColorListEditor<C extends string, X extends string = never>({ wi
     });
 
     const sample = sampleKey === undefined ? '' : config.renderSample(draft, sampleKey);
+    const notice = config.getNotice?.(draft) ?? null;
 
     return (
         <Box flexDirection='column'>
@@ -213,6 +220,7 @@ export function ColorListEditor<C extends string, X extends string = never>({ wi
                 <Text color={enabled ? 'green' : 'red'}>{enabled ? 'On' : 'Off'}</Text>
                 {!enabled && <Text dimColor>  (Space to turn on; the widget uses its single color until then)</Text>}
             </Box>
+            {notice && <Text color='yellow'>{`⚠ ${notice}`}</Text>}
             {input !== null && selectedRow && (
                 <Box marginTop={1} flexDirection='column'>
                     <Box>

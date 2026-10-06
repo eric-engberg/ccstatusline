@@ -22,13 +22,15 @@ import {
 } from './metadata';
 
 // Optional coloring of a widget's value by how high it runs: green, yellow and
-// red bands split at two break points, or a gradient on truecolor terminals.
+// red bands split at two break points, or a gradient that reaches its end color
+// at a set value.
 // Values are percents, e.g. of a budget or a limit. Every option stores nothing
 // while at its default, so a widget nobody has customized keeps an empty
 // metadata object.
 const VALUE_COLORS_KEY = 'valueColors';
 const MODE_KEY = 'valueColorMode';
 const GRADIENT_KEY = 'valueGradient';
+const GRADIENT_END_KEY = 'valueGradientEnd';
 const BAND_COLOR_KEY_PREFIX = 'valueColor.';
 const BREAK_POINT_KEYS = { midFrom: 'valueMidFrom', highFrom: 'valueHighFrom' } as const;
 
@@ -43,9 +45,11 @@ const DEFAULT_BAND_COLORS: Record<ValueBand, string> = {
     high: 'red'
 };
 const DEFAULT_GRADIENT: BarGradientPreset = 'traffic';
-const BREAK_POINT_STEP = 5;
-const MIN_BREAK_POINT = 1;
-const MAX_BREAK_POINT = 999;
+// Break points and the gradient's end are whole percents
+const PERCENT_STEP = 5;
+const MIN_PERCENT = 1;
+const MAX_PERCENT = 999;
+const PERCENT_ERROR = `Use a whole number from ${MIN_PERCENT} to ${MAX_PERCENT}.`;
 
 /** Each widget's default break points (percent) and which band a value exactly at the high one is in. */
 export interface ValueColorScale {
@@ -110,26 +114,35 @@ function setBreakPoint(item: WidgetItem, scale: ValueColorScale, which: BreakPoi
 function getBreakPointRange(item: WidgetItem, scale: ValueColorScale, which: BreakPoint): { min: number; max: number } {
     const { midFrom, highFrom } = getBreakPoints(item, scale);
     return which === 'midFrom'
-        ? { min: MIN_BREAK_POINT, max: highFrom - 1 }
-        : { min: midFrom + 1, max: MAX_BREAK_POINT };
+        ? { min: MIN_PERCENT, max: highFrom - 1 }
+        : { min: midFrom + 1, max: MAX_PERCENT };
 }
 
-// Steps land on multiples of the step, so a break point that's off them (held
-// next to the other one, or typed) steps back onto them
+// The next multiple of the step in that direction, so a percent that's off
+// them (held next to a break point, or typed) steps back onto them
+function stepPercent(current: number, direction: 1 | -1): number {
+    return direction === 1
+        ? (Math.floor(current / PERCENT_STEP) + 1) * PERCENT_STEP
+        : (Math.ceil(current / PERCENT_STEP) - 1) * PERCENT_STEP;
+}
+
+// A typed percent, or null when it isn't a whole number in range
+function parsePercent(text: string): number | null {
+    const value = /^\d+$/.test(text.trim()) ? Number.parseInt(text, 10) : Number.NaN;
+    return Number.isNaN(value) || value < MIN_PERCENT || value > MAX_PERCENT ? null : value;
+}
+
 export function stepBreakPoint(item: WidgetItem, scale: ValueColorScale, which: BreakPoint, direction: 1 | -1): WidgetItem {
     const { min, max } = getBreakPointRange(item, scale, which);
-    const current = getBreakPoints(item, scale)[which];
-    const stepped = direction === 1
-        ? (Math.floor(current / BREAK_POINT_STEP) + 1) * BREAK_POINT_STEP
-        : (Math.ceil(current / BREAK_POINT_STEP) - 1) * BREAK_POINT_STEP;
+    const stepped = stepPercent(getBreakPoints(item, scale)[which], direction);
     return setBreakPoint(item, scale, which, Math.min(max, Math.max(min, stepped)));
 }
 
 /** A typed break point: the updated item, or the error to show. */
 export function typeBreakPoint(item: WidgetItem, scale: ValueColorScale, which: BreakPoint, text: string): WidgetItem | string {
-    const value = /^\d+$/.test(text.trim()) ? Number.parseInt(text, 10) : Number.NaN;
-    if (Number.isNaN(value) || value < MIN_BREAK_POINT || value > MAX_BREAK_POINT) {
-        return `Use a whole number from ${MIN_BREAK_POINT} to ${MAX_BREAK_POINT}.`;
+    const value = parsePercent(text);
+    if (value === null) {
+        return PERCENT_ERROR;
     }
 
     const { midFrom, highFrom } = getBreakPoints(item, scale);
@@ -143,20 +156,42 @@ export function typeBreakPoint(item: WidgetItem, scale: ValueColorScale, which: 
     return setBreakPoint(item, scale, which, value);
 }
 
-// The line editor's modifier, e.g. "value gradient: thermal"; the "gradient:"
-// form lets the line editor add "needs truecolor" below truecolor, as it does
-// for bar gradients
+// Where the gradient reaches its last color; values past it stay that color.
+// By default that's where the high band would start.
+export function getGradientEnd(item: WidgetItem, scale: ValueColorScale): number {
+    const stored = Number.parseInt(item.metadata?.[GRADIENT_END_KEY] ?? '', 10);
+    return Number.isNaN(stored) || stored < MIN_PERCENT ? scale.highFrom : stored;
+}
+
+function setGradientEnd(item: WidgetItem, scale: ValueColorScale, value: number): WidgetItem {
+    return setMetadataValue(item, GRADIENT_END_KEY, value === scale.highFrom ? null : String(value));
+}
+
+export function stepGradientEnd(item: WidgetItem, scale: ValueColorScale, direction: 1 | -1): WidgetItem {
+    const stepped = stepPercent(getGradientEnd(item, scale), direction);
+    return setGradientEnd(item, scale, Math.min(MAX_PERCENT, Math.max(MIN_PERCENT, stepped)));
+}
+
+/** A typed gradient end: the updated item, or the error to show. */
+export function typeGradientEnd(item: WidgetItem, scale: ValueColorScale, text: string): WidgetItem | string {
+    const value = parsePercent(text);
+    return value === null ? PERCENT_ERROR : setGradientEnd(item, scale, value);
+}
+
+// The line editor's modifier, e.g. "value colors: thermal gradient". Unlike a
+// bar gradient's "gradient: thermal", it gets no "needs truecolor" note: a
+// value's gradient shows at 256 colors too.
 export function getValueColorsModifier(item: WidgetItem): string | null {
     if (!isValueColorsEnabled(item)) {
         return null;
     }
-    return getValueColorMode(item) === 'gradient' ? `value gradient: ${getValueGradient(item)}` : 'value colors';
+    return getValueColorMode(item) === 'gradient' ? `value colors: ${getValueGradient(item)} gradient` : 'value colors';
 }
 
-/** (d)efaults: colors, break points, mode and gradient; value colors stay on or off. */
+/** (d)efaults: colors, break points, mode, gradient and its end; value colors stay on or off. */
 export function resetValueColors(item: WidgetItem): WidgetItem {
     const keys = Object.keys(item.metadata ?? {}).filter(key => key.startsWith(BAND_COLOR_KEY_PREFIX));
-    return removeMetadataKeys(item, [...keys, MODE_KEY, GRADIENT_KEY, ...Object.values(BREAK_POINT_KEYS)]);
+    return removeMetadataKeys(item, [...keys, MODE_KEY, GRADIENT_KEY, GRADIENT_END_KEY, ...Object.values(BREAK_POINT_KEYS)]);
 }
 
 export function getValueBand(item: WidgetItem, percent: number, scale: ValueColorScale): ValueBand {
@@ -168,12 +203,16 @@ export function getValueBand(item: WidgetItem, percent: number, scale: ValueColo
     return percent >= midFrom ? 'mid' : 'low';
 }
 
-// A gradient needs truecolor; below it the break points apply. The gradient
-// reaches its end color where the high band would start.
-export function getValueColorCode(item: WidgetItem, percent: number, scale: ValueColorScale, colorLevel: ColorLevelString): string {
-    if (getValueColorMode(item) === 'gradient' && colorLevel === 'truecolor') {
-        const { highFrom } = getBreakPoints(item, scale);
-        return gradientPresetCodeAt(getValueGradient(item), Math.min(1, Math.max(0, percent / highFrom)));
+// A gradient runs from its first color at 0 to its last at the gradient's end.
+// 16 colors are too few for one, so there the value keeps the widget color
+// (null).
+export function getValueColorCode(item: WidgetItem, percent: number, scale: ValueColorScale, colorLevel: ColorLevelString): string | null {
+    if (getValueColorMode(item) === 'gradient') {
+        if (colorLevel === 'ansi16') {
+            return null;
+        }
+        const position = Math.min(1, Math.max(0, percent / getGradientEnd(item, scale)));
+        return gradientPresetCodeAt(getValueGradient(item), position, colorLevel);
     }
     return getColorAnsiCode(getBandColor(item, getValueBand(item, percent, scale)), colorLevel);
 }
@@ -208,8 +247,7 @@ export function formatColoredValue(
         return `${shownLabel}${value}`;
     }
 
-    const valueCode = percent === null
-        ? getColorAnsiCode(options.baseColor, options.colorLevel)
-        : getValueColorCode(item, percent, scale, options.colorLevel);
+    const valueCode = (percent === null ? null : getValueColorCode(item, percent, scale, options.colorLevel))
+        ?? getColorAnsiCode(options.baseColor, options.colorLevel);
     return `${paintForeground(shownLabel, options.baseColor, options.colorLevel)}${paintCode(value, valueCode)}`;
 }

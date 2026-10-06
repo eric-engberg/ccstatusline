@@ -37,19 +37,19 @@ import {
 } from './shared/value-coloring';
 import {
     VALUE_COLORS_KEYBIND,
-    makeValueColorsConfig,
-    renderValueColorsEditor
+    renderValueColorsEditor,
+    type ValueColorsEditorOptions
 } from './shared/value-colors-editor';
 
 // Green below 80% of the day's budget, yellow up to all of it, red above it
 const BUDGET_SCALE: ValueColorScale = { midFrom: 80, highFrom: 100, highEdge: 'above' };
 const DEFAULT_COLOR = 'green';
-const VALUE_COLORS_CONFIG = makeValueColorsConfig({
+const VALUE_COLORS_EDITOR: ValueColorsEditorOptions = {
     title: 'Extra Usage Today: value colors',
     scale: BUDGET_SCALE,
     sampleNote: 'of today\'s budget',
     defaultColor: DEFAULT_COLOR
-});
+};
 // The preview's $46.10 against Daily Budget's $194.70 sample
 const PREVIEW_PERCENT = 4610 / 19470 * 100;
 
@@ -91,7 +91,7 @@ export class ExtraUsageTodayWidget implements Widget {
     }
 
     renderEditor(props: WidgetEditorProps): React.ReactElement {
-        return renderValueColorsEditor(props, VALUE_COLORS_CONFIG);
+        return renderValueColorsEditor(props, VALUE_COLORS_EDITOR);
     }
 
     // Value colors embed their own foreground codes, so the renderer must

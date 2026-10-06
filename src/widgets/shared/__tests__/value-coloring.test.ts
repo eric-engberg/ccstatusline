@@ -15,6 +15,7 @@ import {
     formatColoredValue,
     getBandColor,
     getBreakPoints,
+    getGradientEnd,
     getValueBand,
     getValueColorCode,
     getValueColorMode,
@@ -26,7 +27,9 @@ import {
     setValueColorMode,
     setValueColorsEnabled,
     stepBreakPoint,
+    stepGradientEnd,
     typeBreakPoint,
+    typeGradientEnd,
     type ValueColorScale
 } from '../value-coloring';
 
@@ -157,8 +160,30 @@ describe('value color settings', () => {
         expect(typeBreakPoint(base, BUDGET, 'highFrom', '80')).toBe('High has to start above mid (80%).');
     });
 
+    it('steps and takes a typed gradient end, starting where the high band does', () => {
+        expect(getGradientEnd(base, BUDGET)).toBe(100);
+        expect(getGradientEnd(base, UTILIZATION)).toBe(90);
+
+        const lower = stepGradientEnd(base, BUDGET, -1);
+        expect(lower.metadata).toEqual({ valueGradientEnd: '95' });
+        expect(stepGradientEnd(lower, BUDGET, 1).metadata).toBeUndefined();
+        expect(getGradientEnd(stepGradientEnd({ ...base, metadata: { valueGradientEnd: '72' } }, BUDGET, 1), BUDGET)).toBe(75);
+        expect(getGradientEnd(stepGradientEnd({ ...base, metadata: { valueGradientEnd: '1' } }, BUDGET, -1), BUDGET)).toBe(1);
+
+        expect(typeGradientEnd(base, BUDGET, '150')).toEqual({ ...base, metadata: { valueGradientEnd: '150' } });
+        expect(typeGradientEnd(base, BUDGET, '0')).toBe('Use a whole number from 1 to 999.');
+    });
+
+    // The break points belong to break points mode
+    it('keeps the gradient end apart from the break points', () => {
+        const item = { ...base, metadata: { valueMidFrom: '20', valueHighFrom: '40' } };
+
+        expect(getGradientEnd(item, BUDGET)).toBe(100);
+        expect(getGradientEnd(stepGradientEnd(item, BUDGET, -1), BUDGET)).toBe(95);
+    });
+
     it('resets everything but the on/off switch', () => {
-        const item = { ...gradient, metadata: { ...gradient.metadata, valueGradient: 'thermal', valueMidFrom: '50', valueHighFrom: '75' } };
+        const item = { ...gradient, metadata: { ...gradient.metadata, valueGradient: 'thermal', valueGradientEnd: '60', valueMidFrom: '50', valueHighFrom: '75' } };
 
         expect(resetValueColors(item).metadata).toEqual({ valueColors: 'true' });
     });
@@ -171,35 +196,44 @@ describe('getValueColorCode', () => {
         expect(getValueColorCode(colored, 101, BUDGET, 'truecolor')).toBe(HIGH);
     });
 
-    // The gradient reaches its end color where red would start
-    it('places the value along the gradient by its share of the high break point', () => {
-        expect(getValueColorCode(gradient, 0, BUDGET, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 0));
-        expect(getValueColorCode(gradient, 50, BUDGET, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 0.5));
-        expect(getValueColorCode(gradient, 45, UTILIZATION, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 0.5));
-        expect(getValueColorCode(gradient, 100, BUDGET, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 1));
-        expect(getValueColorCode(gradient, 150, BUDGET, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 1));
-        expect(getValueColorCode(gradient, Infinity, BUDGET, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 1));
+    // By default the gradient reaches its end color where red would start
+    it('places the value along the gradient by its share of the gradient end', () => {
+        expect(getValueColorCode(gradient, 0, BUDGET, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 0, 'truecolor'));
+        expect(getValueColorCode(gradient, 50, BUDGET, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 0.5, 'truecolor'));
+        expect(getValueColorCode(gradient, 45, UTILIZATION, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 0.5, 'truecolor'));
+        expect(getValueColorCode(gradient, 100, BUDGET, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 1, 'truecolor'));
+        expect(getValueColorCode(gradient, 150, BUDGET, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 1, 'truecolor'));
+        expect(getValueColorCode(gradient, Infinity, BUDGET, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 1, 'truecolor'));
+    });
+
+    it('ends the gradient where the widget sets it, whatever the break points', () => {
+        const ending = { ...gradient, metadata: { ...gradient.metadata, valueGradientEnd: '50', valueHighFrom: '200' } };
+
+        expect(getValueColorCode(ending, 25, BUDGET, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 0.5, 'truecolor'));
+        expect(getValueColorCode(ending, 80, BUDGET, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 1, 'truecolor'));
     });
 
     it('uses the widget\'s gradient preset', () => {
         const thermal = { ...gradient, metadata: { ...gradient.metadata, valueGradient: 'thermal' } };
 
-        expect(getValueColorCode(thermal, 50, BUDGET, 'truecolor')).toBe(gradientPresetCodeAt('thermal', 0.5));
+        expect(getValueColorCode(thermal, 50, BUDGET, 'truecolor')).toBe(gradientPresetCodeAt('thermal', 0.5, 'truecolor'));
     });
 
-    it('falls back to the break points below truecolor', () => {
-        expect(getValueColorCode(gradient, 40, BUDGET, 'ansi256')).toBe(LOW);
-        expect(getValueColorCode(gradient, 101, BUDGET, 'ansi16')).toBe(HIGH);
+    // 16 colors are too few for a gradient
+    it('steps the gradient through 256 colors, and leaves the color to the widget at 16', () => {
+        expect(getValueColorCode(gradient, 40, BUDGET, 'ansi256')).toBe(gradientPresetCodeAt('traffic', 0.4, 'ansi256'));
+        expect(getValueColorCode(gradient, 40, BUDGET, 'ansi256')).toMatch(/^\x1b\[38;5;\d+m$/);
+        expect(getValueColorCode(gradient, 101, BUDGET, 'ansi16')).toBeNull();
     });
 });
 
 describe('getValueColorsModifier', () => {
-    it('names the mode, and the gradient in the form the line editor marks as needing truecolor', () => {
+    // A value's gradient shows at 256 colors, unlike a bar's
+    it('names the mode and the gradient, which the line editor doesn\'t mark as needing truecolor', () => {
         expect(getValueColorsModifier(base)).toBeNull();
         expect(getValueColorsModifier(colored)).toBe('value colors');
-        expect(getValueColorsModifier(gradient)).toBe('value gradient: traffic');
-        expect(noteGradientNeedsTruecolor('(used, value gradient: traffic)', { ...DEFAULT_SETTINGS, colorLevel: 2 })).toBe('(used, value gradient: traffic, needs truecolor)');
-        expect(noteGradientNeedsTruecolor('(used, value gradient: traffic)', { ...DEFAULT_SETTINGS, colorLevel: 3 })).toBe('(used, value gradient: traffic)');
+        expect(getValueColorsModifier(gradient)).toBe('value colors: traffic gradient');
+        expect(noteGradientNeedsTruecolor('(used, value colors: traffic gradient)', { ...DEFAULT_SETTINGS, colorLevel: 2 })).toBe('(used, value colors: traffic gradient)');
     });
 });
 

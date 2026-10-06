@@ -4,13 +4,17 @@ import {
     it
 } from 'vitest';
 
+import {
+    DEFAULT_SETTINGS,
+    type Settings
+} from '../../../types/Settings';
 import type {
     WidgetEditorProps,
     WidgetItem
 } from '../../../types/Widget';
 import {
-    makeValueColorsConfig,
-    renderValueColorsEditor
+    renderValueColorsEditor,
+    type ValueColorsEditorOptions
 } from '../value-colors-editor';
 
 import {
@@ -22,30 +26,32 @@ import {
     renderWidgetEditor
 } from './helpers/widget-editor-harness';
 
-// Rows: mode, low, mid, high, mid from, high above, gradient
-const CONFIG = makeValueColorsConfig({
+// Rows in break points mode: mode, low, mid, high, mid from, high above.
+// In gradient mode: mode, gradient, ends at.
+const TODAY_OPTIONS: ValueColorsEditorOptions = {
     title: 'Extra Usage Today: value colors',
     scale: { midFrom: 80, highFrom: 100, highEdge: 'above' },
     sampleNote: 'of today\'s budget',
     defaultColor: 'green'
-});
-const UTILIZATION_CONFIG = makeValueColorsConfig({
+};
+const UTILIZATION_OPTIONS: ValueColorsEditorOptions = {
     title: 'Extra Usage Utilization: value colors',
     scale: { midFrom: 70, highFrom: 90, highEdge: 'from' },
     sampleNote: 'used',
     defaultColor: 'green',
     maxPercent: 100
-});
+};
 
 const today: WidgetItem = { id: 't', type: 'extra-usage-today', rawValue: true };
+const todayGradient: WidgetItem = { ...today, metadata: { valueColorMode: 'gradient' } };
 
-function renderEditor(widget: WidgetItem, config = CONFIG) {
-    const editor = (props: WidgetEditorProps) => renderValueColorsEditor(props, config);
+function renderEditor(widget: WidgetItem, options = TODAY_OPTIONS, settings?: Settings) {
+    const editor = (props: WidgetEditorProps) => renderValueColorsEditor({ ...props, settings }, options);
     return renderWidgetEditor(editor, widget);
 }
 
 describe('value colors editor', () => {
-    it('samples values around the break points and lists every setting', async () => {
+    it('samples values around the break points and lists break points mode\'s settings', async () => {
         const editor = renderEditor(today);
 
         try {
@@ -59,14 +65,15 @@ describe('value colors editor', () => {
             expect(output).toMatch(/high\s+Red/);
             expect(output).toMatch(/mid from\s+80%/);
             expect(output).toMatch(/high above\s+100%/);
-            expect(output).toMatch(/gradient\s+traffic/);
+            expect(output).not.toMatch(/gradient\s+traffic/);
+            expect(output).not.toContain('ends at');
         } finally {
             editor.cleanup();
         }
     });
 
     it('labels the high break point by whether it starts the high band', async () => {
-        const editor = renderEditor({ ...today, type: 'extra-usage-utilization' }, UTILIZATION_CONFIG);
+        const editor = renderEditor({ ...today, type: 'extra-usage-utilization' }, UTILIZATION_OPTIONS);
 
         try {
             await editor.ready();
@@ -91,17 +98,69 @@ describe('value colors editor', () => {
         }
     });
 
+    // Gradient mode shows only its own settings, and samples along the gradient and past its end
     it('switches to a gradient and cycles its preset both ways', async () => {
         const editor = renderEditor(today);
 
         try {
             await editor.ready();
+            editor.takeOutput();
             await editor.press(RIGHT);
-            expect(editor.takeOutput()).toMatch(/mode\s+Gradient \(truecolor only\)/);
-            await editor.press(DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, LEFT, ENTER);
+            const output = editor.takeOutput();
+            expect(output).toContain('Sample: 25% 50% 75% 100% 125% of today\'s budget');
+            expect(output).toMatch(/mode\s+Gradient/);
+            expect(output).toMatch(/gradient\s+traffic/);
+            expect(output).toMatch(/ends at\s+100%/);
+            expect(output).not.toMatch(/low\s+Green/);
+            expect(output).not.toContain('mid from');
+            await editor.press(DOWN, LEFT, ENTER);
             expect(editor.savedMetadata()).toEqual({ valueColorMode: 'gradient', valueGradient: 'mono' });
         } finally {
             editor.cleanup();
+        }
+    });
+
+    it('steps and takes a typed gradient end', async () => {
+        const editor = renderEditor(todayGradient);
+
+        try {
+            await editor.ready();
+            await editor.press(DOWN, DOWN, LEFT);
+            expect(editor.takeOutput()).toMatch(/ends at\s+95%/);
+            await editor.press('1', '5', '0', ENTER, ENTER);
+            expect(editor.savedMetadata()).toEqual({ valueColorMode: 'gradient', valueGradientEnd: '150' });
+        } finally {
+            editor.cleanup();
+        }
+    });
+
+    it.each([
+        [2, 'Color Level is 256 Color, so the gradient moves in coarse steps.'],
+        [1, 'Color Level is Basic (16 colors), too few for a gradient, so the value keeps the widget color.'],
+        [0, 'Color Level is No Color, so the value isn\'t colored.']
+    ] as const)('warns about a gradient at color level %d', async (colorLevel, warning) => {
+        const editor = renderEditor(todayGradient, TODAY_OPTIONS, { ...DEFAULT_SETTINGS, colorLevel });
+
+        try {
+            await editor.ready();
+            expect(editor.takeOutput()).toContain(`⚠ ${warning}`);
+        } finally {
+            editor.cleanup();
+        }
+    });
+
+    it('has no warning at truecolor, or for break points', async () => {
+        const truecolor = renderEditor(todayGradient, TODAY_OPTIONS, { ...DEFAULT_SETTINGS, colorLevel: 3 });
+        const breakPoints = renderEditor(today, TODAY_OPTIONS, { ...DEFAULT_SETTINGS, colorLevel: 2 });
+
+        try {
+            await truecolor.ready();
+            await breakPoints.ready();
+            expect(truecolor.takeOutput()).not.toContain('⚠');
+            expect(breakPoints.takeOutput()).not.toContain('⚠');
+        } finally {
+            truecolor.cleanup();
+            breakPoints.cleanup();
         }
     });
 

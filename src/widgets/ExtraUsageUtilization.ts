@@ -43,20 +43,20 @@ import {
 } from './shared/value-coloring';
 import {
     VALUE_COLORS_KEYBIND,
-    makeValueColorsConfig,
-    renderValueColorsEditor
+    renderValueColorsEditor,
+    type ValueColorsEditorOptions
 } from './shared/value-colors-editor';
 
 // Green below 70% used, yellow below 90%, red from 90%
 const UTILIZATION_SCALE: ValueColorScale = { midFrom: 70, highFrom: 90, highEdge: 'from' };
 const DEFAULT_COLOR = 'green';
-const VALUE_COLORS_CONFIG = makeValueColorsConfig({
+const VALUE_COLORS_EDITOR: ValueColorsEditorOptions = {
     title: 'Extra Usage Utilization: value colors',
     scale: UTILIZATION_SCALE,
     sampleNote: 'used',
     defaultColor: DEFAULT_COLOR,
     maxPercent: 100
-});
+};
 
 // Value colors apply to the plain percent; the bar modes have bar gradients
 function showsValueColors(item: WidgetItem): boolean {
@@ -146,7 +146,7 @@ export class ExtraUsageUtilizationWidget implements Widget {
     }
 
     renderEditor(props: WidgetEditorProps): React.ReactElement {
-        return renderValueColorsEditor(props, VALUE_COLORS_CONFIG);
+        return renderValueColorsEditor(props, VALUE_COLORS_EDITOR);
     }
 
     // Value colors embed their own foreground codes, so the renderer must

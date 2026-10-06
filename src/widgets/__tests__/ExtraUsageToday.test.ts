@@ -159,12 +159,13 @@ describe('ExtraUsageTodayWidget', () => {
             expect(render(colored, { usageData: { extraUsageEnabled: true, extraUsageLimit: 37000, extraUsageUsed: 10000 } })).toBeNull();
         });
 
-        it('places the spend along a gradient on truecolor and falls back to the break points below it', () => {
+        it('places the spend along a gradient at 256 colors and up, and keeps the widget color at 16', () => {
             const widget = new ExtraUsageTodayWidget();
             const gradient = { ...colored, metadata: { ...colored.metadata, valueColorMode: 'gradient' } };
 
-            expect(widget.render(gradient, spentToday(500), { ...DEFAULT_SETTINGS, colorLevel: 3 })).toBe(`${gradientPresetCodeAt('traffic', 0.5)}$5.00${FG_RESET}`);
-            expect(widget.render(gradient, spentToday(500), { ...DEFAULT_SETTINGS, colorLevel: 2 })).toBe(`${LOW}$5.00${FG_RESET}`);
+            expect(widget.render(gradient, spentToday(500), { ...DEFAULT_SETTINGS, colorLevel: 3 })).toBe(`${gradientPresetCodeAt('traffic', 0.5, 'truecolor')}$5.00${FG_RESET}`);
+            expect(widget.render(gradient, spentToday(500), { ...DEFAULT_SETTINGS, colorLevel: 2 })).toBe(`${gradientPresetCodeAt('traffic', 0.5, 'ansi256')}$5.00${FG_RESET}`);
+            expect(widget.render(gradient, spentToday(500), { ...DEFAULT_SETTINGS, colorLevel: 1 })).toBe(`${BASE}$5.00${FG_RESET}`);
         });
 
         it('renders plain text when colors are off for the whole status line', () => {
@@ -195,7 +196,7 @@ describe('ExtraUsageTodayWidget', () => {
             expect(widget.getEditorDisplay(item).modifierText).toBeUndefined();
             expect(widget.getEditorDisplay({ ...item, metadata: { weekdaysOnly: 'true' } }).modifierText).toBeUndefined();
             expect(widget.getEditorDisplay(colored).modifierText).toBe('(value colors)');
-            expect(widget.getEditorDisplay({ ...weekdays, metadata: { ...weekdays.metadata, valueColorMode: 'gradient' } }).modifierText).toBe('(value gradient: traffic, weekdays)');
+            expect(widget.getEditorDisplay({ ...weekdays, metadata: { ...weekdays.metadata, valueColorMode: 'gradient' } }).modifierText).toBe('(value colors: traffic gradient, weekdays)');
         });
 
         // Value colors embed their own foreground codes, so the renderer has
