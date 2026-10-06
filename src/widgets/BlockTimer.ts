@@ -22,13 +22,19 @@ import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
 import {
     cycleUsageDisplayMode,
     formatUsageBar,
+    getUsageDisplayMode,
     getUsageDisplayModifierText,
     getUsageTimerCustomKeybinds,
     isUsageCompact,
     isUsageInverted,
+    isUsageProgressMode,
+    isUsageSliderMode,
     toggleUsageCompact,
     toggleUsageInverted
 } from './shared/usage-display';
+
+const LABEL = 'Block: ';
+const BAR_LABEL = 'Block ';
 
 const NO_DATA_HIDEABLE_STATE: HideableState = { key: 'no-data', label: 'when there is no active block' };
 
@@ -37,6 +43,10 @@ export class BlockTimerWidget implements Widget {
     getDescription(): string { return 'Shows current 5hr block elapsed time or progress'; }
     getDisplayName(): string { return 'Block Timer'; }
     getCategory(): string { return 'Usage'; }
+    getLabelPrefix(item: WidgetItem): string {
+        const displayMode = getUsageDisplayMode(item);
+        return isUsageProgressMode(displayMode) || isUsageSliderMode(displayMode) ? BAR_LABEL : LABEL;
+    }
 
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         return {
@@ -75,10 +85,10 @@ export class BlockTimerWidget implements Widget {
 
             const bar = formatUsageBar(item, previewPercent, format, settings, context);
             if (bar !== null) {
-                return formatRawOrLabeledValue(item, 'Block ', bar);
+                return formatRawOrLabeledValue(item, this.getLabelPrefix(item), bar);
             }
 
-            return formatRawOrLabeledValue(item, 'Block: ', compact ? '3h45m' : '3hr 45m');
+            return formatRawOrLabeledValue(item, this.getLabelPrefix(item), compact ? '3h45m' : '3hr 45m');
         }
 
         const usageData = context.usageData ?? {};
@@ -90,19 +100,19 @@ export class BlockTimerWidget implements Widget {
             }
             const bar = formatUsageBar(item, 0, format, settings, context);
             if (bar !== null) {
-                return formatRawOrLabeledValue(item, 'Block ', bar);
+                return formatRawOrLabeledValue(item, this.getLabelPrefix(item), bar);
             }
 
-            return formatRawOrLabeledValue(item, 'Block: ', compact ? '0h' : '0hr 0m');
+            return formatRawOrLabeledValue(item, this.getLabelPrefix(item), compact ? '0h' : '0hr 0m');
         }
 
         const bar = formatUsageBar(item, inverted ? window.remainingPercent : window.elapsedPercent, format, settings, context);
         if (bar !== null) {
-            return formatRawOrLabeledValue(item, 'Block ', bar);
+            return formatRawOrLabeledValue(item, this.getLabelPrefix(item), bar);
         }
 
         const elapsedTime = formatUsageDuration(window.elapsedMs, compact);
-        return formatRawOrLabeledValue(item, 'Block: ', elapsedTime);
+        return formatRawOrLabeledValue(item, this.getLabelPrefix(item), elapsedTime);
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {

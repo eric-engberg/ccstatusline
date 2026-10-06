@@ -6,12 +6,15 @@ import {
     removeMetadataKeys,
     setMetadataValue
 } from './metadata';
+import { getLabel } from './raw-or-labeled';
 
 // Optional per-family colors for the Model widget. Every option stores nothing
 // while at its default, so a Model widget nobody has customized keeps an
 // empty metadata object.
 const FAMILY_COLORS_KEY = 'familyColors';
 const FAMILY_COLOR_KEY_PREFIX = 'familyColor.';
+
+export const MODEL_LABEL = 'Model: ';
 
 export const MODEL_FAMILIES = ['opus', 'sonnet', 'haiku', 'fable'] as const;
 export type ModelFamily = typeof MODEL_FAMILIES[number];
@@ -68,7 +71,7 @@ export interface ModelFormatOptions {
 }
 
 export function formatModelName(item: WidgetItem, name: string, family: ModelFamily | null, options: ModelFormatOptions): string {
-    const label = item.rawValue ? '' : 'Model: ';
+    const label = item.rawValue ? '' : getLabel(item, MODEL_LABEL);
     if (!isFamilyColorsEnabled(item) || options.colorsDisabled) {
         return `${label}${name}`;
     }
