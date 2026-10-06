@@ -227,6 +227,52 @@ describe('PowerlineSetup helpers', () => {
             stderr.destroy();
         }
     });
+
+    // Turning Powerline on removes manual separators only from the lines it
+    // turns Powerline, so separators on a plain line need no confirmation
+    it('turns Powerline on without asking when the only separators are on a plain line', async () => {
+        const stdin = createMockStdin();
+        const stdout = createMockStdout();
+        const stderr = createMockStdout();
+        const onUpdate = vi.fn<PowerlineSetupProps['onUpdate']>();
+        const plainLine = [{ id: '2', type: 'model' }, { id: '3', type: 'separator' }, { id: '4', type: 'git-branch' }] as const;
+        const instance = render(
+            React.createElement(PowerlineSetup, {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                    lines: [[{ id: '1', type: 'model' }], [...plainLine]],
+                    powerline: { ...DEFAULT_SETTINGS.powerline, enabled: false, lineEnabled: [null, false] }
+                },
+                powerlineFontStatus: { installed: true },
+                onUpdate,
+                onBack: vi.fn(),
+                onInstallFonts: vi.fn(),
+                installingFonts: false,
+                fontInstallMessage: null,
+                onClearMessage: vi.fn()
+            }),
+            { stdin, stdout, stderr, debug: true, exitOnCtrlC: false, patchConsole: false }
+        );
+
+        try {
+            await waitFor(() => {
+                expect(stdout.getOutput()).toContain('Powerline Setup');
+            });
+            stdin.write('t');
+            await waitFor(() => {
+                expect(onUpdate).toHaveBeenCalledTimes(1);
+            });
+            expect(stdout.getOutput()).not.toContain('remove');
+            expect(onUpdate.mock.calls[0]?.[0].lines[1]?.map(item => item.type)).toEqual(['model', 'separator', 'git-branch']);
+            expect(onUpdate.mock.calls[0]?.[0].powerline.enabled).toBe(true);
+        } finally {
+            instance.unmount();
+            instance.cleanup();
+            stdin.destroy();
+            stdout.destroy();
+            stderr.destroy();
+        }
+    });
 });
 
 describe('PowerlineSeparatorEditor', () => {

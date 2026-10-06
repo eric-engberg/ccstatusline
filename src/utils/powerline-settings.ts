@@ -12,8 +12,11 @@ function resolveEnabledPowerlineTheme(theme: string | undefined): string {
 
 export function buildEnabledPowerlineSettings(settings: Settings, removeManualSeparators: boolean): Settings {
     const powerlineConfig = settings.powerline;
+    // A line set to plain keeps its separators
     const lines = removeManualSeparators
-        ? settings.lines.map(line => line.filter(item => item.type !== 'separator'))
+        ? settings.lines.map((line, index) => (
+            powerlineConfig.lineEnabled?.[index] === false ? line : line.filter(item => item.type !== 'separator')
+        ))
         : settings.lines;
 
     return {

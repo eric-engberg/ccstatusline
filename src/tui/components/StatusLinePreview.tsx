@@ -13,15 +13,21 @@ import {
     stripOscCodes,
     truncateStyledText
 } from '../../utils/ansi';
-import { advanceGlobalPowerlineThemeIndex } from '../../utils/powerline-theme-index';
+import {
+    START_LINE_COUNTERS,
+    advanceLineCounters
+} from '../../utils/line-counters';
+import {
+    getAutoAlignLines,
+    getLineRenderItems,
+    getLineSettings
+} from '../../utils/powerline-lines';
 import {
     calculateMaxWidthsFromPreRendered,
-    countPowerlineStartCapSlots,
     renderStatusLineWithInfo,
     type PreRenderedWidget,
     type RenderResult
 } from '../../utils/renderer';
-import { advanceGlobalSeparatorIndex } from '../../utils/separator-index';
 
 export interface StatusLinePreviewProps {
     lines: WidgetItem[][];
@@ -78,11 +84,9 @@ export const StatusLinePreview: React.FC<StatusLinePreviewProps> = ({ lines, ter
         if (!settings)
             return { renderedLines: [], anyTruncated: false };
 
-        const preCalculatedMaxWidths = calculateMaxWidthsFromPreRendered(preRenderedLines, settings);
+        const preCalculatedMaxWidths = calculateMaxWidthsFromPreRendered(getAutoAlignLines(settings, preRenderedLines), settings);
 
-        let globalSeparatorIndex = 0;
-        let globalPowerlineThemeIndex = 0;
-        let globalPowerlineStartCapIndex = 0;
+        let counters = START_LINE_COUNTERS;
         const result: string[] = [];
         let truncated = false;
 
@@ -90,14 +94,15 @@ export const StatusLinePreview: React.FC<StatusLinePreviewProps> = ({ lines, ter
             const lineItems = lines[i];
             if (lineItems && lineItems.length > 0) {
                 const preRenderedWidgets = preRenderedLines[i] ?? [];
+                // Each line renders in its own mode, Powerline or plain
                 const renderResult = renderSingleLine(
-                    lineItems,
+                    getLineRenderItems(settings, i, lineItems),
                     terminalWidth,
-                    settings,
+                    getLineSettings(settings, i),
                     i,
-                    globalSeparatorIndex,
-                    globalPowerlineThemeIndex,
-                    globalPowerlineStartCapIndex,
+                    counters.separator,
+                    counters.theme,
+                    counters.startCap,
                     preRenderedWidgets,
                     preCalculatedMaxWidths
                 );
@@ -106,13 +111,7 @@ export const StatusLinePreview: React.FC<StatusLinePreviewProps> = ({ lines, ter
                     truncated = true;
                 }
 
-                globalSeparatorIndex = advanceGlobalSeparatorIndex(globalSeparatorIndex, lineItems, preRenderedWidgets);
-                if (settings.powerline.enabled) {
-                    globalPowerlineStartCapIndex += countPowerlineStartCapSlots(lineItems, preRenderedWidgets);
-                }
-                if (settings.powerline.enabled && settings.powerline.continueThemeAcrossLines) {
-                    globalPowerlineThemeIndex = advanceGlobalPowerlineThemeIndex(globalPowerlineThemeIndex, preRenderedWidgets);
-                }
+                counters = advanceLineCounters(counters, settings, i, lineItems, preRenderedWidgets);
             }
         }
 

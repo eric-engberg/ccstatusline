@@ -188,23 +188,35 @@ describe('buildThemeSlotContexts', () => {
             type: 'model'
         } satisfies WidgetItem
     }));
+    const powerline = (continueThemeAcrossLines: boolean, lineEnabled?: (boolean | null)[], enabled = true) => ({
+        ...THEMED_SETTINGS,
+        powerline: { ...THEMED_SETTINGS.powerline, enabled, continueThemeAcrossLines, lineEnabled }
+    });
 
     it('restarts every line at slot 0 when the theme does not continue', () => {
-        const contexts = buildThemeSlotContexts([line(['a', 'b', 'c']), line(['d'])], false);
+        const contexts = buildThemeSlotContexts([line(['a', 'b', 'c']), line(['d'])], powerline(false));
 
         expect(contexts.map(context => context.startIndex)).toEqual([0, 0]);
     });
 
     it('resumes each line where the previous one stopped when the theme continues', () => {
-        const contexts = buildThemeSlotContexts([line(['a', 'b', 'c']), line(['d']), line(['e', 'f'])], true);
+        const contexts = buildThemeSlotContexts([line(['a', 'b', 'c']), line(['d']), line(['e', 'f'])], powerline(true));
 
         expect(contexts.map(context => context.startIndex)).toEqual([0, 3, 4]);
     });
 
     it('does not count a widget that renders nothing toward the next line offset', () => {
-        const contexts = buildThemeSlotContexts([line(['a', '', 'c']), line(['d'])], true);
+        const contexts = buildThemeSlotContexts([line(['a', '', 'c']), line(['d'])], powerline(true));
 
         expect(contexts[0]?.contents).toEqual(['a', '', 'c']);
         expect(contexts[1]?.startIndex).toBe(2);
+    });
+
+    // As the renderer does: a plain line takes no theme colors
+    it('continues the theme across Powerline lines only', () => {
+        const lines = [line(['a', 'b', 'c']), line(['d', 'e']), line(['f'])];
+
+        expect(buildThemeSlotContexts(lines, powerline(true, [null, false])).map(context => context.startIndex)).toEqual([0, 3, 3]);
+        expect(buildThemeSlotContexts(lines, powerline(true, [true, null, true], false)).map(context => context.startIndex)).toEqual([0, 3, 3]);
     });
 });

@@ -3,6 +3,7 @@ import type { Settings } from '../types/Settings';
 import type { WidgetItem } from '../types/Widget';
 
 import { getPowerlineTheme } from './colors';
+import { isPowerlineLine } from './powerline-lines';
 import {
     NO_THEME_SLOT,
     assignPowerlineThemeSlots,
@@ -56,13 +57,17 @@ export function getActiveThemeColors(settings: Settings): { fg: string[]; bg: st
 /**
  * Slot context for every line, index-aligned with `preRenderedLines`. The editor edits one
  * line at a time but a line's colors depend on the lines before it, so this is derived once
- * from the same pre-render the preview uses.
+ * from the same pre-render the preview uses. Plain lines take no theme colors, so as in the
+ * renderer they don't move where the Powerline lines after them start.
  */
 export function buildThemeSlotContexts(
     preRenderedLines: PowerlineThemeSlotEntry[][],
-    continueThemeAcrossLines: boolean
+    settings: Settings
 ): ThemeSlotContext[] {
-    const startIndices = computeLineThemeStartIndices(preRenderedLines, continueThemeAcrossLines);
+    const startIndices = computeLineThemeStartIndices(
+        preRenderedLines.map((entries, index) => (isPowerlineLine(settings, index) ? entries : [])),
+        settings.powerline.continueThemeAcrossLines
+    );
 
     return preRenderedLines.map((entries, index) => ({
         contents: entries.map(entry => entry.content),

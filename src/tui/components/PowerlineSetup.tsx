@@ -167,7 +167,8 @@ export const PowerlineSetup: React.FC<PowerlineSetupProps> = ({
     const [confirmingEnable, setConfirmingEnable] = useState(false);
     const [confirmingFontInstall, setConfirmingFontInstall] = useState(false);
 
-    const hasManualSeparatorItems = settings.lines.some(line => line.some(
+    // Separators only on the lines Powerline would apply to: a line set to plain keeps its own
+    const hasManualSeparatorItems = settings.lines.some((line, index) => powerlineConfig.lineEnabled?.[index] !== false && line.some(
         item => item.type === 'separator'
     ));
     const hasGlobalFgOverride = Boolean(settings.overrideForegroundColor && settings.overrideForegroundColor !== 'none');
@@ -438,7 +439,10 @@ export const PowerlineSetup: React.FC<PowerlineSetupProps> = ({
                                     Powerline mode uses its own separator system
                                 </Text>
                                 <Text dimColor>
-                                    Continue Theme keeps the Powerline color sequence running across lines
+                                    Continue Theme keeps the Powerline color sequence running across Powerline lines
+                                </Text>
+                                <Text dimColor>
+                                    Lines set to plain with (p) in Edit Lines stay plain
                                 </Text>
                             </Box>
                         </>
