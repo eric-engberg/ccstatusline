@@ -74,6 +74,19 @@ describe('level glyph', () => {
         expect(getLevelBreakPoints(stepLevelBreakPoint(item({ levelFromCritical: '98' }), 'critical', 1)).critical).toBe(100);
     });
 
+    // A break point off the multiples of 5, held next to a neighbor or typed, steps back onto them
+    it('steps an off-step break point to the next multiple of 5', () => {
+        const step = (from: WidgetItem, point: 'medium' | 'high', direction: 1 | -1, times = 1): WidgetItem => (
+            times === 0 ? from : step(stepLevelBreakPoint(from, point, direction), point, direction, times - 1)
+        );
+        const highAgainstMedium = step(item(), 'high', -1, 10);
+
+        expect(getLevelBreakPoints(highAgainstMedium).high).toBe(21);
+        expect(getLevelBreakPoints(step(highAgainstMedium, 'high', 1)).high).toBe(25);
+        expect(getLevelBreakPoints(step(item({ levelFromHigh: '72' }), 'high', 1)).high).toBe(75);
+        expect(getLevelBreakPoints(step(item({ levelFromHigh: '72' }), 'high', -1)).high).toBe(70);
+    });
+
     it('takes a typed break point and says what\'s wrong with a bad one', () => {
         expect(typeLevelBreakPoint(item(), 'critical', '95')).toEqual(item({ levelFromCritical: '95' }));
         expect(typeLevelBreakPoint(item(), 'medium', '0')).toBe('Use a whole number from 1 to 100.');

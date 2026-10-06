@@ -113,9 +113,14 @@ function getBreakPointRange(item: WidgetItem, point: LevelBreakPoint): { min: nu
     };
 }
 
+// Steps land on multiples of the step, so a break point that's off them (held
+// next to a neighbor, or typed) steps back onto them
 export function stepLevelBreakPoint(item: WidgetItem, point: LevelBreakPoint, direction: 1 | -1): WidgetItem {
     const { min, max } = getBreakPointRange(item, point);
-    const stepped = getLevelBreakPoints(item)[point] + direction * BREAK_POINT_STEP;
+    const current = getLevelBreakPoints(item)[point];
+    const stepped = direction === 1
+        ? (Math.floor(current / BREAK_POINT_STEP) + 1) * BREAK_POINT_STEP
+        : (Math.ceil(current / BREAK_POINT_STEP) - 1) * BREAK_POINT_STEP;
     return setLevelBreakPoint(item, point, Math.min(max, Math.max(min, stepped)));
 }
 
