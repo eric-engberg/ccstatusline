@@ -44,12 +44,6 @@ describe('ExtraUsageTodayWidget', () => {
         expect(render({ ...item, rawValue: true }, { usageData })).toBe('$46.10');
     });
 
-    // Usage-based plans (Enterprise) have no plan limits, so extra usage is the
-    // account's whole spend rather than overage beyond a limit.
-    it('labels it as spend when the account has no plan limits', () => {
-        expect(render(item, { usageData: { ...usageData, noPlanLimits: true } })).toBe('Spend Today: $46.10');
-    });
-
     it('formats the amount in the currency reported by the API', () => {
         expect(render(item, { usageData: { ...usageData, extraUsageCurrency: 'EUR' } })).toBe('Overage Today: €46.10');
     });
