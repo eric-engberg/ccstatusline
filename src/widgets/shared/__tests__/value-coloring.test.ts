@@ -160,26 +160,26 @@ describe('value color settings', () => {
         expect(typeBreakPoint(base, BUDGET, 'highFrom', '80')).toBe('High has to start above mid (80%).');
     });
 
-    it('steps and takes a typed gradient end, starting where the high band does', () => {
-        expect(getGradientEnd(base, BUDGET)).toBe(100);
-        expect(getGradientEnd(base, UTILIZATION)).toBe(90);
+    // 100%: the whole limit, or Extra Usage Today's whole budget
+    it('steps and takes a typed gradient end, starting at 100%', () => {
+        expect(getGradientEnd(base)).toBe(100);
 
-        const lower = stepGradientEnd(base, BUDGET, -1);
+        const lower = stepGradientEnd(base, -1);
         expect(lower.metadata).toEqual({ valueGradientEnd: '95' });
-        expect(stepGradientEnd(lower, BUDGET, 1).metadata).toBeUndefined();
-        expect(getGradientEnd(stepGradientEnd({ ...base, metadata: { valueGradientEnd: '72' } }, BUDGET, 1), BUDGET)).toBe(75);
-        expect(getGradientEnd(stepGradientEnd({ ...base, metadata: { valueGradientEnd: '1' } }, BUDGET, -1), BUDGET)).toBe(1);
+        expect(stepGradientEnd(lower, 1).metadata).toBeUndefined();
+        expect(getGradientEnd(stepGradientEnd({ ...base, metadata: { valueGradientEnd: '72' } }, 1))).toBe(75);
+        expect(getGradientEnd(stepGradientEnd({ ...base, metadata: { valueGradientEnd: '1' } }, -1))).toBe(1);
 
-        expect(typeGradientEnd(base, BUDGET, '150')).toEqual({ ...base, metadata: { valueGradientEnd: '150' } });
-        expect(typeGradientEnd(base, BUDGET, '0')).toBe('Use a whole number from 1 to 999.');
+        expect(typeGradientEnd(base, '150')).toEqual({ ...base, metadata: { valueGradientEnd: '150' } });
+        expect(typeGradientEnd(base, '0')).toBe('Use a whole number from 1 to 999.');
     });
 
     // The break points belong to break points mode
     it('keeps the gradient end apart from the break points', () => {
         const item = { ...base, metadata: { valueMidFrom: '20', valueHighFrom: '40' } };
 
-        expect(getGradientEnd(item, BUDGET)).toBe(100);
-        expect(getGradientEnd(stepGradientEnd(item, BUDGET, -1), BUDGET)).toBe(95);
+        expect(getGradientEnd(item)).toBe(100);
+        expect(getGradientEnd(stepGradientEnd(item, -1))).toBe(95);
     });
 
     it('resets everything but the on/off switch', () => {
@@ -196,11 +196,11 @@ describe('getValueColorCode', () => {
         expect(getValueColorCode(colored, 101, BUDGET, 'truecolor')).toBe(HIGH);
     });
 
-    // By default the gradient reaches its end color where red would start
+    // By default the gradient reaches its end color at 100%, the whole limit or budget
     it('places the value along the gradient by its share of the gradient end', () => {
         expect(getValueColorCode(gradient, 0, BUDGET, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 0, 'truecolor'));
         expect(getValueColorCode(gradient, 50, BUDGET, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 0.5, 'truecolor'));
-        expect(getValueColorCode(gradient, 45, UTILIZATION, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 0.5, 'truecolor'));
+        expect(getValueColorCode(gradient, 45, UTILIZATION, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 0.45, 'truecolor'));
         expect(getValueColorCode(gradient, 100, BUDGET, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 1, 'truecolor'));
         expect(getValueColorCode(gradient, 150, BUDGET, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 1, 'truecolor'));
         expect(getValueColorCode(gradient, Infinity, BUDGET, 'truecolor')).toBe(gradientPresetCodeAt('traffic', 1, 'truecolor'));

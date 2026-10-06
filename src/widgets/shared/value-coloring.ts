@@ -45,7 +45,10 @@ const DEFAULT_BAND_COLORS: Record<ValueBand, string> = {
     high: 'red'
 };
 const DEFAULT_GRADIENT: BarGradientPreset = 'traffic';
-// Break points and the gradient's end are whole percents
+// Break points and the gradient's end are whole percents. Every widget's
+// gradient ends by default at the whole of what it measures against: the limit,
+// or Extra Usage Today's budget.
+const DEFAULT_GRADIENT_END = 100;
 const PERCENT_STEP = 5;
 const MIN_PERCENT = 1;
 const MAX_PERCENT = 999;
@@ -58,6 +61,9 @@ export interface ValueColorScale {
     // 'from': high starts at highFrom; 'above': highFrom itself is still mid
     highEdge: 'from' | 'above';
 }
+
+/** Spend against the monthly limit (Extra Usage Utilization and Used): green below 70%, yellow below 90%, red from 90%. */
+export const LIMIT_SCALE: ValueColorScale = { midFrom: 70, highFrom: 90, highEdge: 'from' };
 
 export function isValueColorsEnabled(item: WidgetItem): boolean {
     return item.metadata?.[VALUE_COLORS_KEY] === 'true';
@@ -156,26 +162,25 @@ export function typeBreakPoint(item: WidgetItem, scale: ValueColorScale, which: 
     return setBreakPoint(item, scale, which, value);
 }
 
-// Where the gradient reaches its last color; values past it stay that color.
-// By default that's where the high band would start.
-export function getGradientEnd(item: WidgetItem, scale: ValueColorScale): number {
+// Where the gradient reaches its last color; values past it stay that color
+export function getGradientEnd(item: WidgetItem): number {
     const stored = Number.parseInt(item.metadata?.[GRADIENT_END_KEY] ?? '', 10);
-    return Number.isNaN(stored) || stored < MIN_PERCENT ? scale.highFrom : stored;
+    return Number.isNaN(stored) || stored < MIN_PERCENT ? DEFAULT_GRADIENT_END : stored;
 }
 
-function setGradientEnd(item: WidgetItem, scale: ValueColorScale, value: number): WidgetItem {
-    return setMetadataValue(item, GRADIENT_END_KEY, value === scale.highFrom ? null : String(value));
+function setGradientEnd(item: WidgetItem, value: number): WidgetItem {
+    return setMetadataValue(item, GRADIENT_END_KEY, value === DEFAULT_GRADIENT_END ? null : String(value));
 }
 
-export function stepGradientEnd(item: WidgetItem, scale: ValueColorScale, direction: 1 | -1): WidgetItem {
-    const stepped = stepPercent(getGradientEnd(item, scale), direction);
-    return setGradientEnd(item, scale, Math.min(MAX_PERCENT, Math.max(MIN_PERCENT, stepped)));
+export function stepGradientEnd(item: WidgetItem, direction: 1 | -1): WidgetItem {
+    const stepped = stepPercent(getGradientEnd(item), direction);
+    return setGradientEnd(item, Math.min(MAX_PERCENT, Math.max(MIN_PERCENT, stepped)));
 }
 
 /** A typed gradient end: the updated item, or the error to show. */
-export function typeGradientEnd(item: WidgetItem, scale: ValueColorScale, text: string): WidgetItem | string {
+export function typeGradientEnd(item: WidgetItem, text: string): WidgetItem | string {
     const value = parsePercent(text);
-    return value === null ? PERCENT_ERROR : setGradientEnd(item, scale, value);
+    return value === null ? PERCENT_ERROR : setGradientEnd(item, value);
 }
 
 // The line editor's modifier, e.g. "value colors: thermal gradient". Unlike a
@@ -211,7 +216,7 @@ export function getValueColorCode(item: WidgetItem, percent: number, scale: Valu
         if (colorLevel === 'ansi16') {
             return null;
         }
-        const position = Math.min(1, Math.max(0, percent / getGradientEnd(item, scale)));
+        const position = Math.min(1, Math.max(0, percent / getGradientEnd(item)));
         return gradientPresetCodeAt(getValueGradient(item), position, colorLevel);
     }
     return getColorAnsiCode(getBandColor(item, getValueBand(item, percent, scale)), colorLevel);

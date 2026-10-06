@@ -261,9 +261,9 @@ describe('ExtraUsageUtilizationWidget', () => {
             const widget = new ExtraUsageUtilizationWidget();
             const item = { ...colored, rawValue: true, metadata: { ...colored.metadata, valueColorMode: 'gradient' } };
 
-            expect(widget.render(item, used(45), { ...DEFAULT_SETTINGS, colorLevel: 3 })).toBe(`${gradientPresetCodeAt('traffic', 0.5, 'truecolor')}45.0%${FG_RESET}`);
-            expect(widget.render(item, used(45), { ...DEFAULT_SETTINGS, colorLevel: 2 })).toBe(`${gradientPresetCodeAt('traffic', 0.5, 'ansi256')}45.0%${FG_RESET}`);
-            expect(widget.render(item, used(45), { ...DEFAULT_SETTINGS, colorLevel: 1 })).toBe(`${BASE}45.0%${FG_RESET}`);
+            expect(widget.render(item, used(50), { ...DEFAULT_SETTINGS, colorLevel: 3 })).toBe(`${gradientPresetCodeAt('traffic', 0.5, 'truecolor')}50.0%${FG_RESET}`);
+            expect(widget.render(item, used(50), { ...DEFAULT_SETTINGS, colorLevel: 2 })).toBe(`${gradientPresetCodeAt('traffic', 0.5, 'ansi256')}50.0%${FG_RESET}`);
+            expect(widget.render(item, used(50), { ...DEFAULT_SETTINGS, colorLevel: 1 })).toBe(`${BASE}50.0%${FG_RESET}`);
         });
 
         it('renders plain text when colors are off for the whole status line', () => {

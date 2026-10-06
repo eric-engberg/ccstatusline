@@ -64,7 +64,7 @@ export interface ValueColorsEditorOptions {
 function getSamplePercents(item: WidgetItem, options: ValueColorsEditorOptions): number[] {
     let percents: number[];
     if (getValueColorMode(item) === 'gradient') {
-        const end = getGradientEnd(item, options.scale);
+        const end = getGradientEnd(item);
         percents = [0.25, 0.5, 0.75, 1, 1.25].map(fraction => Math.round(end * fraction));
     } else {
         const { midFrom, highFrom } = getBreakPoints(item, options.scale);
@@ -118,7 +118,7 @@ export function makeValueColorsConfig(options: ValueColorsEditorOptions, setting
                 return getValueGradient(item);
             }
             if (setting === 'gradientEnd') {
-                return `${getGradientEnd(item, scale)}%`;
+                return `${getGradientEnd(item)}%`;
             }
             return `${getBreakPoints(item, scale)[setting]}%`;
         },
@@ -130,7 +130,7 @@ export function makeValueColorsConfig(options: ValueColorsEditorOptions, setting
                 return cycleValueGradient(item, direction);
             }
             if (setting === 'gradientEnd') {
-                return stepGradientEnd(item, scale, direction);
+                return stepGradientEnd(item, direction);
             }
             return stepBreakPoint(item, scale, setting, direction);
         },
@@ -139,7 +139,7 @@ export function makeValueColorsConfig(options: ValueColorsEditorOptions, setting
             hint: 'percent, 1-999',
             set: (item, setting, text) => {
                 if (setting === 'gradientEnd') {
-                    return typeGradientEnd(item, scale, text);
+                    return typeGradientEnd(item, text);
                 }
                 return isBreakPoint(setting) ? typeBreakPoint(item, scale, setting, text) : item;
             }

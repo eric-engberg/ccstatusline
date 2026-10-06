@@ -35,11 +35,11 @@ import {
     toggleUsageInverted
 } from './shared/usage-display';
 import {
+    LIMIT_SCALE,
     formatColoredValue,
     getValueColorsModifier,
     getValueFormatOptions,
-    isValueColorsEnabled,
-    type ValueColorScale
+    isValueColorsEnabled
 } from './shared/value-coloring';
 import {
     VALUE_COLORS_KEYBIND,
@@ -47,12 +47,10 @@ import {
     type ValueColorsEditorOptions
 } from './shared/value-colors-editor';
 
-// Green below 70% used, yellow below 90%, red from 90%
-const UTILIZATION_SCALE: ValueColorScale = { midFrom: 70, highFrom: 90, highEdge: 'from' };
 const DEFAULT_COLOR = 'green';
 const VALUE_COLORS_EDITOR: ValueColorsEditorOptions = {
     title: 'Extra Usage Utilization: value colors',
-    scale: UTILIZATION_SCALE,
+    scale: LIMIT_SCALE,
     sampleNote: 'used',
     defaultColor: DEFAULT_COLOR,
     maxPercent: 100
@@ -75,7 +73,7 @@ function formatUsedPercent(item: WidgetItem, label: string, usedPercent: number,
     }
 
     const formatOptions = getValueFormatOptions(settings, item.color ?? DEFAULT_COLOR);
-    return formatColoredValue(item, label, formatPercent(renderedPercent, format), usedPercent, UTILIZATION_SCALE, formatOptions);
+    return formatColoredValue(item, label, formatPercent(renderedPercent, format), usedPercent, LIMIT_SCALE, formatOptions);
 }
 
 export class ExtraUsageUtilizationWidget implements Widget {
