@@ -8,6 +8,7 @@ import type {
     WidgetEditorProps,
     WidgetItem
 } from '../../../types/Widget';
+import { createGlyphCatalog } from '../glyph-catalog';
 import { GLYPH_GROUPS } from '../glyph-groups';
 import {
     renderSymbolOverrideEditor,
@@ -25,13 +26,16 @@ import {
 const TAB = '\t';
 const SHIFT_TAB = '\x1b[Z';
 const PAGE_DOWN = '\x1b[6~';
+const PAGE_UP = '\x1b[5~';
 
 const cwd: WidgetItem = { id: 'cwd', type: 'current-working-dir' };
 const singleGlyphEditor = (props: WidgetEditorProps) => renderSymbolOverrideEditor(props, '');
 
-const firstGroup = GLYPH_GROUPS[0];
-const lastGroup = GLYPH_GROUPS.at(-1);
-const groupHeader = (index: number) => `${GLYPH_GROUPS[index]?.name} (${index + 1}/${GLYPH_GROUPS.length})`;
+// The curated groups, then a group per Nerd Font icon set
+const groups = createGlyphCatalog().groups;
+const firstGroup = groups[0];
+const lastGroup = groups.at(-1);
+const groupHeader = (index: number) => `${groups[index]?.name} (${index + 1}/${groups.length})`;
 
 type Editor = ReturnType<typeof renderWidgetEditor>;
 
@@ -96,7 +100,7 @@ describe('glyph picker', () => {
         }
     });
 
-    it('pages through the groups with Tab, Shift+Tab and PgDn', async () => {
+    it('switches groups with Tab and Shift+Tab, wrapping both ways', async () => {
         const editor = renderWidgetEditor(singleGlyphEditor, cwd);
 
         try {
@@ -105,9 +109,28 @@ describe('glyph picker', () => {
             await editor.press(TAB);
             expect(editor.takeOutput()).toContain(groupHeader(1));
             await editor.press(SHIFT_TAB, SHIFT_TAB);
-            expect(editor.takeOutput()).toContain(groupHeader(GLYPH_GROUPS.length - 1));
-            await editor.press(PAGE_DOWN);
+            expect(editor.takeOutput()).toContain(groupHeader(groups.length - 1));
+            await editor.press(TAB);
             expect(editor.takeOutput()).toContain(groupHeader(0));
+        } finally {
+            editor.cleanup();
+        }
+    });
+
+    // Six rows of ten: a page is 60 glyphs
+    it('moves a page through a big group with PgDn and PgUp', async () => {
+        const editor = renderWidgetEditor(singleGlyphEditor, cwd);
+
+        try {
+            await editor.ready();
+            await openPicker(editor);
+            await editor.press(SHIFT_TAB, PAGE_DOWN);
+            const output = editor.takeOutput();
+            expect(lastGroup?.glyphs.length).toBeGreaterThan(120);
+            expect(output).toContain('↑ more');
+            expect(output).toContain(lastGroup?.glyphs[60]?.name);
+            await editor.press(PAGE_UP);
+            expect(editor.takeOutput()).toContain(lastGroup?.glyphs[0]?.name);
         } finally {
             editor.cleanup();
         }
