@@ -1,3 +1,5 @@
+import type React from 'react';
+
 import type { NumberFormat } from '../../types/NumberFormat';
 import type {
     RenderContext,
@@ -9,6 +11,7 @@ import type {
     HideableState,
     Widget,
     WidgetEditorDisplay,
+    WidgetEditorProps,
     WidgetItem
 } from '../../types/Widget';
 import {
@@ -30,6 +33,11 @@ import {
     cycleGradientPreset
 } from './gradient-bar';
 import { isHidden } from './hideable';
+import {
+    getLevelGlyph,
+    isLevelGlyphMode
+} from './level-glyph';
+import { renderLevelGlyphEditor } from './level-glyph-editor';
 import { formatRawOrLabeledValue } from './raw-or-labeled';
 import {
     USAGE_NO_DATA_HIDEABLE_STATE,
@@ -39,11 +47,25 @@ import {
     getUsagePercentCustomKeybinds,
     isUsageCursorEnabled,
     isUsageInverted,
+    showsPlainUsageValue,
     toggleUsageCursor,
     toggleUsageInverted
 } from './usage-display';
+import {
+    LIMIT_SCALE,
+    formatColoredValue,
+    getValueColorsModifier,
+    getValueFormatOptions,
+    isValueColorsEnabled
+} from './value-coloring';
+import {
+    renderValueColorsEditor,
+    withValueColorsKeybind
+} from './value-colors-editor';
 
 export type UsagePercentWidgetKind = 'session' | 'weekly' | 'weekly-sonnet' | 'weekly-opus' | 'fable-weekly';
+
+const DEFAULT_COLOR = 'brightBlue';
 
 type UsagePercentField = 'sessionUsage' | 'weeklyUsage' | 'weeklySonnetUsage' | 'weeklyOpusUsage' | 'fableUsage';
 
@@ -122,8 +144,18 @@ function renderUsageDisplay(
     settings: Settings,
     context: RenderContext
 ): string {
+    // The level glyph and value colors measure what's used, even while the
+    // widget shows what's left
+    const usedPercent = isUsageInverted(item) ? 100 - percent : percent;
+    if (isLevelGlyphMode(item)) {
+        return formatRawOrLabeledValue(item, label, getLevelGlyph(item, usedPercent));
+    }
     const bar = formatUsageBar(item, percent, format, settings, context, getCursorOptions);
-    return formatRawOrLabeledValue(item, label, bar ?? formatPercent(percent, format));
+    if (bar !== null) {
+        return formatRawOrLabeledValue(item, label, bar);
+    }
+    const formatOptions = getValueFormatOptions(settings, item.color ?? DEFAULT_COLOR);
+    return formatColoredValue(item, label, formatPercent(percent, format), usedPercent, LIMIT_SCALE, formatOptions);
 }
 
 export function getUsagePercentWidgetDisplayName(kind: UsagePercentWidgetKind): string {
@@ -141,13 +173,16 @@ export function getUsagePercentWidgetDescription(kind: UsagePercentWidgetKind): 
 export function getUsagePercentWidgetEditorDisplay(kind: UsagePercentWidgetKind, item: WidgetItem): WidgetEditorDisplay {
     return {
         displayText: getUsagePercentWidgetDisplayName(kind),
-        modifierText: getUsageDisplayModifierText(item, { showUsageDirection: true })
+        modifierText: getUsageDisplayModifierText(item, {
+            showUsageDirection: true,
+            extraModifiers: [showsPlainUsageValue(item) ? getValueColorsModifier(item) : null].filter((modifier): modifier is string => modifier !== null)
+        })
     };
 }
 
 export function handleUsagePercentWidgetEditorAction(action: string, item: WidgetItem): WidgetItem | null {
     if (action === 'toggle-progress') {
-        return cycleUsageDisplayMode(item, [], true, true);
+        return cycleUsageDisplayMode(item, [], true, true, true);
     }
 
     if (action === 'toggle-invert') {
@@ -214,7 +249,7 @@ export class UsagePercentWidget implements Widget {
         this.kind = kind;
     }
 
-    getDefaultColor(): string { return 'brightBlue'; }
+    getDefaultColor(): string { return DEFAULT_COLOR; }
     getDescription(): string { return getUsagePercentWidgetDescription(this.kind); }
     getDisplayName(): string { return getUsagePercentWidgetDisplayName(this.kind); }
     getCategory(): string { return 'Usage'; }
@@ -237,7 +272,24 @@ export class UsagePercentWidget implements Widget {
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
-        return getUsagePercentCustomKeybinds(item);
+        return withValueColorsKeybind(getUsagePercentCustomKeybinds(item), item === undefined || showsPlainUsageValue(item));
+    }
+
+    // The level glyph mode's glyph and break point editors, or value colors
+    renderEditor(props: WidgetEditorProps): React.ReactElement | null {
+        return renderLevelGlyphEditor(props) ?? renderValueColorsEditor(props, {
+            title: `${this.getDisplayName()}: value colors`,
+            scale: LIMIT_SCALE,
+            sampleNote: 'used',
+            defaultColor: DEFAULT_COLOR,
+            maxPercent: 100
+        });
+    }
+
+    // Value colors embed their own foreground codes, so the renderer must
+    // leave this widget's foreground alone while they show
+    preservesRenderedColors(item: WidgetItem): boolean {
+        return isValueColorsEnabled(item) && showsPlainUsageValue(item);
     }
 
     supportsRawValue(): boolean { return true; }

@@ -22,6 +22,11 @@ import {
     getGradientKeybinds,
     getGradientModifier
 } from './gradient-bar';
+import {
+    LEVEL_GLYPH_DISPLAY,
+    getLevelGlyphKeybinds,
+    isLevelGlyphMode
+} from './level-glyph';
 import { makeSliderBar } from './usage-display';
 
 export type ContextSliderMode = 'none' | 'slider' | 'slider-only';
@@ -36,13 +41,18 @@ export function getContextSliderMode(item: WidgetItem): ContextSliderMode {
     return 'none';
 }
 
-// (p) switches between the percentage and a slider, which keeps the size it had
+// (p) cycles the percentage, a slider and the level glyph. The slider keeps
+// the size it had through the other two.
 export function cycleContextSliderMode(item: WidgetItem): WidgetItem {
-    if (getContextSliderMode(item) === 'none') {
+    if (getContextSliderMode(item) !== 'none') {
+        const kept = keepBarLayout(item);
+        return { ...kept, metadata: { ...kept.metadata, display: LEVEL_GLYPH_DISPLAY } };
+    }
+    if (!isLevelGlyphMode(item)) {
         return setBarStyle(item, 'slider', 'short');
     }
 
-    const nextMetadata = { ...keepBarLayout(item).metadata };
+    const nextMetadata = { ...item.metadata };
     delete nextMetadata.display;
     return {
         ...item,
@@ -59,6 +69,9 @@ export function renderContextSlider(item: WidgetItem, percent: number, format: N
 }
 
 export function getContextSliderModifierText(item: WidgetItem): string | undefined {
+    if (isLevelGlyphMode(item)) {
+        return '(level glyph)';
+    }
     if (getContextSliderMode(item) === 'none') {
         return undefined;
     }
@@ -68,6 +81,9 @@ export function getContextSliderModifierText(item: WidgetItem): string | undefin
 }
 
 export function getContextSliderKeybinds(item?: WidgetItem): CustomKeybind[] {
+    if (item && isLevelGlyphMode(item)) {
+        return [SLIDER_TOGGLE_KEYBIND, ...getLevelGlyphKeybinds()];
+    }
     const showsBar = item ? getContextSliderMode(item) !== 'none' : false;
     return [SLIDER_TOGGLE_KEYBIND, ...getGradientKeybinds(showsBar), ...getBarWidthKeybinds(showsBar), ...getBarNumbersKeybinds(item, showsBar)];
 }

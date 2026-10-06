@@ -1,9 +1,12 @@
+import type React from 'react';
+
 import type { RenderContext } from '../types/RenderContext';
 import type { Settings } from '../types/Settings';
 import type {
     CustomKeybind,
     Widget,
     WidgetEditorDisplay,
+    WidgetEditorProps,
     WidgetItem
 } from '../types/Widget';
 import {
@@ -11,13 +14,27 @@ import {
     resolveNumberFormat
 } from '../utils/number-format';
 
+import { makeModifierText } from './shared/editor-display';
 import {
     isMetadataFlagEnabled,
     toggleMetadataFlag
 } from './shared/metadata';
-import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
+import {
+    COST_RATE_SCALE,
+    formatColoredValue,
+    getValueColorsModifier,
+    getValueFormatOptions,
+    isValueColorsEnabled
+} from './shared/value-coloring';
+import {
+    VALUE_COLORS_KEYBIND,
+    renderValueColorsEditor
+} from './shared/value-colors-editor';
 
 const LABEL = 'Rate: ';
+const DEFAULT_COLOR = 'green';
+// The Session Cost sample ($2.45) over 30 minutes
+const PREVIEW_RATE = 4.9;
 const CLOCK_TIME_KEY = 'clockTime';
 const TOGGLE_CLOCK_TIME_ACTION = 'toggle-clock-time';
 const HOUR_MS = 60 * 60 * 1000;
@@ -30,33 +47,47 @@ function isClockTime(item: WidgetItem): boolean {
 }
 
 export class SessionCostRateWidget implements Widget {
-    getDefaultColor(): string { return 'green'; }
+    getDefaultColor(): string { return DEFAULT_COLOR; }
     getDescription(): string { return 'Shows the session cost per hour, over the time Claude spent working or the whole session'; }
     getDisplayName(): string { return 'Session Cost Rate'; }
     getCategory(): string { return 'Session'; }
     getLabelPrefix(): string { return LABEL; }
 
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
-        return {
-            displayText: this.getDisplayName(),
-            modifierText: isClockTime(item) ? '(clock time)' : '(active time)'
-        };
+        const valueColors = getValueColorsModifier(item);
+        const time = isClockTime(item) ? 'clock time' : 'active time';
+        return { displayText: this.getDisplayName(), modifierText: makeModifierText(valueColors ? [time, valueColors] : [time]) };
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
         const label = item && isClockTime(item) ? '(t)ime: use active time' : '(t)ime: use clock time';
-        return [{ key: 't', label, action: TOGGLE_CLOCK_TIME_ACTION }];
+        return [{ key: 't', label, action: TOGGLE_CLOCK_TIME_ACTION }, VALUE_COLORS_KEYBIND];
     }
 
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
         return action === TOGGLE_CLOCK_TIME_ACTION ? toggleMetadataFlag(item, CLOCK_TIME_KEY) : null;
     }
 
+    renderEditor(props: WidgetEditorProps): React.ReactElement {
+        return renderValueColorsEditor(props, {
+            title: `${this.getDisplayName()}: value colors`,
+            scale: COST_RATE_SCALE,
+            sampleNote: 'over this session',
+            defaultColor: DEFAULT_COLOR
+        });
+    }
+
+    // Value colors embed their own foreground codes, so the renderer must
+    // leave this widget's foreground alone while they're on
+    preservesRenderedColors(item: WidgetItem): boolean {
+        return isValueColorsEnabled(item);
+    }
+
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
         const format = resolveNumberFormat('cost', item, settings);
+        const formatOptions = getValueFormatOptions(settings, item.color ?? DEFAULT_COLOR);
         if (context.isPreview) {
-            // The Session Cost sample ($2.45) over 30 minutes.
-            return formatRawOrLabeledValue(item, LABEL, `${formatCost(4.9, format)}/hr`);
+            return formatColoredValue(item, LABEL, `${formatCost(PREVIEW_RATE, format)}/hr`, PREVIEW_RATE, COST_RATE_SCALE, formatOptions);
         }
 
         const cost = context.data?.cost;
@@ -69,7 +100,7 @@ export class SessionCostRateWidget implements Widget {
         }
 
         const perHour = totalCost / (durationMs / HOUR_MS);
-        return formatRawOrLabeledValue(item, LABEL, `${formatCost(perHour, format)}/hr`);
+        return formatColoredValue(item, LABEL, `${formatCost(perHour, format)}/hr`, perHour, COST_RATE_SCALE, formatOptions);
     }
 
     supportsRawValue(): boolean { return true; }

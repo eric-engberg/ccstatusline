@@ -1,5 +1,6 @@
 import {
     beforeEach,
+    describe,
     expect,
     it,
     vi
@@ -9,6 +10,7 @@ import type { RenderContext } from '../../../types/RenderContext';
 import type {
     CustomKeybind,
     WidgetEditorDisplay,
+    WidgetEditorProps,
     WidgetItem
 } from '../../../types/Widget';
 
@@ -16,6 +18,8 @@ interface UsageWidgetLike {
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[];
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay;
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null;
+    renderEditor?(props: WidgetEditorProps): unknown;
+    preservesRenderedColors?(item: WidgetItem): boolean;
     supportsRawValue(): boolean;
 }
 
@@ -77,7 +81,11 @@ function getExpectedUsageKeybinds(item: WidgetItem, includeCursor = false): Cust
         { key: 'u', label: `(u) show ${nextDirection}`, action: 'toggle-invert' }
     ];
 
-    // Bar modes add the time cursor, the bar gradient, the bar size and the numbers
+    // The plain percent offers value colors; bar modes add the time cursor,
+    // the bar gradient, the bar size and the numbers
+    if (!includeCursor) {
+        keybinds.push({ key: 'v', label: '(v)alue colors', action: 'edit-value-colors' });
+    }
     if (includeCursor) {
         const numbersAction = item.metadata?.display === 'slider-only' ? 'show' : 'hide';
         keybinds.push({ key: 't', label: '(t)ime cursor', action: 'toggle-cursor' });
@@ -208,7 +216,7 @@ export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike>(conf
         const updated = widget.handleEditorAction('toggle-progress', {
             ...config.baseItem,
             metadata: {
-                display: 'slider-only',
+                display: 'glyph',
                 invert: 'true',
                 cursor: 'true'
             }
@@ -220,16 +228,101 @@ export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike>(conf
     });
 
     // (p) cycles the style; the size, long the first time, stays with the bar
-    it('cycles the text, a block bar and a slider', () => {
+    it('cycles the text, a block bar, a slider and the level glyph', () => {
         const widget = config.createWidget();
 
         const first = widget.handleEditorAction('toggle-progress', config.baseItem);
         const second = widget.handleEditorAction('toggle-progress', first ?? config.baseItem);
         const third = widget.handleEditorAction('toggle-progress', second ?? config.baseItem);
+        const fourth = widget.handleEditorAction('toggle-progress', third ?? config.baseItem);
 
         expect(first?.metadata).toEqual({ display: 'progress' });
         expect(second?.metadata).toEqual({ display: 'slider', barWidth: 'long' });
-        expect(third?.metadata).toEqual({ display: 'time', barWidth: 'long' });
+        expect(third?.metadata).toEqual({ display: 'glyph', barWidth: 'long' });
+        expect(fourth?.metadata).toEqual({ display: 'time', barWidth: 'long' });
+    });
+
+    // What's left would flip the levels, so the glyph always measures what's used
+    it('shows the level glyph for the used percent instead of the number', () => {
+        const widget = config.createWidget();
+        const glyphItem: WidgetItem = { ...config.baseItem, rawValue: true, metadata: { display: 'glyph' } };
+
+        expect(config.render(widget, glyphItem, getUsageContext(config.usageField, 42))).toBe('⚡');
+        expect(config.render(widget, { ...glyphItem, metadata: { display: 'glyph', invert: 'true' } }, getUsageContext(config.usageField, 95))).toBe('🚨');
+        expect(config.render(widget, { ...glyphItem, rawValue: false }, getUsageContext(config.usageField, 10))).toMatch(/: 🟢$/);
+    });
+
+    it('offers (g) and (l) in the level glyph mode and names it on the editor row', () => {
+        const widget = config.createWidget();
+        const glyphItem: WidgetItem = { ...config.baseItem, metadata: { display: 'glyph', invert: 'true' } };
+        const editorProps = { widget: glyphItem, onComplete: () => undefined, onCancel: () => undefined };
+
+        expect(widget.getCustomKeybinds(glyphItem).map(keybind => keybind.key)).toEqual(['p', 'g', 'l']);
+        expect(widget.getEditorDisplay(glyphItem).modifierText).toBe('(level glyph)');
+        expect(widget.renderEditor?.({ ...editorProps, action: 'edit-glyph-levels' })).toBeTruthy();
+        expect(widget.renderEditor?.({ ...editorProps, action: 'edit-symbol-override' })).toBeTruthy();
+    });
+
+    describe('value colors', () => {
+        const LOW = '\x1b[38;2;0;255;0m';
+        const MID = '\x1b[38;2;255;255;0m';
+        const HIGH = '\x1b[38;2;255;0;0m';
+        const BASE = '\x1b[38;2;17;34;51m';
+        const FG_RESET = '\x1b[39m';
+        // Custom colors, so the escape codes don't depend on the terminal's color support
+        const colored: WidgetItem = {
+            ...config.baseItem,
+            rawValue: true,
+            color: 'hex:112233',
+            metadata: {
+                'valueColors': 'true',
+                'valueColor.low': 'hex:00ff00',
+                'valueColor.mid': 'hex:ffff00',
+                'valueColor.high': 'hex:ff0000'
+            }
+        };
+        const used = (value: number) => getUsageContext(config.usageField, value);
+
+        it('colors the percent green below 70% used, yellow below 90% and red from 90%', () => {
+            const widget = config.createWidget();
+
+            expect(config.render(widget, colored, used(69.9))).toBe(`${LOW}69.9%${FG_RESET}`);
+            expect(config.render(widget, colored, used(70))).toBe(`${MID}70.0%${FG_RESET}`);
+            expect(config.render(widget, colored, used(89.9))).toBe(`${MID}89.9%${FG_RESET}`);
+            expect(config.render(widget, colored, used(90))).toBe(`${HIGH}90.0%${FG_RESET}`);
+        });
+
+        it('colors by the used percent while showing what\'s left, and keeps the label in the widget color', () => {
+            const widget = config.createWidget();
+            const remaining = { ...colored, metadata: { ...colored.metadata, invert: 'true' } };
+
+            expect(config.render(widget, remaining, used(95))).toBe(`${HIGH}5.0%${FG_RESET}`);
+            expect(config.render(widget, { ...colored, rawValue: false }, used(25))).toMatch(new RegExp(`^${BASE.replace('[', '\\[')}[^\\x1b]+: ${FG_RESET.replace('[', '\\[')}`));
+        });
+
+        // Bars have gradients, and the level glyph has no number to color
+        it('leaves the bar and level glyph modes as they were, without (v)', () => {
+            const widget = config.createWidget();
+            const bar = { ...colored, metadata: { ...colored.metadata, display: 'progress' } };
+            const glyph = { ...colored, metadata: { ...colored.metadata, display: 'glyph' } };
+
+            expect(config.render(widget, bar, used(95))).not.toContain(HIGH);
+            expect(config.render(widget, glyph, used(95))).toBe('🚨');
+            for (const item of [bar, glyph]) {
+                expect(widget.getCustomKeybinds(item).map(keybind => keybind.key)).not.toContain('v');
+                expect(widget.preservesRenderedColors?.(item)).toBe(false);
+            }
+        });
+
+        it('names the option on the editor row, opens its editor and keeps its colors', () => {
+            const widget = config.createWidget();
+            const editorProps = { widget: colored, onComplete: () => undefined, onCancel: () => undefined };
+
+            expect(widget.getEditorDisplay(colored).modifierText).toContain('value colors');
+            expect(widget.renderEditor?.({ ...editorProps, action: 'edit-value-colors' })).toBeTruthy();
+            expect(widget.preservesRenderedColors?.(colored)).toBe(true);
+            expect(widget.preservesRenderedColors?.(config.baseItem)).toBe(false);
+        });
     });
 
     it('toggles invert metadata and shows used/remaining editor modifiers', () => {

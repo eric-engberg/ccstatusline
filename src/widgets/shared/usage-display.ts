@@ -31,6 +31,11 @@ import {
     paintWidgetBar
 } from './gradient-bar';
 import {
+    LEVEL_GLYPH_DISPLAY,
+    getLevelGlyphKeybinds,
+    isLevelGlyphMode
+} from './level-glyph';
+import {
     isMetadataFlagEnabled,
     removeMetadataKeys,
     toggleMetadataFlag
@@ -225,6 +230,9 @@ export function getUsageDisplayModifierText(
     item: WidgetItem,
     options: UsageDisplayModifierOptions = {}
 ): string | undefined {
+    if (isLevelGlyphMode(item)) {
+        return '(level glyph)';
+    }
     const mode = getUsageDisplayMode(item);
     const modifiers = getBarLayoutModifiers(item);
 
@@ -269,6 +277,11 @@ export function getUsageDisplayModifierText(
     return makeModifierText(modifiers);
 }
 
+// The plain number: neither a bar nor the level glyph, so value colors apply
+export function showsPlainUsageValue(item: WidgetItem): boolean {
+    return !showsUsageBar(item) && !isLevelGlyphMode(item);
+}
+
 export function showsUsageBar(item: WidgetItem): boolean {
     const mode = getUsageDisplayMode(item);
     return isUsageProgressMode(mode) || isUsageSliderMode(mode);
@@ -276,16 +289,22 @@ export function showsUsageBar(item: WidgetItem): boolean {
 
 // (p) cycles the style, not the size, which is (b)'s: text, then a block bar
 // (long, the first time), then a slider, then text again
-export function cycleUsageDisplayMode(item: WidgetItem, disabledInProgressKeys: string[] = [], includeSlider = false, preserveInvertInTime = false): WidgetItem {
+// The percent widgets add the level glyph after the slider (includeGlyph).
+export function cycleUsageDisplayMode(item: WidgetItem, disabledInProgressKeys: string[] = [], includeSlider = false, preserveInvertInTime = false, includeGlyph = false): WidgetItem {
     const style = getBarStyle(item);
-    if (style === null) {
+    if (style === null && !isLevelGlyphMode(item)) {
         return setBarStyle(removeMetadataKeys(item, disabledInProgressKeys), 'block', 'long');
     }
     if (style === 'block' && includeSlider) {
         return setBarStyle(item, 'slider');
     }
 
-    const nextItem = removeMetadataKeys(keepBarLayout(item), preserveInvertInTime ? ['cursor'] : ['invert', 'cursor']);
+    // Leaving the bar, its size and numbers setting are kept for when it comes back
+    const kept = style === null ? item : keepBarLayout(item);
+    if (style !== null && includeGlyph) {
+        return { ...kept, metadata: { ...kept.metadata, display: LEVEL_GLYPH_DISPLAY } };
+    }
+    const nextItem = removeMetadataKeys(kept, preserveInvertInTime ? ['cursor'] : ['invert', 'cursor']);
     return { ...nextItem, metadata: { ...nextItem.metadata, display: 'time' } };
 }
 
@@ -294,6 +313,10 @@ export function toggleUsageInverted(item: WidgetItem): WidgetItem {
 }
 
 export function getUsagePercentCustomKeybinds(item?: WidgetItem, includeCursor = true): CustomKeybind[] {
+    // The level glyph always measures what's used, so used/remaining doesn't apply
+    if (item && isLevelGlyphMode(item)) {
+        return [PROGRESS_TOGGLE_KEYBIND, ...getLevelGlyphKeybinds()];
+    }
     const nextDirection = item && isUsageInverted(item) ? 'used' : 'remaining';
     const keybinds: CustomKeybind[] = [
         PROGRESS_TOGGLE_KEYBIND,
