@@ -4,6 +4,7 @@ import { getColorAnsiCode } from '../../utils/colors';
 import type { TranscriptThinkingEffort } from '../../utils/jsonl-metadata';
 
 import { removeMetadataKeys } from './metadata';
+import { getLabel } from './raw-or-labeled';
 
 // Every option below stores nothing while at its default, so a Thinking
 // Effort widget nobody has customized keeps an empty metadata object.
@@ -13,6 +14,7 @@ const BRACKET_COLOR_KEY = 'bracketColor';
 const LEVEL_COLOR_KEY_PREFIX = 'levelColor.';
 
 export const THINKING_EFFORT_DEFAULT_COLOR = 'magenta';
+export const THINKING_EFFORT_LABEL = 'Thinking: ';
 
 export const BRACKET_STYLES = ['()', '[]', '{}', '<>'] as const;
 export type BracketStyle = typeof BRACKET_STYLES[number];
@@ -120,7 +122,7 @@ export interface EffortFormatOptions {
 }
 
 export function formatThinkingEffort(item: WidgetItem, effort: EffortDisplay, options: EffortFormatOptions): string {
-    const label = item.rawValue ? '' : 'Thinking: ';
+    const label = item.rawValue ? '' : getLabel(item, THINKING_EFFORT_LABEL);
     const brackets = getBracketStyle(item);
     const open = brackets?.[0] ?? '';
     const close = brackets?.[1] ?? '';

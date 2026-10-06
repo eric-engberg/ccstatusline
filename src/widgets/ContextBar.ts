@@ -37,7 +37,10 @@ import {
     getGradientModifier,
     paintWidgetBar
 } from './shared/gradient-bar';
+import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
 import { makeSliderBar } from './shared/usage-display';
+
+const LABEL = 'Context: ';
 
 // Context Bar always shows a bar; with no display mode saved, it's a medium
 // block bar
@@ -55,6 +58,7 @@ export class ContextBarWidget implements Widget {
     getDescription(): string { return 'Shows context usage as a progress bar'; }
     getDisplayName(): string { return 'Context Bar'; }
     getCategory(): string { return 'Context'; }
+    getLabelPrefix(): string { return LABEL; }
 
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         const modifiers = [...getBarLayoutModifiers(withBarDisplay(item)), getGradientModifier(item)]
@@ -124,7 +128,7 @@ export class ContextBarWidget implements Widget {
         }
         const painted = paintWidgetBar(bar, item, settings);
         const display = showsCounts || showsPercent ? `${painted} ${numbers}` : painted;
-        return item.rawValue ? display : `Context: ${display}`;
+        return formatRawOrLabeledValue(item, this.getLabelPrefix(), display);
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
@@ -137,6 +141,7 @@ export class ContextBarWidget implements Widget {
     }
 
     supportsRawValue(): boolean { return true; }
+
     supportsColors(item: WidgetItem): boolean { return true; }
     supportsNumberFormat(): boolean { return true; }
 }

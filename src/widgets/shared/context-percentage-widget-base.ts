@@ -49,6 +49,12 @@ export abstract class ContextPercentageWidgetBase implements Widget {
 
     getCategory(): string { return 'Context'; }
 
+    // "Ctx Used: " or "Ctx Left: ", by which way the widget counts; the
+    // level glyph always measures what's used
+    getLabelPrefix(item: WidgetItem): string {
+        return `${this.labelPrefix} ${isContextInverse(item) && !isLevelGlyphMode(item) ? 'Left' : 'Used'}: `;
+    }
+
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         // The level glyph always measures what's used, so used/remaining doesn't apply
         const modifiers = [
@@ -72,17 +78,16 @@ export abstract class ContextPercentageWidgetBase implements Widget {
             return null;
         }
         if (isLevelGlyphMode(item)) {
-            return formatRawOrLabeledValue(item, `${this.labelPrefix} Used: `, getLevelGlyph(item, usedPercentage));
+            return formatRawOrLabeledValue(item, this.getLabelPrefix(item), getLevelGlyph(item, usedPercentage));
         }
 
         const isInverse = isContextInverse(item);
-        const label = `${this.labelPrefix} ${isInverse ? 'Left' : 'Used'}: `;
 
         const displayPercentage = isInverse ? 100 - usedPercentage : usedPercentage;
         const format = resolveNumberFormat('percent', item, settings);
         const slider = renderContextSlider(item, displayPercentage, format, context.barCells);
         const sliderResult = slider === null ? null : paintWidgetBar(slider, item, settings, isInverse);
-        return formatRawOrLabeledValue(item, label, sliderResult ?? formatPercent(displayPercentage, format));
+        return formatRawOrLabeledValue(item, this.getLabelPrefix(item), sliderResult ?? formatPercent(displayPercentage, format));
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {

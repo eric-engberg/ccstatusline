@@ -57,6 +57,7 @@ export class ExtraUsageUtilizationWidget implements Widget {
     getDescription(): string { return 'Shows extra usage (pay-as-you-go) utilization percentage'; }
     getDisplayName(): string { return 'Extra Usage Utilization'; }
     getCategory(): string { return 'Usage'; }
+    getLabelPrefix(): string { return LABEL; }
 
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         return {
