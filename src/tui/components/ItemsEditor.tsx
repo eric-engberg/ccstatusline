@@ -34,9 +34,16 @@ import {
     getHideKeybind,
     getHideModifierText
 } from '../../widgets/shared/hideable';
+import {
+    EDIT_LABEL_ACTION,
+    clearLabel,
+    getLabelKeybind,
+    getLabelModifierText
+} from '../../widgets/shared/raw-or-labeled';
 
 import { ConfirmDialog } from './ConfirmDialog';
 import { HideStatesEditor } from './HideStatesEditor';
+import { LabelEditor } from './LabelEditor';
 import {
     handleMoveInputMode,
     handleNormalInputMode,
@@ -146,6 +153,12 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
             keybinds.push(getHideKeybind());
         }
 
+        // The label only shows when raw value is off, so the editor is offered
+        // only then. Like 'h', widgets must leave this key unbound.
+        if (widgetImpl.getLabelPrefix && !widget.rawValue) {
+            keybinds.push(getLabelKeybind());
+        }
+
         return keybinds;
     };
 
@@ -176,7 +189,10 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
             const currentWidget = widgets[selectedIndex];
             if (currentWidget) {
                 const newWidgets = [...widgets];
-                newWidgets[selectedIndex] = { ...currentWidget, type: selectedType };
+                // Other metadata carries over, but a label names the old widget's value
+                newWidgets[selectedIndex] = currentWidget.type === selectedType
+                    ? currentWidget
+                    : { ...clearLabel(currentWidget), type: selectedType };
                 onUpdate(newWidgets);
             }
         } else {
@@ -362,6 +378,17 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
             <HideStatesEditor
                 widget={customEditorWidget.widget}
                 states={customEditorWidget.impl.getHideableStates?.() ?? []}
+                onComplete={handleEditorComplete}
+                onCancel={handleEditorCancel}
+            />
+        );
+    }
+
+    if (customEditorWidget?.action === EDIT_LABEL_ACTION && customEditorWidget.impl.getLabelPrefix) {
+        return (
+            <LabelEditor
+                widget={customEditorWidget.widget}
+                defaultLabel={customEditorWidget.impl.getLabelPrefix(customEditorWidget.widget)}
                 onComplete={handleEditorComplete}
                 onCancel={handleEditorCancel}
             />
@@ -600,6 +627,7 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
                                     ? getNumberFormatModifierText(widget)
                                     : undefined;
                                 const hideModifierText = widgetImpl ? getHideModifierText(widget, widgetImpl.getHideableStates?.() ?? []) : undefined;
+                                const labelModifierText = widgetImpl?.getLabelPrefix && !widget.rawValue ? getLabelModifierText(widget) : undefined;
 
                                 return (
                                     <Box key={widget.id} flexDirection='row' flexWrap='nowrap'>
@@ -627,6 +655,12 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
                                             <Text dimColor>
                                                 {' '}
                                                 {hideModifierText}
+                                            </Text>
+                                        )}
+                                        {labelModifierText && (
+                                            <Text dimColor>
+                                                {' '}
+                                                {labelModifierText}
                                             </Text>
                                         )}
                                         {supportsRawValue && widget.rawValue && <Text dimColor> (raw value)</Text>}
