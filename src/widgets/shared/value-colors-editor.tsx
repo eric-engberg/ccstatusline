@@ -40,6 +40,12 @@ import {
 export const EDIT_VALUE_COLORS_ACTION = 'edit-value-colors';
 export const VALUE_COLORS_KEYBIND: CustomKeybind = { key: 'v', label: '(v)alue colors', action: EDIT_VALUE_COLORS_ACTION };
 
+// (v) on a widget whose other modes (a bar, the level glyph) have no value to
+// color: offered while it shows the plain value
+export function withValueColorsKeybind(keybinds: CustomKeybind[], showsValue: boolean): CustomKeybind[] {
+    return showsValue ? [...keybinds, VALUE_COLORS_KEYBIND] : keybinds;
+}
+
 type ValueSetting = 'mode' | BreakPoint | 'gradient' | 'gradientEnd';
 const BREAK_POINTS: ReadonlySet<ValueSetting> = new Set<BreakPoint>(['midFrom', 'highFrom']);
 // Gradient mode's own rows; the band colors and break points are break points mode's

@@ -277,6 +277,11 @@ export function getUsageDisplayModifierText(
     return makeModifierText(modifiers);
 }
 
+// The plain number: neither a bar nor the level glyph, so value colors apply
+export function showsPlainUsageValue(item: WidgetItem): boolean {
+    return !showsUsageBar(item) && !isLevelGlyphMode(item);
+}
+
 export function showsUsageBar(item: WidgetItem): boolean {
     const mode = getUsageDisplayMode(item);
     return isUsageProgressMode(mode) || isUsageSliderMode(mode);

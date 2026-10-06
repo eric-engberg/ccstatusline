@@ -36,7 +36,7 @@ import {
     getUsageDisplayModifierText,
     getUsagePercentCustomKeybinds,
     isUsageInverted,
-    showsUsageBar,
+    showsPlainUsageValue,
     toggleUsageInverted
 } from './shared/usage-display';
 import {
@@ -47,8 +47,8 @@ import {
     isValueColorsEnabled
 } from './shared/value-coloring';
 import {
-    VALUE_COLORS_KEYBIND,
     renderValueColorsEditor,
+    withValueColorsKeybind,
     type ValueColorsEditorOptions
 } from './shared/value-colors-editor';
 
@@ -64,7 +64,7 @@ const VALUE_COLORS_EDITOR: ValueColorsEditorOptions = {
 // Value colors apply to the plain percent; the bar modes have bar gradients,
 // and the level glyph has no number to color
 function showsValueColors(item: WidgetItem): boolean {
-    return isValueColorsEnabled(item) && !showsUsageBar(item) && !isLevelGlyphMode(item);
+    return isValueColorsEnabled(item) && showsPlainUsageValue(item);
 }
 
 // The bar, the level glyph, or the percent in its value color. The glyph and
@@ -96,7 +96,7 @@ export class ExtraUsageUtilizationWidget implements Widget {
             displayText: this.getDisplayName(),
             modifierText: getUsageDisplayModifierText(item, {
                 showUsageDirection: true,
-                extraModifiers: showsUsageBar(item) ? [] : [getValueColorsModifier(item)].filter((modifier): modifier is string => modifier !== null)
+                extraModifiers: [showsPlainUsageValue(item) ? getValueColorsModifier(item) : null].filter((modifier): modifier is string => modifier !== null)
             })
         };
     }
@@ -149,7 +149,7 @@ export class ExtraUsageUtilizationWidget implements Widget {
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
         const keybinds = getUsagePercentCustomKeybinds(item, false);
-        return item && (showsUsageBar(item) || isLevelGlyphMode(item)) ? keybinds : [...keybinds, VALUE_COLORS_KEYBIND];
+        return withValueColorsKeybind(keybinds, item === undefined || showsPlainUsageValue(item));
     }
 
     // The level glyph's glyph and break point editors, or the value colors editor
