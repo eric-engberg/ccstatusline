@@ -9,6 +9,8 @@ import { GLYPH_GROUPS } from '../glyph-groups';
 
 const catalog = createGlyphCatalog();
 const glyphsFor = (query: string): string[] => catalog.search(query).map(entry => entry.glyph);
+// The matches outside the Nerd Font sets
+const unicodeFor = (query: string): string[] => catalog.search(query).filter(entry => !entry.name.includes('(nf-')).map(entry => entry.glyph);
 
 describe('glyph catalog', () => {
     it('browses the curated groups, then every Nerd Font icon set as a group', () => {
@@ -36,6 +38,39 @@ describe('glyph catalog', () => {
         expect(bazel).toHaveLength(1);
         expect(bazel[0]?.name).toBe('bazel (nf-custom-bazel, nf-seti-bazel)');
         expect(new Set(glyphsFor('folder')).size).toBe(glyphsFor('folder').length);
+    });
+
+    it('finds every Unicode emoji, joined ones and flags included', () => {
+        expect(unicodeFor('clown')).toEqual(['🤡']);
+        expect(unicodeFor('nauseated')).toEqual(['🤢']);
+        expect(unicodeFor('woman technologist')).toEqual(['👩‍💻']);
+        expect(unicodeFor('flag japan')).toEqual(['🇯🇵']);
+    });
+
+    // Over 2,000 near-copies otherwise
+    it('leaves out skin tone variants', () => {
+        expect(unicodeFor('waving hand')).toEqual(['👋']);
+        expect(unicodeFor('skin tone')).toEqual([]);
+    });
+
+    it('finds every character in the Unicode symbol blocks, and a few common ones from elsewhere', () => {
+        expect(unicodeFor('place of interest')).toEqual(['⌘']);
+        expect(unicodeFor('box drawings light horizontal')[0]).toBe('─');
+        expect(unicodeFor('braille pattern dots 123')).toContain('⠇');
+        expect(unicodeFor('pilcrow')).toContain('¶');
+        expect(unicodeFor('greek small letter pi')).toEqual(['π']);
+    });
+
+    // ❗ is the emoji "red exclamation mark" and the Dingbats character "heavy exclamation mark symbol"
+    it('lists a glyph once under its first name and finds it by any of them', () => {
+        expect(catalog.search('heavy exclamation mark symbol').map(entry => [entry.glyph, entry.name])).toEqual([['❗', 'red exclamation mark']]);
+        expect(unicodeFor('exclamation mark').filter(glyph => glyph === '❗')).toHaveLength(1);
+    });
+
+    it('keeps an emoji\'s text and emoji forms apart', () => {
+        expect(unicodeFor('red heart')).toEqual(['❤️']);
+        expect(unicodeFor('heavy black heart')[0]).toBe('❤');
+        expect(unicodeFor('heavy black heart')).not.toContain('❤️');
     });
 
     it('finds the curated emoji and symbols by their Unicode names', () => {
