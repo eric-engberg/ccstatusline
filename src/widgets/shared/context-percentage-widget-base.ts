@@ -41,6 +41,11 @@ export abstract class ContextPercentageWidgetBase implements Widget {
 
     getCategory(): string { return 'Context'; }
 
+    // "Ctx Used: " or "Ctx Left: ", by which way the widget counts
+    getLabelPrefix(item: WidgetItem): string {
+        return `${this.labelPrefix} ${isContextInverse(item) ? 'Left' : 'Used'}: `;
+    }
+
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         const modifiers = [
             getContextInverseModifierText(item),
@@ -62,7 +67,6 @@ export abstract class ContextPercentageWidgetBase implements Widget {
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
         const isInverse = isContextInverse(item);
-        const label = `${this.labelPrefix} ${isInverse ? 'Left' : 'Used'}: `;
         const usedPercentage = context.isPreview ? this.previewUsedPercent : this.getUsedPercentage(context);
         if (usedPercentage === null) {
             return null;
@@ -71,7 +75,7 @@ export abstract class ContextPercentageWidgetBase implements Widget {
         const displayPercentage = isInverse ? 100 - usedPercentage : usedPercentage;
         const format = resolveNumberFormat('percent', item, settings);
         const sliderResult = renderContextSlider(getContextSliderMode(item), displayPercentage, format);
-        return formatRawOrLabeledValue(item, label, sliderResult ?? formatPercent(displayPercentage, format));
+        return formatRawOrLabeledValue(item, this.getLabelPrefix(item), sliderResult ?? formatPercent(displayPercentage, format));
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
