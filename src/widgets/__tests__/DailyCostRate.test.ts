@@ -73,11 +73,13 @@ describe('DailyCostRateWidget', () => {
 
         expect(widget.getCustomKeybinds(item)).toEqual([
             { key: 't', label: '(t)ime: use clock time', action: 'toggle-clock-time' },
-            { key: 'b', label: '(b)illed spend', action: 'toggle-billed-spend' }
+            { key: 'b', label: '(b)illed spend', action: 'toggle-billed-spend' },
+            { key: 'v', label: '(v)alue colors', action: 'edit-value-colors' }
         ]);
         expect(widget.getCustomKeybinds(bothItem)).toEqual([
             { key: 't', label: '(t)ime: use active time', action: 'toggle-clock-time' },
-            { key: 'b', label: '(b) Claude Code cost', action: 'toggle-billed-spend' }
+            { key: 'b', label: '(b) Claude Code cost', action: 'toggle-billed-spend' },
+            { key: 'v', label: '(v)alue colors', action: 'edit-value-colors' }
         ]);
         expect(widget.getEditorDisplay(item).modifierText).toBe('(active time, Claude Code cost)');
         expect(widget.getEditorDisplay(bothItem).modifierText).toBe('(clock time, billed spend)');

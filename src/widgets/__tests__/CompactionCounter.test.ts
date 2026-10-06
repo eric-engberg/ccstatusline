@@ -259,7 +259,8 @@ describe('CompactionCounterWidget', () => {
                 { key: 'n', label: '(n)erd font', action: 'toggle-nerd-font' },
                 { key: 's', label: '(s)plit by trigger', action: 'toggle-triggers' },
                 { key: 't', label: '(t)okens reclaimed', action: 'toggle-reclaimed' },
-                { key: 'g', label: '(g)lyph', action: 'edit-symbol-override' }
+                { key: 'g', label: '(g)lyph', action: 'edit-symbol-override' },
+                { key: 'l', label: 'va(l)ue colors', action: 'edit-value-colors' }
             ]);
         });
 
@@ -272,7 +273,8 @@ describe('CompactionCounterWidget', () => {
                 { key: 'f', label: '(f)ormat', action: 'cycle-format' },
                 { key: 's', label: '(s)plit by trigger', action: 'toggle-triggers' },
                 { key: 't', label: '(t)okens reclaimed', action: 'toggle-reclaimed' },
-                { key: 'g', label: '(g)lyph', action: 'edit-symbol-override' }
+                { key: 'g', label: '(g)lyph', action: 'edit-symbol-override' },
+                { key: 'l', label: 'va(l)ue colors', action: 'edit-value-colors' }
             ]);
         });
 
@@ -467,12 +469,13 @@ describe('CompactionCounterWidget', () => {
             });
         });
 
-        it('uses only the metric keybind in metric mode, since hiding moves to the shared checklist', () => {
+        it('uses only the metric and value colors keybinds in metric mode, since hiding moves to the shared checklist', () => {
             expect(new CompactionCounterWidget().getCustomKeybinds({
                 ...ITEM,
                 metadata: { metric: 'auto' }
             })).toEqual([
-                { key: 'v', label: '(v)alue', action: 'cycle-metric' }
+                { key: 'v', label: '(v)alue', action: 'cycle-metric' },
+                { key: 'l', label: 'va(l)ue colors', action: 'edit-value-colors' }
             ]);
         });
 

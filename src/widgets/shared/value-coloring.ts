@@ -21,6 +21,7 @@ import {
     setMetadataValue
 } from './metadata';
 import {
+    DOLLARS_PER_HOUR_UNIT,
     PERCENT_UNIT,
     parseUnitValue,
     roundToUnit,
@@ -78,6 +79,9 @@ export interface ValueColorScale {
 
 /** Spend against the monthly limit (Extra Usage Utilization and Used): green below 70%, yellow below 90%, red from 90%. */
 export const LIMIT_SCALE: ValueColorScale = { midFrom: 70, highFrom: 90, highEdge: 'from' };
+
+/** Cost per hour (Session Cost Rate and Daily Cost Rate): green below $5/hr, yellow below $15/hr, red from $15/hr. */
+export const COST_RATE_SCALE: ValueColorScale = { midFrom: 5, highFrom: 15, highEdge: 'from', unit: DOLLARS_PER_HOUR_UNIT, gradientEnd: 15 };
 
 export function getScaleUnit(scale: ValueColorScale): ValueUnit {
     return scale.unit ?? PERCENT_UNIT;

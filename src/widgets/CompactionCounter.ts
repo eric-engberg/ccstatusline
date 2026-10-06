@@ -31,7 +31,21 @@ import {
     renderSymbolSlotsEditor,
     type SymbolSlot
 } from './shared/symbol-override';
+import {
+    formatColoredValue,
+    getValueColorsModifier,
+    getValueFormatOptions,
+    isValueColorsEnabled,
+    type ValueColorScale,
+    type ValueFormatOptions
+} from './shared/value-coloring';
+import {
+    EDIT_VALUE_COLORS_ACTION,
+    renderValueColorsEditor
+} from './shared/value-colors-editor';
+import { COUNT_UNIT } from './shared/value-units';
 
+const DEFAULT_COLOR = 'yellow';
 const COMPACTION_ICON = '↻';
 const COMPACTION_NERD_FONT_ICON = '\uF021';
 const FORMATS = ['icon-space-number', 'text-and-number', 'number'] as const;
@@ -55,6 +69,10 @@ const METRIC_METADATA_KEY = 'metric';
 const CYCLE_METRIC_ACTION = 'cycle-metric';
 const RECLAIMED_SLOT: SymbolSlot = { id: 'symbolReclaimed', label: 'Reclaimed', defaultSymbol: '↓' };
 const ZERO_HIDEABLE_STATE: HideableState = { key: 'zero', label: 'when count is zero' };
+// Green with no compactions, yellow from the first, red from the third
+const COUNT_SCALE: ValueColorScale = { midFrom: 1, highFrom: 3, highEdge: 'from', unit: COUNT_UNIT, gradientEnd: 3 };
+// (v) already cycles the value shown
+const VALUE_COLORS_KEYBIND: CustomKeybind = { key: 'l', label: 'va(l)ue colors', action: EDIT_VALUE_COLORS_ACTION };
 const SAMPLE_STATS: CompactionData = Object.freeze({
     count: 2,
     byTrigger: Object.freeze({ auto: 1, manual: 1, unknown: 0 }),
@@ -100,6 +118,11 @@ function setMetric(item: WidgetItem, metric: CompactionMetric): WidgetItem {
     };
 }
 
+// Value colors color a count; tokens reclaimed aren't one
+function hasValueColors(item: WidgetItem): boolean {
+    return getMetric(item) !== 'reclaimed';
+}
+
 function getMetricValue(data: CompactionData, metric: CompactionMetric): number {
     switch (metric) {
         case 'count': return data.count;
@@ -132,22 +155,22 @@ function formatTriggerSuffix(byTrigger: CompactionData['byTrigger']): string {
     return parts.length > 0 ? ` (${parts.join(', ')})` : '';
 }
 
-function formatStats(data: CompactionData, item: WidgetItem, icon: string, format: NumberFormat): string {
-    let out = formatCount(data.count, getFormat(item), icon);
+function formatStats(data: CompactionData, item: WidgetItem, icon: string, format: NumberFormat, formatOptions: ValueFormatOptions): string {
+    let suffix = '';
     if (isMetadataFlagEnabled(item, SHOW_TRIGGERS_METADATA_KEY)) {
-        out += formatTriggerSuffix(data.byTrigger);
+        suffix += formatTriggerSuffix(data.byTrigger);
     }
     if (isMetadataFlagEnabled(item, SHOW_RECLAIMED_METADATA_KEY)) {
-        out += formatReclaimedSuffix(data.tokensReclaimed, item, format);
+        suffix += formatReclaimedSuffix(data.tokensReclaimed, item, format);
     }
-    return out;
+    return formatColoredValue(item, getCountLabel(getFormat(item), icon), String(data.count), data.count, COUNT_SCALE, formatOptions, suffix);
 }
 
-function formatCount(count: number, format: CompactionCounterFormat, icon: string): string {
+function getCountLabel(format: CompactionCounterFormat, icon: string): string {
     switch (format) {
-        case 'icon-space-number': return `${icon} ${count}`;
-        case 'text-and-number': return `Compactions: ${count}`;
-        case 'number': return String(count);
+        case 'icon-space-number': return `${icon} `;
+        case 'text-and-number': return 'Compactions: ';
+        case 'number': return '';
     }
 }
 
@@ -164,7 +187,7 @@ function formatCount(count: number, format: CompactionCounterFormat, icon: strin
  * instances can be composed into a custom layout.
  */
 export class CompactionCounterWidget implements Widget {
-    getDefaultColor(): string { return 'yellow'; }
+    getDefaultColor(): string { return DEFAULT_COLOR; }
     getDescription(): string { return 'Count of context compaction events in the current session.'; }
     getDisplayName(): string { return 'Compaction Counter'; }
     getCategory(): string { return 'Context'; }
@@ -185,6 +208,10 @@ export class CompactionCounterWidget implements Widget {
             if (isMetadataFlagEnabled(item, SHOW_RECLAIMED_METADATA_KEY)) {
                 modifiers.push('reclaimed');
             }
+        }
+        const valueColors = hasValueColors(item) ? getValueColorsModifier(item) : null;
+        if (valueColors) {
+            modifiers.push(valueColors);
         }
 
         return {
@@ -229,6 +256,7 @@ export class CompactionCounterWidget implements Widget {
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
         const format = resolveNumberFormat('token', item, settings);
+        const formatOptions = getValueFormatOptions(settings, item.color ?? DEFAULT_COLOR);
         const data = context.isPreview ? SAMPLE_STATS : (context.compactionData ?? ZERO_COMPACTION_STATS);
         const metric = getMetric(item);
 
@@ -237,7 +265,9 @@ export class CompactionCounterWidget implements Widget {
             if (value === 0 && isHidden(item, ZERO_HIDEABLE_STATE.key) && !context.isPreview) {
                 return null;
             }
-            return metric === 'reclaimed' ? formatTokens(value, format) : String(value);
+            return metric === 'reclaimed'
+                ? formatTokens(value, format)
+                : formatColoredValue(item, '', String(value), value, COUNT_SCALE, formatOptions);
         }
 
         if (data.count === 0 && isHidden(item, ZERO_HIDEABLE_STATE.key) && !context.isPreview) {
@@ -245,7 +275,7 @@ export class CompactionCounterWidget implements Widget {
         }
 
         const icon = isNerdFontEnabled(item, NERD_FONT_FORMATS) ? COMPACTION_NERD_FONT_ICON : COMPACTION_ICON;
-        return formatStats(data, item, icon, format);
+        return formatStats(data, item, icon, format, formatOptions);
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
@@ -257,7 +287,7 @@ export class CompactionCounterWidget implements Widget {
         // display; a single-metric value just needs the metric selector, since
         // hide-zero is one of the states in the shared hide checklist.
         if (item !== undefined && getMetric(item) !== DEFAULT_METRIC) {
-            return keybinds;
+            return hasValueColors(item) ? [...keybinds, VALUE_COLORS_KEYBIND] : keybinds;
         }
 
         keybinds.push({ key: 'f', label: '(f)ormat', action: CYCLE_FORMAT_ACTION });
@@ -267,12 +297,27 @@ export class CompactionCounterWidget implements Widget {
         keybinds.push({ key: 's', label: '(s)plit by trigger', action: TOGGLE_TRIGGERS_ACTION });
         keybinds.push({ key: 't', label: '(t)okens reclaimed', action: TOGGLE_RECLAIMED_ACTION });
         keybinds.push(getSymbolKeybind());
+        keybinds.push(VALUE_COLORS_KEYBIND);
 
         return keybinds;
     }
 
     renderEditor(props: WidgetEditorProps) {
+        if (props.action === EDIT_VALUE_COLORS_ACTION) {
+            return renderValueColorsEditor(props, {
+                title: 'Compaction Counter: value colors',
+                scale: COUNT_SCALE,
+                sampleNote: 'compactions',
+                defaultColor: DEFAULT_COLOR
+            });
+        }
         return renderSymbolSlotsEditor(props, [RECLAIMED_SLOT]);
+    }
+
+    // Value colors embed their own foreground codes, so the renderer must
+    // leave this widget's foreground alone while they're on
+    preservesRenderedColors(item: WidgetItem): boolean {
+        return hasValueColors(item) && isValueColorsEnabled(item);
     }
 
     supportsRawValue(): boolean { return false; }
