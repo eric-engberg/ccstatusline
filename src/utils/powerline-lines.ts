@@ -37,7 +37,7 @@ export function getLineRenderItems(settings: Settings, lineIndex: number, items:
 // Trailing nulls dropped, and nothing at all when no line has its own setting
 function normalize(lineEnabled: (boolean | null)[]): LineEnabled {
     const trimmed = [...lineEnabled];
-    while (trimmed.length > 0 && (trimmed[trimmed.length - 1] ?? null) === null) {
+    while (trimmed.length > 0 && (trimmed.at(-1) ?? null) === null) {
         trimmed.pop();
     }
     return trimmed.length > 0 ? trimmed : undefined;
