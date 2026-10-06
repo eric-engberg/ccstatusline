@@ -1,7 +1,7 @@
 import chalk from 'chalk';
-import * as fs from 'fs';
-import * as os from 'os';
-import * as path from 'path';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import type { Mock } from 'vitest';
 import {
     afterEach,
@@ -419,6 +419,18 @@ describe('ThinkingEffortWidget', () => {
             });
 
             expect(result).toBe(`${BASE}(${FG_RESET}${BASE}Thinking: ${FG_RESET}${ORANGE}xhigh${FG_RESET}${BASE})${FG_RESET}`);
+        });
+
+        // The label editor's override replaces "Thinking: " inside the brackets
+        it('draws an edited label, or none, with brackets and level colors', () => {
+            expect(render({ isPreview: true, item: { metadata: { brackets: '[]', label: 'T ' } } })).toBe('[T high]');
+            expect(render({ isPreview: true, item: { metadata: { label: '' } } })).toBe('high');
+
+            const result = render({
+                statusData: xhighStatus,
+                item: { color: 'hex:112233', metadata: { levelColors: 'true', label: 'T ' } }
+            });
+            expect(result).toBe(`${BASE}T ${FG_RESET}${ORANGE}xhigh${FG_RESET}`);
         });
 
         it('keeps unknown levels in the widget color', () => {
