@@ -16,7 +16,6 @@ import { getUsageErrorMessage } from '../utils/usage';
 import { formatUsageCurrency } from './shared/currency';
 import { makeModifierText } from './shared/editor-display';
 import { EXTRA_USAGE_DISABLED_HIDEABLE_STATE } from './shared/extra-usage-disabled';
-import { getExtraUsageLabel } from './shared/extra-usage-label';
 import { isHidden } from './shared/hideable';
 import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
 import { USAGE_NO_DATA_HIDEABLE_STATE } from './shared/usage-display';
@@ -44,18 +43,14 @@ const VALUE_COLORS_EDITOR: ValueColorsEditorOptions = {
 // The preview's $106.00 of a limit that leaves Remaining's $3,894.00 sample
 const PREVIEW_PERCENT = 106 / 4000 * 100;
 
-// "Overage Used: ", or "Spend Used: " on accounts without plan limits
-function getLabelFor(usageData: RenderContext['usageData']): string {
-    return `${getExtraUsageLabel(usageData)} Used: `;
-}
+const LABEL = 'Overage Used: ';
 
 export class ExtraUsageUsedWidget implements Widget {
     getDefaultColor(): string { return DEFAULT_COLOR; }
     getDescription(): string { return 'Shows extra usage spent: overage beyond Pro/Max plan limits, or your spend on Enterprise'; }
     getDisplayName(): string { return 'Extra Usage Used'; }
     getCategory(): string { return 'Usage'; }
-    // The editor has no usage data, so it offers the Overage label
-    getLabelPrefix(): string { return getLabelFor(undefined); }
+    getLabelPrefix(): string { return LABEL; }
 
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         const valueColors = getValueColorsModifier(item);
@@ -81,18 +76,17 @@ export class ExtraUsageUsedWidget implements Widget {
     }
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
-        const label = getLabelFor(context.usageData);
         const format = resolveNumberFormat('cost', item, settings);
         const formatOptions = getValueFormatOptions(settings, item.color ?? DEFAULT_COLOR);
         if (context.isPreview) {
-            return formatColoredValue(item, label, formatUsageCurrency(106, undefined, format), PREVIEW_PERCENT, LIMIT_SCALE, formatOptions);
+            return formatColoredValue(item, this.getLabelPrefix(), formatUsageCurrency(106, undefined, format), PREVIEW_PERCENT, LIMIT_SCALE, formatOptions);
         }
 
         const data = context.usageData ?? {};
         if (data.extraUsageEnabled === false) {
             return isHidden(item, EXTRA_USAGE_DISABLED_HIDEABLE_STATE.key)
                 ? null
-                : formatRawOrLabeledValue(item, label, 'n/a');
+                : formatRawOrLabeledValue(item, this.getLabelPrefix(), 'n/a');
         }
         if (data.extraUsageEnabled !== true || data.extraUsageUsed === undefined) {
             if (data.error) {
@@ -110,7 +104,7 @@ export class ExtraUsageUsedWidget implements Widget {
         const limit = data.extraUsageLimit ?? 0;
         const percent = limit > 0 ? data.extraUsageUsed / limit * 100 : null;
 
-        return formatColoredValue(item, label, formatted, percent, LIMIT_SCALE, formatOptions);
+        return formatColoredValue(item, this.getLabelPrefix(), formatted, percent, LIMIT_SCALE, formatOptions);
     }
 
     supportsRawValue(): boolean { return true; }
