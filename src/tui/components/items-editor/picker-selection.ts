@@ -2,6 +2,7 @@ import type {
     WidgetItem,
     WidgetItemType
 } from '../../../types/Widget';
+import { clearLabel } from '../../../widgets/shared/raw-or-labeled';
 
 import type { WidgetPickerAction } from './input-handlers';
 
@@ -34,7 +35,10 @@ export function placePickerSelection(
         }
 
         const newWidgets = [...widgets];
-        newWidgets[selectedIndex] = { ...currentWidget, type: selectedType };
+        // Other metadata carries over, but a label names the old widget's value
+        newWidgets[selectedIndex] = currentWidget.type === selectedType
+            ? currentWidget
+            : { ...clearLabel(currentWidget), type: selectedType };
         return { widgets: newWidgets, selectedIndex };
     }
 
