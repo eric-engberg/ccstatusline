@@ -100,7 +100,26 @@ const GlyphGrid: React.FC<GlyphPickerProps & { catalog: GlyphCatalog }> = ({ cat
         }
     };
 
+    // Arrows and paging: where the key moves the highlight, or null for other keys
+    const getMoveTarget = (key: Key): number | null => {
+        if (key.leftArrow || key.rightArrow) {
+            return position.index + (key.rightArrow ? 1 : -1);
+        }
+        if (key.upArrow) {
+            return position.index - COLUMNS;
+        }
+        if (key.downArrow) {
+            // Down from past the end of a short last row lands on its last glyph
+            return Math.min(position.index + COLUMNS, glyphs.length - 1);
+        }
+        if (key.pageDown || key.pageUp) {
+            return key.pageDown ? Math.min(position.index + PAGE, glyphs.length - 1) : Math.max(position.index - PAGE, 0);
+        }
+        return null;
+    };
+
     useInput((input, key) => {
+        const target = getMoveTarget(key);
         if (key.return) {
             if (selected) {
                 onPick(selected.glyph);
@@ -111,17 +130,10 @@ const GlyphGrid: React.FC<GlyphPickerProps & { catalog: GlyphCatalog }> = ({ cat
             } else {
                 onCancel();
             }
-        } else if (key.leftArrow || key.rightArrow) {
-            moveTo(position.index + (key.rightArrow ? 1 : -1));
-        } else if (key.upArrow) {
-            moveTo(position.index - COLUMNS);
-        } else if (key.downArrow) {
-            // Down from past the end of a short last row lands on its last glyph
-            moveTo(Math.min(position.index + COLUMNS, glyphs.length - 1));
-        } else if (key.pageDown || key.pageUp) {
-            moveTo(key.pageDown ? Math.min(position.index + PAGE, glyphs.length - 1) : Math.max(position.index - PAGE, 0));
-        } else {
+        } else if (target === null) {
             handleModeKey(input, key);
+        } else {
+            moveTo(target);
         }
     });
 

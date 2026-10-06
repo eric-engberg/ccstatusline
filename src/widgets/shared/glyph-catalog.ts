@@ -16,8 +16,9 @@ export interface GlyphCatalog {
 
 // "git merge queue (nf-oct-git_merge_queue)", with every alias in the brackets
 function formatNerdFontName(names: string[]): string {
-    const readable = (names[0] ?? '').split('-').slice(1).join('-').replace(/_/g, ' ');
-    return `${readable} (${names.map(name => `nf-${name}`).join(', ')})`;
+    const readable = (names[0] ?? '').split('-').slice(1).join('-').replaceAll('_', ' ');
+    const aliases = names.map(name => 'nf-' + name).join(', ');
+    return `${readable} (${aliases})`;
 }
 
 // The icon sets' names, by the prefix of their glyphs' names
