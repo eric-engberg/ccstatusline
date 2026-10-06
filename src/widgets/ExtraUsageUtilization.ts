@@ -14,20 +14,19 @@ import {
 import { getUsageErrorMessage } from '../utils/usage';
 
 import { EXTRA_USAGE_DISABLED_HIDEABLE_STATE } from './shared/extra-usage-disabled';
+import {
+    CYCLE_GRADIENT_ACTION,
+    cycleGradientPreset
+} from './shared/gradient-bar';
 import { isHidden } from './shared/hideable';
-import { makeTimerProgressBar } from './shared/progress-bar';
 import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
 import {
     USAGE_NO_DATA_HIDEABLE_STATE,
     cycleUsageDisplayMode,
-    getUsageDisplayMode,
+    formatUsageBar,
     getUsageDisplayModifierText,
     getUsagePercentCustomKeybinds,
-    getUsageProgressBarWidth,
     isUsageInverted,
-    isUsageProgressMode,
-    isUsageSliderMode,
-    makeSliderBar,
     toggleUsageInverted
 } from './shared/usage-display';
 
@@ -52,6 +51,10 @@ export class ExtraUsageUtilizationWidget implements Widget {
     }
 
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
+        if (action === CYCLE_GRADIENT_ACTION) {
+            return cycleGradientPreset(item);
+        }
+
         if (action === 'toggle-progress') {
             return cycleUsageDisplayMode(item, [], true, true);
         }
@@ -64,24 +67,16 @@ export class ExtraUsageUtilizationWidget implements Widget {
     }
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
-        const displayMode = getUsageDisplayMode(item);
         const inverted = isUsageInverted(item);
         const format = resolveNumberFormat('percent', item, settings);
 
         if (context.isPreview) {
-            const previewPercent = 2.6;
+            const previewPercent = 85;
             const renderedPercent = inverted ? 100 - previewPercent : previewPercent;
 
-            if (isUsageProgressMode(displayMode)) {
-                const width = getUsageProgressBarWidth(displayMode);
-                const progressBar = makeTimerProgressBar(renderedPercent, width);
-                return formatRawOrLabeledValue(item, this.getLabelPrefix(), `[${progressBar}] ${formatPercent(renderedPercent, format)}`);
-            }
-
-            if (isUsageSliderMode(displayMode)) {
-                const slider = makeSliderBar(renderedPercent);
-                const sliderDisplay = displayMode === 'slider' ? `${slider} ${formatPercent(renderedPercent, format)}` : slider;
-                return formatRawOrLabeledValue(item, this.getLabelPrefix(), sliderDisplay);
+            const bar = formatUsageBar(item, renderedPercent, format, settings, context);
+            if (bar !== null) {
+                return formatRawOrLabeledValue(item, this.getLabelPrefix(), bar);
             }
 
             return formatRawOrLabeledValue(item, this.getLabelPrefix(), formatPercent(renderedPercent, format));
@@ -106,16 +101,9 @@ export class ExtraUsageUtilizationWidget implements Widget {
         const percent = Math.max(0, Math.min(100, data.extraUsageUtilization));
         const renderedPercent = inverted ? 100 - percent : percent;
 
-        if (isUsageProgressMode(displayMode)) {
-            const width = getUsageProgressBarWidth(displayMode);
-            const progressBar = makeTimerProgressBar(renderedPercent, width);
-            return formatRawOrLabeledValue(item, this.getLabelPrefix(), `[${progressBar}] ${formatPercent(renderedPercent, format)}`);
-        }
-
-        if (isUsageSliderMode(displayMode)) {
-            const slider = makeSliderBar(renderedPercent);
-            const sliderDisplay = displayMode === 'slider' ? `${slider} ${formatPercent(renderedPercent, format)}` : slider;
-            return formatRawOrLabeledValue(item, this.getLabelPrefix(), sliderDisplay);
+        const bar = formatUsageBar(item, renderedPercent, format, settings, context);
+        if (bar !== null) {
+            return formatRawOrLabeledValue(item, this.getLabelPrefix(), bar);
         }
 
         return formatRawOrLabeledValue(item, this.getLabelPrefix(), formatPercent(renderedPercent, format));

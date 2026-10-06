@@ -16,6 +16,7 @@ import {
     getPowerlineTheme,
     getPowerlineThemes
 } from '../../utils/colors';
+import { getPlainInput } from '../../utils/input-guards';
 import {
     NO_THEME_SLOT,
     assignPowerlineThemeSlots,
@@ -169,6 +170,7 @@ export const PowerlineThemeSelector: React.FC<PowerlineThemeSelectorProps> = ({
     }, [selectedIndex, themes]);
 
     useInput((input, key) => {
+        const shortcut = getPlainInput(input, key);
         if (showCustomizeConfirm || showRemovePinsConfirm) {
             return;
         }
@@ -176,7 +178,7 @@ export const PowerlineThemeSelector: React.FC<PowerlineThemeSelectorProps> = ({
         if (key.escape) {
             onUpdate(originalSettingsRef.current);
             onBack();
-        } else if (input === 'c' || input === 'C') {
+        } else if (shortcut === 'c' || shortcut === 'C') {
             const currentThemeName = themes[selectedIndex];
             if (currentThemeName && currentThemeName !== 'custom') {
                 setShowCustomizeConfirm(true);

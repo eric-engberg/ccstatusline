@@ -56,6 +56,9 @@ export interface RenderContext {
     skillsMetrics?: SkillsMetrics | null;
     compactionData?: CompactionData | null;
     terminalWidth?: number | null;
+    // Cells for this widget's bar, set by the renderer when the bar has a width
+    // setting (see widgets/shared/bar-width.ts); otherwise its mode's own size
+    barCells?: number;
     isPreview?: boolean;
     minimalist?: boolean;
     gitCacheTtlSeconds?: number;

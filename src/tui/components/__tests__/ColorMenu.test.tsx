@@ -921,4 +921,44 @@ describe('ColorMenu', () => {
             }
         });
     });
+
+    it('explains which text the foreground still colors when a widget sets some colors itself', async () => {
+        const renderMenu = async (widget: WidgetItem) => {
+            const stdin = createMockStdin();
+            const stdout = createMockStdout();
+            const stderr = createMockStdout();
+            const instance = render(
+                React.createElement(ColorMenu, {
+                    widgets: [widget],
+                    lineIndex: 0,
+                    themeSlotContext: allRendered([widget]),
+                    editingBackground: false,
+                    onEditingBackgroundChange: vi.fn(),
+                    showSeparators: false,
+                    onShowSeparatorsChange: vi.fn(),
+                    settings: DEFAULT_SETTINGS,
+                    onUpdate: vi.fn(),
+                    onBack: vi.fn()
+                }),
+                { stdin, stdout, stderr, debug: true, exitOnCtrlC: false, patchConsole: false }
+            );
+
+            try {
+                await flushInk();
+                return stripAnsi(stdout.getOutput().split('Edit Line 1').at(-1) ?? '');
+            } finally {
+                instance.unmount();
+                instance.cleanup();
+                stdin.destroy();
+                stdout.destroy();
+                stderr.destroy();
+            }
+        };
+
+        const levelColored = await renderMenu({ id: '1', type: 'thinking-effort', metadata: { levelColors: 'true' } });
+        const singleColored = await renderMenu({ id: '1', type: 'thinking-effort' });
+
+        expect(levelColored).toContain('sets some of its own colors');
+        expect(singleColored).not.toContain('sets some of its own colors');
+    });
 });

@@ -1,7 +1,8 @@
 import {
     Box,
     Text,
-    useInput
+    useInput,
+    useStdout
 } from 'ink';
 import React, {
     useEffect,
@@ -32,16 +33,18 @@ import {
     getWidgetCatalog,
     getWidgetCatalogCategories
 } from '../../utils/widgets';
+import { EDIT_BAR_WIDTH_ACTION } from '../../widgets/shared/bar-width';
+import { filterGradientKeybinds } from '../../widgets/shared/gradient-bar';
 import {
     EDIT_HIDE_STATES_ACTION,
     getHideKeybind
 } from '../../widgets/shared/hideable';
 import {
     EDIT_LABEL_ACTION,
-    clearLabel,
     getLabelKeybind
 } from '../../widgets/shared/raw-or-labeled';
 
+import { BarWidthEditor } from './BarWidthEditor';
 import { ConfirmDialog } from './ConfirmDialog';
 import { HideStatesEditor } from './HideStatesEditor';
 import { LabelEditor } from './LabelEditor';
@@ -61,11 +64,25 @@ import {
     type WidgetPickerAction,
     type WidgetPickerState
 } from './items-editor/input-handlers';
+import {
+    getListWindow,
+    getPickerMaxVisible
+} from './items-editor/list-window';
+import {
+    getPickerInsertIndex,
+    placePickerSelection
+} from './items-editor/picker-selection';
 
 export interface ItemsEditorProps {
     widgets: WidgetItem[];
     onUpdate: (widgets: WidgetItem[]) => void;
     onBack: () => void;
+    // Receives the line as it would look with the widget highlighted in the
+    // picker, or null when nothing is being previewed. Pass a stable callback.
+    onPreviewChange?: (widgets: WidgetItem[] | null) => void;
+    // Lets the caller restore the cursor, e.g. after a dev reload
+    initialSelectedIndex?: number;
+    onSelectedIndexChange?: (index: number) => void;
     lineNumber: number;
     settings: Settings;
     /** This line's rendered content and theme-slot offset, so previewed colors match. */
@@ -75,18 +92,99 @@ export interface ItemsEditorProps {
     initialWidgetId?: string | null;
 }
 
-export const ItemsEditor: React.FC<ItemsEditorProps> = ({ widgets, onUpdate, onBack, lineNumber, settings, themeSlotContext, onTabSwap, onWidgetHighlight, initialWidgetId }) => {
+// What the preview shows: the bar width editor's draft in place of the widget it
+// edits, or else the line with the picker's highlighted widget, if any
+function getPreviewWidgets(widgets: WidgetItem[], index: number, barWidthDraft: WidgetItem | null, pickerPreview: WidgetItem[] | null): WidgetItem[] | null {
+    return barWidthDraft ? widgets.map((widget, i) => (i === index ? barWidthDraft : widget)) : pickerPreview;
+}
+
+interface SharedEditorHandlers {
+    onDraft: (draft: WidgetItem) => void;
+    onComplete: (updatedWidget: WidgetItem) => void;
+    onCancel: () => void;
+}
+
+// The hide-state checklist and the bar width editor are shared by every widget
+// that offers them, so they render here rather than via widget renderEditor
+function renderSharedEditor(editor: CustomEditorWidgetState | null, { onDraft, onComplete, onCancel }: SharedEditorHandlers): React.ReactElement | null {
+    if (editor?.action === EDIT_HIDE_STATES_ACTION) {
+        return (
+            <HideStatesEditor
+                widget={editor.widget}
+                states={editor.impl.getHideableStates?.() ?? []}
+                onComplete={onComplete}
+                onCancel={onCancel}
+            />
+        );
+    }
+    if (editor?.action === EDIT_BAR_WIDTH_ACTION) {
+        return <BarWidthEditor widget={editor.widget} onChange={onDraft} onComplete={onComplete} onCancel={onCancel} />;
+    }
+    return null;
+}
+
+const HiddenEntriesMarker: React.FC<{ arrow: string; count: number }> = ({ arrow, count }) => (
+    <Box paddingLeft={3}>
+        <Text dimColor>{count > 0 ? `${arrow} ${count} more` : ' '}</Text>
+    </Box>
+);
+
+// Long picker lists show only the entries around the selection so the whole
+// screen, status line preview included, fits in the terminal. Both marker
+// rows stay reserved while windowed so the list doesn't shift as it scrolls.
+function renderWindowedList<T>(
+    items: T[],
+    selectedIndex: number,
+    maxVisible: number,
+    renderItem: (item: T, index: number) => React.ReactNode
+): React.ReactNode {
+    const visible = getListWindow(items.length, Math.max(0, selectedIndex), maxVisible);
+    const isWindowed = items.length > maxVisible;
+
+    return (
+        <>
+            {isWindowed && <HiddenEntriesMarker arrow='↑' count={visible.hiddenAbove} />}
+            {items.slice(visible.start, visible.end).map((item, offset) => renderItem(item, visible.start + offset))}
+            {isWindowed && <HiddenEntriesMarker arrow='↓' count={visible.hiddenBelow} />}
+        </>
+    );
+}
+
+export const ItemsEditor: React.FC<ItemsEditorProps> = ({
+    widgets,
+    onUpdate,
+    onBack,
+    onPreviewChange,
+    initialSelectedIndex = 0,
+    onSelectedIndexChange,
+    lineNumber,
+    settings,
+    themeSlotContext,
+    onTabSwap,
+    onWidgetHighlight,
+    initialWidgetId
+}) => {
+    // The widget highlighted in the other editor mode, if it's on this line, or
+    // else the restored cursor
     const [selectedIndex, setSelectedIndex] = useState(() => {
-        if (initialWidgetId) {
-            const index = widgets.findIndex(w => w.id === initialWidgetId);
-            return index >= 0 ? index : 0;
-        }
-        return 0;
+        const widgetIndex = initialWidgetId ? widgets.findIndex(w => w.id === initialWidgetId) : -1;
+        return widgetIndex >= 0 ? widgetIndex : Math.min(initialSelectedIndex, Math.max(0, widgets.length - 1));
     });
     const [moveMode, setMoveMode] = useState(false);
     const [customEditorWidget, setCustomEditorWidget] = useState<CustomEditorWidgetState | null>(null);
+    // The widget at the width the bar width editor is showing, for the preview
+    const [barWidthDraft, setBarWidthDraft] = useState<WidgetItem | null>(null);
     const [widgetPicker, setWidgetPicker] = useState<WidgetPickerState | null>(null);
+    // Identity and powerline background of the widget an add/insert would
+    // create, fixed when the picker opens so the preview doesn't change color
+    // on every keypress and Enter adds exactly what was previewed
+    const [pickerNewWidget, setPickerNewWidget] = useState<Omit<WidgetItem, 'type'> | null>(null);
     const [showClearConfirm, setShowClearConfirm] = useState(false);
+    const { stdout } = useStdout();
+    const pickerMaxVisible = getPickerMaxVisible(
+        stdout.rows,
+        settings.lines.filter(line => line.length > 0).length
+    );
     const separatorChars = ['|', '-', ',', ' '];
 
     useEffect(() => {
@@ -145,14 +243,16 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({ widgets, onUpdate, onB
         newWidgets[selectedIndex] = updatedWidget;
         onUpdate(newWidgets);
         setCustomEditorWidget(null);
+        setBarWidthDraft(null);
     };
 
     const handleEditorCancel = () => {
         setCustomEditorWidget(null);
+        setBarWidthDraft(null);
     };
 
     const getCustomKeybindsForWidget = (widgetImpl: Widget, widget: WidgetItem): CustomKeybind[] => {
-        const keybinds = widgetImpl.getCustomKeybinds ? [...widgetImpl.getCustomKeybinds(widget)] : [];
+        const keybinds = filterGradientKeybinds(widgetImpl.getCustomKeybinds ? [...widgetImpl.getCustomKeybinds(widget)] : [], settings);
 
         // Numeric widgets get the precision cycle here rather than in the color
         // menu, so every non-color override stays on this screen and stays
@@ -186,7 +286,14 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({ widgets, onUpdate, onB
 
         const currentType = widgets[selectedIndex]?.type;
         const selectedType = action === 'change' ? currentType ?? null : null;
+        const backgroundColor = action === 'change'
+            ? undefined
+            : getUniqueBackgroundColor(getPickerInsertIndex(action, widgets.length, selectedIndex));
 
+        setPickerNewWidget({
+            id: generateGuid(),
+            ...(backgroundColor && { backgroundColor })
+        });
         setWidgetPicker(normalizePickerState({
             action,
             level: 'category',
@@ -202,30 +309,16 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({ widgets, onUpdate, onB
             return;
         }
 
-        if (widgetPicker.action === 'change') {
-            const currentWidget = widgets[selectedIndex];
-            if (currentWidget) {
-                const newWidgets = [...widgets];
-                // Other metadata carries over, but a label names the old widget's value
-                newWidgets[selectedIndex] = currentWidget.type === selectedType
-                    ? currentWidget
-                    : { ...clearLabel(currentWidget), type: selectedType };
-                onUpdate(newWidgets);
-            }
-        } else {
-            const insertIndex = widgetPicker.action === 'add'
-                ? (widgets.length > 0 ? selectedIndex + 1 : 0)
-                : selectedIndex;
-            const backgroundColor = getUniqueBackgroundColor(insertIndex);
-            const newWidget: WidgetItem = {
-                id: generateGuid(),
-                type: selectedType,
-                ...(backgroundColor && { backgroundColor })
-            };
-            const newWidgets = [...widgets];
-            newWidgets.splice(insertIndex, 0, newWidget);
-            onUpdate(newWidgets);
-            setSelectedIndex(insertIndex);
+        const placement = placePickerSelection(
+            widgets,
+            widgetPicker.action,
+            selectedIndex,
+            selectedType,
+            pickerNewWidget ?? { id: generateGuid() }
+        );
+        if (placement.widgets !== widgets) {
+            onUpdate(placement.widgets);
+            setSelectedIndex(placement.selectedIndex);
         }
 
         setWidgetPicker(null);
@@ -340,6 +433,36 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({ widgets, onUpdate, onB
         ? (pickerEntries.find(entry => entry.type === widgetPicker.selectedType) ?? pickerEntries[0])
         : null;
 
+    // Only a widget the picker visibly highlights is previewed; browsing the
+    // category list leaves the line as it is
+    const highlightedPickerType = widgetPicker?.level === 'widget'
+        ? selectedPickerEntry?.type
+        : (widgetPicker && widgetPicker.categoryQuery.trim().length > 0 ? selectedTopLevelSearchEntry?.type : undefined);
+    const pickerAction = widgetPicker?.action;
+    const pickerPreviewWidgets = useMemo(() => {
+        if (!pickerAction || !highlightedPickerType || !pickerNewWidget) {
+            return null;
+        }
+
+        return placePickerSelection(widgets, pickerAction, selectedIndex, highlightedPickerType, pickerNewWidget).widgets;
+    }, [widgets, pickerAction, selectedIndex, highlightedPickerType, pickerNewWidget]);
+    const previewWidgets = useMemo(
+        () => getPreviewWidgets(widgets, selectedIndex, barWidthDraft, pickerPreviewWidgets),
+        [widgets, selectedIndex, barWidthDraft, pickerPreviewWidgets]
+    );
+
+    useEffect(() => {
+        onPreviewChange?.(previewWidgets);
+    }, [onPreviewChange, previewWidgets]);
+
+    useEffect(() => () => {
+        onPreviewChange?.(null);
+    }, [onPreviewChange]);
+
+    useEffect(() => {
+        onSelectedIndexChange?.(selectedIndex);
+    }, [onSelectedIndexChange, selectedIndex]);
+
     // Build main help text (without custom keybinds)
     let helpText = hasWidgets
         ? '↑↓ select, ←→ open type picker'
@@ -372,17 +495,13 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({ widgets, onUpdate, onB
             ? 'Insert Widget'
             : 'Change Widget Type';
 
-    // The hide-state checklist is shared across all widgets that declare
-    // hideable states, so it renders here rather than via widget renderEditor
-    if (customEditorWidget?.action === EDIT_HIDE_STATES_ACTION) {
-        return (
-            <HideStatesEditor
-                widget={customEditorWidget.widget}
-                states={customEditorWidget.impl.getHideableStates?.() ?? []}
-                onComplete={handleEditorComplete}
-                onCancel={handleEditorCancel}
-            />
-        );
+    const sharedEditor = renderSharedEditor(customEditorWidget, {
+        onDraft: setBarWidthDraft,
+        onComplete: handleEditorComplete,
+        onCancel: handleEditorCancel
+    });
+    if (sharedEditor) {
+        return sharedEditor;
     }
 
     if (customEditorWidget?.action === EDIT_LABEL_ACTION && customEditorWidget.impl.getLabelPrefix) {
@@ -518,7 +637,7 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({ widgets, onUpdate, onB
                                 <Text dimColor>No widgets match the search.</Text>
                             ) : (
                                 <>
-                                    {topLevelSearchEntries.map((entry, index) => {
+                                    {renderWindowedList(topLevelSearchEntries, topLevelSearchEntries.findIndex(entry => entry.type === selectedTopLevelSearchEntry?.type), pickerMaxVisible, (entry, index) => {
                                         const isSelected = entry.type === selectedTopLevelSearchEntry?.type;
                                         const segments = getMatchSegments(entry.displayName, widgetPicker.categoryQuery);
                                         return (
@@ -553,7 +672,7 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({ widgets, onUpdate, onB
                                 <Text dimColor>No categories available.</Text>
                             ) : (
                                 <>
-                                    {pickerCategories.map((category, index) => {
+                                    {renderWindowedList(pickerCategories, pickerCategories.findIndex(category => category === selectedPickerCategory), pickerMaxVisible, (category, index) => {
                                         const isSelected = category === selectedPickerCategory;
                                         return (
                                             <Box key={category} flexDirection='row' flexWrap='nowrap'>
@@ -581,7 +700,7 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({ widgets, onUpdate, onB
                             <Text dimColor>No widgets match the current category/search.</Text>
                         ) : (
                             <>
-                                {pickerEntries.map((entry, index) => {
+                                {renderWindowedList(pickerEntries, pickerEntries.findIndex(entry => entry.type === selectedPickerEntry?.type), pickerMaxVisible, (entry, index) => {
                                     const isSelected = entry.type === selectedPickerEntry?.type;
                                     const segments = getMatchSegments(entry.displayName, widgetPicker.widgetQuery);
                                     return (
@@ -622,7 +741,7 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({ widgets, onUpdate, onB
                         <>
                             {widgets.map((widget, index) => {
                                 const isSelected = index === selectedIndex;
-                                const { displayText, modifierText } = getWidgetRowLabel(widget);
+                                const { displayText, modifierText } = getWidgetRowLabel(widget, settings);
 
                                 return (
                                     <WidgetRow

@@ -5,6 +5,9 @@ import type {
 } from '../../types/RenderContext';
 import type { Settings } from '../../types/Settings';
 import type {
+    CustomKeybind,
+    HideableState,
+    Widget,
     WidgetEditorDisplay,
     WidgetItem
 } from '../../types/Widget';
@@ -22,20 +25,20 @@ import {
 } from '../../utils/usage';
 import type { UsageWindowMetrics } from '../../utils/usage-types';
 
+import {
+    CYCLE_GRADIENT_ACTION,
+    cycleGradientPreset
+} from './gradient-bar';
 import { isHidden } from './hideable';
-import { makeTimerProgressBar } from './progress-bar';
 import { formatRawOrLabeledValue } from './raw-or-labeled';
 import {
     USAGE_NO_DATA_HIDEABLE_STATE,
     cycleUsageDisplayMode,
-    getUsageDisplayMode,
+    formatUsageBar,
     getUsageDisplayModifierText,
-    getUsageProgressBarWidth,
+    getUsagePercentCustomKeybinds,
     isUsageCursorEnabled,
     isUsageInverted,
-    isUsageProgressMode,
-    isUsageSliderMode,
-    makeSliderBar,
     toggleUsageCursor,
     toggleUsageInverted
 } from './usage-display';
@@ -59,35 +62,35 @@ const USAGE_PERCENT_WIDGET_CONFIG: Record<UsagePercentWidgetKind, UsagePercentWi
         label: 'Session: ',
         displayName: 'Session Usage',
         description: 'Shows daily/session API usage percentage',
-        previewPercent: 20,
+        previewPercent: 90,
         usageField: 'sessionUsage'
     },
     'weekly': {
         label: 'Weekly: ',
         displayName: 'Weekly Usage',
         description: 'Shows weekly API usage percentage',
-        previewPercent: 12,
+        previewPercent: 80,
         usageField: 'weeklyUsage'
     },
     'weekly-sonnet': {
         label: 'Weekly Sonnet: ',
         displayName: 'Weekly Sonnet Usage',
         description: 'Shows weekly Sonnet API usage percentage',
-        previewPercent: 8,
+        previewPercent: 70,
         usageField: 'weeklySonnetUsage'
     },
     'weekly-opus': {
         label: 'Weekly Opus: ',
         displayName: 'Weekly Opus Usage',
         description: 'Shows weekly Opus API usage percentage',
-        previewPercent: 4,
+        previewPercent: 60,
         usageField: 'weeklyOpusUsage'
     },
     'fable-weekly': {
         label: 'Weekly Fable: ',
         displayName: 'Weekly Fable Usage',
         description: 'Shows Fable-only weekly usage percentage',
-        previewPercent: 4,
+        previewPercent: 60,
         usageField: 'fableUsage'
     }
 };
@@ -115,24 +118,12 @@ function renderUsageDisplay(
     label: string,
     percent: number,
     format: NumberFormat,
-    getCursorOptions: () => UsageCursorOptions | undefined
+    getCursorOptions: () => UsageCursorOptions | undefined,
+    settings: Settings,
+    context: RenderContext
 ): string {
-    const displayMode = getUsageDisplayMode(item);
-
-    if (isUsageProgressMode(displayMode)) {
-        const width = getUsageProgressBarWidth(displayMode);
-        const progressBar = makeTimerProgressBar(percent, width, getCursorOptions());
-        const progressDisplay = `[${progressBar}] ${formatPercent(percent, format)}`;
-        return formatRawOrLabeledValue(item, label, progressDisplay);
-    }
-
-    if (isUsageSliderMode(displayMode)) {
-        const slider = makeSliderBar(percent, undefined, getCursorOptions());
-        const sliderDisplay = displayMode === 'slider' ? `${slider} ${formatPercent(percent, format)}` : slider;
-        return formatRawOrLabeledValue(item, label, sliderDisplay);
-    }
-
-    return formatRawOrLabeledValue(item, label, formatPercent(percent, format));
+    const bar = formatUsageBar(item, percent, format, settings, context, getCursorOptions);
+    return formatRawOrLabeledValue(item, label, bar ?? formatPercent(percent, format));
 }
 
 export function getUsagePercentWidgetDisplayName(kind: UsagePercentWidgetKind): string {
@@ -167,6 +158,10 @@ export function handleUsagePercentWidgetEditorAction(action: string, item: Widge
         return toggleUsageCursor(item);
     }
 
+    if (action === CYCLE_GRADIENT_ACTION) {
+        return cycleGradientPreset(item);
+    }
+
     return null;
 }
 
@@ -183,7 +178,7 @@ export function renderUsagePercentWidgetValue(
 
     if (context.isPreview) {
         const renderedPercent = inverted ? 100 - config.previewPercent : config.previewPercent;
-        return renderUsageDisplay(item, config.label, renderedPercent, format, () => showCursor ? { cursorPercent: 50 } : undefined);
+        return renderUsageDisplay(item, config.label, renderedPercent, format, () => showCursor ? { cursorPercent: 50 } : undefined, settings, context);
     }
 
     const data: RenderUsageData = context.usageData ?? {};
@@ -207,5 +202,45 @@ export function renderUsagePercentWidgetValue(
 
         const window = resolveUsageWindow(kind, data, context);
         return window ? { cursorPercent: window.elapsedPercent } : undefined;
-    });
+    }, settings, context);
+}
+
+// Session, Weekly, Weekly Sonnet, Weekly Opus and Fable Weekly Usage differ only
+// in their kind
+export class UsagePercentWidget implements Widget {
+    private readonly kind: UsagePercentWidgetKind;
+
+    constructor(kind: UsagePercentWidgetKind) {
+        this.kind = kind;
+    }
+
+    getDefaultColor(): string { return 'brightBlue'; }
+    getDescription(): string { return getUsagePercentWidgetDescription(this.kind); }
+    getDisplayName(): string { return getUsagePercentWidgetDisplayName(this.kind); }
+    getCategory(): string { return 'Usage'; }
+    getLabelPrefix(): string { return getUsagePercentWidgetLabel(this.kind); }
+
+    getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
+        return getUsagePercentWidgetEditorDisplay(this.kind, item);
+    }
+
+    getHideableStates(): HideableState[] {
+        return [USAGE_NO_DATA_HIDEABLE_STATE];
+    }
+
+    handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
+        return handleUsagePercentWidgetEditorAction(action, item);
+    }
+
+    render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
+        return renderUsagePercentWidgetValue(this.kind, item, context, settings);
+    }
+
+    getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
+        return getUsagePercentCustomKeybinds(item);
+    }
+
+    supportsRawValue(): boolean { return true; }
+    supportsColors(item: WidgetItem): boolean { return true; }
+    supportsNumberFormat(): boolean { return true; }
 }

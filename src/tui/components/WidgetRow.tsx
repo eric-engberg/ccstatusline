@@ -21,6 +21,7 @@ import {
 } from '../../utils/gradient';
 import { getNumberFormatModifierText } from '../../utils/number-format';
 import { getWidget } from '../../utils/widgets';
+import { noteGradientNeedsTruecolor } from '../../widgets/shared/gradient-bar';
 import { getHideModifierText } from '../../widgets/shared/hideable';
 import { getLabelModifierText } from '../../widgets/shared/raw-or-labeled';
 
@@ -48,7 +49,7 @@ export function isMergedIntoPreviousWidget(widgets: WidgetItem[], index: number)
 }
 
 /** The label both editor modes show for a widget, so a row reads the same in each. */
-export function getWidgetRowLabel(widget: WidgetItem): WidgetEditorDisplay {
+export function getWidgetRowLabel(widget: WidgetItem, settings: Settings): WidgetEditorDisplay {
     if (widget.type === 'separator') {
         const char = widget.character ?? '|';
         return { displayText: `Separator ${char === ' ' ? '(space)' : char}` };
@@ -66,7 +67,7 @@ export function getWidgetRowLabel(widget: WidgetItem): WidgetEditorDisplay {
     const { displayText, modifierText } = widgetImpl.getEditorDisplay(widget);
     return {
         displayText: displayText || widgetImpl.getDisplayName(),
-        modifierText
+        modifierText: noteGradientNeedsTruecolor(modifierText, settings)
     };
 }
 

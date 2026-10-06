@@ -23,20 +23,28 @@ const AUTO_ALIGN_SETTINGS = {
 
 describe('getWidgetRowLabel', () => {
     it('names separators by their character', () => {
-        expect(getWidgetRowLabel({ id: '1', type: 'separator', character: '|' }).displayText)
+        expect(getWidgetRowLabel({ id: '1', type: 'separator', character: '|' }, DEFAULT_SETTINGS).displayText)
             .toBe('Separator |');
-        expect(getWidgetRowLabel({ id: '1', type: 'separator', character: ' ' }).displayText)
+        expect(getWidgetRowLabel({ id: '1', type: 'separator', character: ' ' }, DEFAULT_SETTINGS).displayText)
             .toBe('Separator (space)');
-        expect(getWidgetRowLabel({ id: '1', type: 'flex-separator' }).displayText)
+        expect(getWidgetRowLabel({ id: '1', type: 'flex-separator' }, DEFAULT_SETTINGS).displayText)
             .toBe('Flex Separator');
     });
 
     it('uses the widget editor display for real widgets', () => {
-        expect(getWidgetRowLabel({ id: '1', type: 'model' }).displayText).toBe('Model');
+        expect(getWidgetRowLabel({ id: '1', type: 'model' }, DEFAULT_SETTINGS).displayText).toBe('Model');
+    });
+
+    // Below truecolor a bar's gradient preset renders plain, so the row says why
+    it('notes a bar gradient that needs truecolor', () => {
+        const bar: WidgetItem = { id: '1', type: 'context-bar', metadata: { gradient: 'thermal' } };
+
+        expect(getWidgetRowLabel(bar, { ...DEFAULT_SETTINGS, colorLevel: 2 }).modifierText).toContain('gradient: thermal, needs truecolor');
+        expect(getWidgetRowLabel(bar, { ...DEFAULT_SETTINGS, colorLevel: 3 }).modifierText).not.toContain('needs truecolor');
     });
 
     it('flags unknown widget types', () => {
-        expect(getWidgetRowLabel({ id: '1', type: 'not-a-widget' }).displayText)
+        expect(getWidgetRowLabel({ id: '1', type: 'not-a-widget' }, DEFAULT_SETTINGS).displayText)
             .toBe('Unknown: not-a-widget');
     });
 });

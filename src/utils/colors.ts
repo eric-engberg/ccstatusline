@@ -144,7 +144,7 @@ export function applyColors(
     dim?: boolean | 'parens',
     collapseGradient = false
 ): string {
-    const styledText = dim === 'parens' ? applyParensDim(text, bold) : text;
+    let styledText = dim === 'parens' ? applyParensDim(text, bold) : text;
 
     if (!foregroundColor && !backgroundColor && !bold && dim !== true) {
         return styledText;
@@ -195,10 +195,19 @@ export function applyColors(
         if (fgCode) {
             prefix += fgCode;
             suffix = '\x1b[39m' + suffix;
+            styledText = restoreForegroundAfterRuns(styledText, fgCode);
         }
     }
 
     return prefix + styledText + suffix;
+}
+
+// Widget text can color part of itself, ending each colored run with the
+// default-foreground code. Inside a colored widget that code would drop the rest
+// of the text to the terminal's default color, so it becomes the widget's own
+// foreground instead.
+export function restoreForegroundAfterRuns(text: string, foregroundCode: string): string {
+    return text.split('\x1b[39m').join(foregroundCode);
 }
 
 // Get raw ANSI codes for a color without the reset codes

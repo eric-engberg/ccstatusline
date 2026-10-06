@@ -5,6 +5,7 @@ import type {
     WidgetItemType
 } from '../../../types/Widget';
 import { generateGuid } from '../../../utils/guid';
+import { getPlainInput } from '../../../utils/input-guards';
 import {
     CYCLE_NUMBER_STYLE_ACTION,
     cycleNumberStyle
@@ -14,8 +15,23 @@ import {
     getWidget,
     type WidgetCatalogEntry
 } from '../../../utils/widgets';
+import {
+    CYCLE_BAR_NUMBERS_ACTION,
+    TOGGLE_BAR_NUMBERS_ACTION,
+    cycleBarNumbers,
+    toggleBarNumbers
+} from '../../../widgets/shared/bar-layout';
+import { EDIT_BAR_WIDTH_ACTION } from '../../../widgets/shared/bar-width';
 import { EDIT_HIDE_STATES_ACTION } from '../../../widgets/shared/hideable';
 import { EDIT_LABEL_ACTION } from '../../../widgets/shared/raw-or-labeled';
+
+// Keys every widget offering them shares, applied here rather than in each
+// widget's handleEditorAction
+const SHARED_ACTIONS: Record<string, ((widget: WidgetItem) => WidgetItem) | undefined> = {
+    [CYCLE_NUMBER_STYLE_ACTION]: cycleNumberStyle,
+    [TOGGLE_BAR_NUMBERS_ACTION]: toggleBarNumbers,
+    [CYCLE_BAR_NUMBERS_ACTION]: cycleBarNumbers
+};
 
 export type WidgetPickerAction = 'change' | 'add' | 'insert';
 export type WidgetPickerLevel = 'category' | 'widget';
@@ -376,6 +392,8 @@ export function handleNormalInputMode({
     getUniqueBackgroundColor,
     onTabSwap
 }: HandleNormalInputModeArgs): void {
+    const shortcut = getPlainInput(input, key);
+
     if (key.upArrow && widgets.length > 0) {
         setSelectedIndex(selectedIndex - 1 < 0 ? widgets.length - 1 : selectedIndex - 1);
     } else if (key.downArrow && widgets.length > 0) {
@@ -386,17 +404,17 @@ export function handleNormalInputMode({
         openWidgetPicker('change');
     } else if (key.return && widgets.length > 0) {
         setMoveMode(true);
-    } else if (input === 'a') {
+    } else if (shortcut === 'a') {
         openWidgetPicker('add');
-    } else if (input === 'i') {
+    } else if (shortcut === 'i') {
         openWidgetPicker('insert');
-    } else if (input === 'd' && widgets.length > 0) {
+    } else if (shortcut === 'd' && widgets.length > 0) {
         const newWidgets = widgets.filter((_, i) => i !== selectedIndex);
         onUpdate(newWidgets);
         if (selectedIndex >= newWidgets.length && selectedIndex > 0) {
             setSelectedIndex(selectedIndex - 1);
         }
-    } else if (input === 'k' && widgets.length > 0) {
+    } else if (shortcut === 'k' && widgets.length > 0) {
         const source = widgets[selectedIndex];
         if (!source) {
             return;
@@ -416,11 +434,11 @@ export function handleNormalInputMode({
         ];
         onUpdate(newWidgets);
         setSelectedIndex(insertIndex);
-    } else if (input === 'c') {
+    } else if (shortcut === 'c') {
         if (widgets.length > 0) {
             setShowClearConfirm(true);
         }
-    } else if (input === ' ' && widgets.length > 0) {
+    } else if (shortcut === ' ' && widgets.length > 0) {
         const currentWidget = widgets[selectedIndex];
         if (currentWidget?.type === 'separator') {
             const currentChar = currentWidget.character ?? '|';
@@ -430,7 +448,7 @@ export function handleNormalInputMode({
             newWidgets[selectedIndex] = { ...currentWidget, character: nextChar };
             onUpdate(newWidgets);
         }
-    } else if (input === 'r' && widgets.length > 0) {
+    } else if (shortcut === 'r' && widgets.length > 0) {
         const currentWidget = widgets[selectedIndex];
         if (currentWidget && currentWidget.type !== 'separator' && currentWidget.type !== 'flex-separator') {
             const widgetImpl = getWidget(currentWidget.type);
@@ -441,7 +459,7 @@ export function handleNormalInputMode({
             newWidgets[selectedIndex] = { ...currentWidget, rawValue: !currentWidget.rawValue };
             onUpdate(newWidgets);
         }
-    } else if (input === 'm' && widgets.length > 0) {
+    } else if (shortcut === 'm' && widgets.length > 0) {
         const currentWidget = widgets[selectedIndex];
         if (currentWidget && selectedIndex < widgets.length - 1
             && currentWidget.type !== 'separator' && currentWidget.type !== 'flex-separator') {
@@ -464,7 +482,7 @@ export function handleNormalInputMode({
             }
             onUpdate(newWidgets);
         }
-    } else if (input === 'x' && widgets.length > 0) {
+    } else if (shortcut === 'x' && widgets.length > 0) {
         const currentWidget = widgets[selectedIndex];
         if (canExcludeAlign && currentWidget && currentWidget.type !== 'separator' && currentWidget.type !== 'flex-separator') {
             const newWidgets = [...widgets];
@@ -493,22 +511,24 @@ export function handleNormalInputMode({
             }
 
             const customKeybinds = getCustomKeybindsForWidget(widgetImpl, currentWidget);
-            const matchedKeybind = customKeybinds.find(kb => kb.key === input);
+            const matchedKeybind = customKeybinds.find(kb => kb.key === shortcut);
 
-            if (matchedKeybind && !key.ctrl) {
-                // The hide-state checklist and label editor are rendered by the
-                // items editor for every widget that opts in, so they bypass
-                // widget-level action handling.
-                if (matchedKeybind.action === EDIT_HIDE_STATES_ACTION || matchedKeybind.action === EDIT_LABEL_ACTION) {
+            if (matchedKeybind) {
+                // The hide-state checklist, the bar size editor and the label editor
+                // are rendered by the items editor for every widget that offers
+                // them, so they bypass widget-level action handling.
+                if (matchedKeybind.action === EDIT_HIDE_STATES_ACTION
+                    || matchedKeybind.action === EDIT_BAR_WIDTH_ACTION
+                    || matchedKeybind.action === EDIT_LABEL_ACTION) {
                     setCustomEditorWidget({ widget: currentWidget, impl: widgetImpl, action: matchedKeybind.action });
                     return;
                 }
 
-                // The precision cycle is shared by every numeric widget, so it is
-                // applied here instead of in each widget's handleEditorAction.
-                if (matchedKeybind.action === CYCLE_NUMBER_STYLE_ACTION) {
+                // The precision cycle and the bar numbers keys (see SHARED_ACTIONS)
+                const sharedAction = SHARED_ACTIONS[matchedKeybind.action];
+                if (sharedAction) {
                     const newWidgets = [...widgets];
-                    newWidgets[selectedIndex] = cycleNumberStyle(currentWidget);
+                    newWidgets[selectedIndex] = sharedAction(currentWidget);
                     onUpdate(newWidgets);
                 } else if (widgetImpl.handleEditorAction) {
                     const updatedWidget = widgetImpl.handleEditorAction(matchedKeybind.action, currentWidget);

@@ -10,10 +10,7 @@ import type {
     WidgetEditorProps,
     WidgetItem
 } from '../types/Widget';
-import {
-    formatPercent,
-    resolveNumberFormat
-} from '../utils/number-format';
+import { resolveNumberFormat } from '../utils/number-format';
 import {
     formatUsageDuration,
     formatUsageResetAt,
@@ -21,7 +18,13 @@ import {
     resolveWeeklyUsageWindow
 } from '../utils/usage';
 
+import { getBarLayoutModifiers } from './shared/bar-layout';
 import { makeModifierText } from './shared/editor-display';
+import {
+    CYCLE_GRADIENT_ACTION,
+    cycleGradientPreset,
+    getGradientModifier
+} from './shared/gradient-bar';
 import { isHidden } from './shared/hideable';
 import {
     LOCALE_EDITOR_ACTION,
@@ -31,7 +34,6 @@ import {
     isMetadataFlagEnabled,
     toggleMetadataFlag
 } from './shared/metadata';
-import { makeTimerProgressBar } from './shared/progress-bar';
 import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
 import {
     TIMEZONE_EDITOR_ACTION,
@@ -40,10 +42,10 @@ import {
 import {
     USAGE_NO_DATA_HIDEABLE_STATE,
     cycleUsageDisplayMode,
+    formatUsageBar,
     getUsageDisplayMode,
     getUsageLocale,
     getUsageLocaleModifier,
-    getUsageProgressBarWidth,
     getUsageTimerCustomKeybinds,
     getUsageTimezone,
     getUsageTimezoneModifier,
@@ -54,7 +56,6 @@ import {
     isUsageProgressMode,
     isUsageSliderMode,
     isUsageWeekdayEnabled,
-    makeSliderBar,
     toggleUsageCompact,
     toggleUsageDateMode,
     toggleUsageHourFormat,
@@ -81,17 +82,7 @@ function getWeeklyResetModifierText(item: WidgetItem): string | undefined {
     const displayMode = getUsageDisplayMode(item);
     const dateMode = isUsageDateMode(item);
     const isBarMode = isUsageProgressMode(displayMode) || isUsageSliderMode(displayMode);
-    const modifiers: string[] = [];
-
-    if (displayMode === 'progress') {
-        modifiers.push('long bar');
-    } else if (displayMode === 'progress-short') {
-        modifiers.push('medium bar');
-    } else if (displayMode === 'slider') {
-        modifiers.push('short bar');
-    } else if (displayMode === 'slider-only') {
-        modifiers.push('short bar only');
-    }
+    const modifiers = getBarLayoutModifiers(item);
 
     if (isUsageInverted(item)) {
         modifiers.push('inverted');
@@ -127,6 +118,11 @@ function getWeeklyResetModifierText(item: WidgetItem): string | undefined {
         modifiers.push(localeModifier);
     }
 
+    const gradientModifier = getGradientModifier(item);
+    if (isBarMode && gradientModifier) {
+        modifiers.push(gradientModifier);
+    }
+
     return makeModifierText(modifiers);
 }
 
@@ -152,6 +148,10 @@ export class WeeklyResetTimerWidget implements Widget {
     }
 
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
+        if (action === CYCLE_GRADIENT_ACTION) {
+            return cycleGradientPreset(item);
+        }
+
         if (action === 'toggle-progress') {
             return cycleUsageDisplayMode(item, ['compact', 'hours', 'absolute'], true);
         }
@@ -184,7 +184,6 @@ export class WeeklyResetTimerWidget implements Widget {
     }
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
-        const displayMode = getUsageDisplayMode(item);
         const inverted = isUsageInverted(item);
         const compact = isUsageCompact(item);
         const dateMode = isUsageDateMode(item);
@@ -192,20 +191,12 @@ export class WeeklyResetTimerWidget implements Widget {
         const format = resolveNumberFormat('percent', item, settings);
 
         if (context.isPreview) {
-            const previewPercent = inverted ? 90.0 : 10.0;
+            // Matches WEEKLY_PREVIEW_DURATION_MS: 36.5h of the 168h week left
+            const previewPercent = inverted ? 21.7 : 78.3;
 
-            if (isUsageProgressMode(displayMode)) {
-                const barWidth = getUsageProgressBarWidth(displayMode);
-                const progressBar = makeTimerProgressBar(previewPercent, barWidth);
-                return formatRawOrLabeledValue(item, this.getLabelPrefix(item), `[${progressBar}] ${formatPercent(previewPercent, format)}`);
-            }
-
-            if (isUsageSliderMode(displayMode)) {
-                const slider = makeSliderBar(previewPercent);
-                const sliderDisplay = displayMode === 'slider'
-                    ? `${slider} ${formatPercent(previewPercent, format)}`
-                    : slider;
-                return formatRawOrLabeledValue(item, this.getLabelPrefix(item), sliderDisplay);
+            const bar = formatUsageBar(item, previewPercent, format, settings, context);
+            if (bar !== null) {
+                return formatRawOrLabeledValue(item, this.getLabelPrefix(item), bar);
             }
 
             if (dateMode) {
@@ -242,20 +233,9 @@ export class WeeklyResetTimerWidget implements Widget {
             return formatRawOrLabeledValue(item, this.getLabelPrefix(item), USAGE_TIMER_LOADING_MESSAGE);
         }
 
-        if (isUsageProgressMode(displayMode)) {
-            const barWidth = getUsageProgressBarWidth(displayMode);
-            const percent = inverted ? window.remainingPercent : window.elapsedPercent;
-            const progressBar = makeTimerProgressBar(percent, barWidth);
-            return formatRawOrLabeledValue(item, this.getLabelPrefix(item), `[${progressBar}] ${formatPercent(percent, format)}`);
-        }
-
-        if (isUsageSliderMode(displayMode)) {
-            const percent = inverted ? window.remainingPercent : window.elapsedPercent;
-            const slider = makeSliderBar(percent);
-            const sliderDisplay = displayMode === 'slider'
-                ? `${slider} ${formatPercent(percent, format)}`
-                : slider;
-            return formatRawOrLabeledValue(item, this.getLabelPrefix(item), sliderDisplay);
+        const bar = formatUsageBar(item, inverted ? window.remainingPercent : window.elapsedPercent, format, settings, context);
+        if (bar !== null) {
+            return formatRawOrLabeledValue(item, this.getLabelPrefix(item), bar);
         }
 
         if (dateMode) {

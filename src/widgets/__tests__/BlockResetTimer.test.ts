@@ -41,7 +41,7 @@ describe('BlockResetTimerWidget', () => {
     it('renders preview using block-style reset format', () => {
         const widget = new BlockResetTimerWidget();
 
-        expect(render(widget, { id: 'reset', type: 'reset-timer' }, { isPreview: true })).toBe('Reset: 4hr 30m');
+        expect(render(widget, { id: 'reset', type: 'reset-timer' }, { isPreview: true })).toBe('Reset: 45m');
     });
 
     it('renders remaining time in time mode', () => {
@@ -205,7 +205,7 @@ describe('BlockResetTimerWidget', () => {
             type: 'reset-timer',
             metadata: { absolute: 'true' }
         })).toEqual([
-            { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
+            { key: 'p', label: '(p) bar style', action: 'toggle-progress' },
             { key: 's', label: '(s)hort time', action: 'toggle-compact' },
             { key: 't', label: '(t)imestamp', action: 'toggle-date' },
             { key: 'f', label: '12/24 (f)ormat', action: 'toggle-hour-format' },
@@ -294,8 +294,11 @@ describe('BlockResetTimerWidget', () => {
             type: 'reset-timer',
             metadata: { display: 'slider' }
         })).toEqual([
-            { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
-            { key: 'v', label: 'in(v)ert fill', action: 'toggle-invert' }
+            { key: 'p', label: '(p) bar style', action: 'toggle-progress' },
+            { key: 'v', label: 'in(v)ert fill', action: 'toggle-invert' },
+            { key: 'g', label: '(g)radient', action: 'cycle-gradient' },
+            { key: 'b', label: '(b)ar size', action: 'edit-bar-width' },
+            { key: 'n', label: '(n) hide numbers', action: 'toggle-bar-numbers' }
         ]);
     });
 
@@ -306,12 +309,12 @@ describe('BlockResetTimerWidget', () => {
             id: 'reset',
             type: 'reset-timer',
             metadata: { display: 'slider' }
-        }).modifierText).toBe('(short bar)');
+        }).modifierText).toBe('(slider bar, short)');
         expect(widget.getEditorDisplay({
             id: 'reset',
             type: 'reset-timer',
             metadata: { display: 'slider-only' }
-        }).modifierText).toBe('(short bar only)');
+        }).modifierText).toBe('(slider bar, short, numbers off)');
     });
 
     runUsageTimerEditorSuite({
@@ -319,16 +322,19 @@ describe('BlockResetTimerWidget', () => {
         createWidget: () => new BlockResetTimerWidget(),
         expectedDisplayName: 'Block Reset Timer',
         expectedTimeKeybinds: [
-            { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
+            { key: 'p', label: '(p) bar style', action: 'toggle-progress' },
             { key: 's', label: '(s)hort time', action: 'toggle-compact' },
             { key: 't', label: '(t)imestamp', action: 'toggle-date' }
         ],
         supportsDateMode: true,
         supportsSliderMode: true,
-        expectedModifierText: '(medium bar, inverted)',
+        expectedModifierText: '(block bar, medium, inverted)',
         expectedProgressKeybinds: [
-            { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
-            { key: 'v', label: 'in(v)ert fill', action: 'toggle-invert' }
+            { key: 'p', label: '(p) bar style', action: 'toggle-progress' },
+            { key: 'v', label: 'in(v)ert fill', action: 'toggle-invert' },
+            { key: 'g', label: '(g)radient', action: 'cycle-gradient' },
+            { key: 'b', label: '(b)ar size', action: 'edit-bar-width' },
+            { key: 'n', label: '(n) hide numbers', action: 'toggle-bar-numbers' }
         ],
         modifierItem: {
             id: 'reset',
