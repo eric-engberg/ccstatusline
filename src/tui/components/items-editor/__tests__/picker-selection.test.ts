@@ -33,6 +33,14 @@ describe('placePickerSelection', () => {
         });
     });
 
+    // A label names the old widget's value, e.g. "Model: " on Session Cost
+    it('drops the label when the type changes, and keeps it when the type stays', () => {
+        const labeled: WidgetItem = { ...model, metadata: { label: 'M ', hide: 'zero' } };
+
+        expect(placePickerSelection([labeled, tokens], 'change', 0, 'git-branch', newWidget).widgets[0]).toEqual({ id: 'a', type: 'git-branch', color: 'red', metadata: { hide: 'zero' } });
+        expect(placePickerSelection([labeled, tokens], 'change', 0, 'model', newWidget).widgets[0]).toEqual(labeled);
+    });
+
     it('changes the type of the widget at the cursor and keeps its other settings', () => {
         expect(placePickerSelection([model, tokens], 'change', 0, 'git-branch', newWidget)).toEqual({
             widgets: [{ id: 'a', type: 'git-branch', color: 'red' }, tokens],
