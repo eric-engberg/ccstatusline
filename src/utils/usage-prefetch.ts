@@ -47,8 +47,7 @@ const USAGE_DATA_FIELDS: UsageDataField[] = [
     'extraUsageLimit',
     'extraUsageUsed',
     'extraUsageUtilization',
-    'extraUsageCurrency',
-    'noPlanLimits'
+    'extraUsageCurrency'
 ];
 
 interface UsageFieldRequirement {
