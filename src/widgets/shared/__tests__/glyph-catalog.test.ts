@@ -5,7 +5,10 @@ import {
 } from 'vitest';
 
 import { createGlyphCatalog } from '../glyph-catalog';
-import { GLYPH_GROUPS } from '../glyph-groups';
+import {
+    GLYPH_GROUPS,
+    type GlyphGroup
+} from '../glyph-groups';
 
 const catalog = createGlyphCatalog();
 const glyphsFor = (query: string): string[] => catalog.search(query).map(entry => entry.glyph);
@@ -16,7 +19,9 @@ describe('glyph catalog', () => {
     it('browses the curated groups, then every Nerd Font icon set as a group', () => {
         const setGroups = catalog.groups.slice(GLYPH_GROUPS.length);
 
-        expect(catalog.groups.slice(0, GLYPH_GROUPS.length)).toEqual(GLYPH_GROUPS);
+        // The curated groups, with skin tones added to their emoji
+        const withoutTones = (groups: readonly GlyphGroup[]) => groups.map(group => ({ ...group, glyphs: group.glyphs.map(({ glyph, name }) => ({ glyph, name })) }));
+        expect(withoutTones(catalog.groups.slice(0, GLYPH_GROUPS.length))).toEqual(withoutTones(GLYPH_GROUPS));
         expect(setGroups.map(group => group.name)).toContain('Nerd Font: Octicons');
         expect(setGroups.every(group => group.needsNerdFont)).toBe(true);
         expect(setGroups.reduce((count, group) => count + group.glyphs.length, 0)).toBeGreaterThan(10000);
@@ -71,6 +76,32 @@ describe('glyph catalog', () => {
         expect(unicodeFor('red heart')).toEqual(['❤️']);
         expect(unicodeFor('heavy black heart')[0]).toBe('❤');
         expect(unicodeFor('heavy black heart')).not.toContain('❤️');
+    });
+
+    // The light tone version is what the picker turns into the chosen tone
+    it('knows which emoji take a skin tone, and where the tone goes', () => {
+        const lightTone = (query: string, glyph: string) => catalog.search(query).find(entry => entry.glyph === glyph)?.lightTone;
+
+        expect(lightTone('thumbs up', '👍')).toBe('👍🏻');
+        expect(lightTone('woman technologist', '👩‍💻')).toBe('👩🏻‍💻');
+        // The emoji selector goes when a tone comes in
+        expect(lightTone('hand with fingers splayed', '🖐️')).toBe('🖐🏻');
+        // Both people
+        expect(lightTone('people holding hands', '🧑‍🤝‍🧑')).toBe('🧑🏻‍🤝‍🧑🏻');
+        expect(lightTone('clown', '🤡')).toBeUndefined();
+    });
+
+    it('gives the curated groups\' emoji their skin tones too', () => {
+        const curated = catalog.groups.slice(0, GLYPH_GROUPS.length).flatMap(group => group.glyphs);
+
+        expect(curated.find(entry => entry.glyph === '👍')?.lightTone).toBe('👍🏻');
+        expect(curated.filter(entry => entry.lightTone).length).toBeGreaterThan(5);
+    });
+
+    it('finds hundreds of emoji that take a skin tone', () => {
+        const toned = new Set(catalog.search('a').concat(catalog.search('e')).filter(entry => entry.lightTone).map(entry => entry.glyph));
+
+        expect(toned.size).toBeGreaterThan(300);
     });
 
     it('finds the curated emoji and symbols by their Unicode names', () => {

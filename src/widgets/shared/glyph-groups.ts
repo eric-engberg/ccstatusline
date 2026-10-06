@@ -6,6 +6,8 @@
 export interface GlyphEntry {
     glyph: string;
     name: string;
+    /** An emoji that takes a skin tone: its light tone version, which the other tones are made from. */
+    lightTone?: string;
 }
 
 export interface GlyphGroup {
