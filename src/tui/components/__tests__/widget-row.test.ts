@@ -129,6 +129,28 @@ describe('getWidgetRowTags', () => {
 
         expect(getWidgetRowTags(widgets, 1, AUTO_ALIGN_SETTINGS)).toEqual([]);
     });
+    it('lists the option tags, then the layout tags, then the pins', () => {
+        const tokens: WidgetItem = {
+            id: '1',
+            type: 'tokens-input',
+            numberFormat: { style: 'compact' },
+            metadata: { label: 'In ', hide: 'zero' },
+            merge: true,
+            pinColor: true
+        };
+        const rawModel: WidgetItem = {
+            id: '2',
+            type: 'model',
+            rawValue: true,
+            excludeFromAutoAlign: true,
+            pinBackgroundColor: true
+        };
+
+        expect(getWidgetRowTags([tokens, rawModel], 0, DEFAULT_SETTINGS))
+            .toEqual(['(compact)', '(hide: zero)', '(label: "In ")', '(merged→)', '(fg pinned, inactive)']);
+        expect(getWidgetRowTags([rawModel], 0, { ...AUTO_ALIGN_SETTINGS, powerline: { ...AUTO_ALIGN_SETTINGS.powerline, theme: 'nord-aurora' } }))
+            .toEqual(['(raw value)', '(no-align)', '(bg pinned)']);
+    });
 });
 
 describe('styleWidgetRowLabel', () => {

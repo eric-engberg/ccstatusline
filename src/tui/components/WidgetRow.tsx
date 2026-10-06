@@ -7,6 +7,7 @@ import React from 'react';
 import { getColorLevelString } from '../../types/ColorLevel';
 import type { Settings } from '../../types/Settings';
 import type {
+    Widget,
     WidgetEditorDisplay,
     WidgetItem
 } from '../../types/Widget';
@@ -70,6 +71,57 @@ export function getWidgetRowLabel(widget: WidgetItem): WidgetEditorDisplay {
     };
 }
 
+// What the widget's own options change: number style, hidden states, a label
+// override (while the label shows, not in raw value mode) and raw value mode
+function getOptionTags(widget: WidgetItem, widgetImpl: Widget | null): (string | undefined)[] {
+    if (!widgetImpl) {
+        return [];
+    }
+
+    const labelShows = widgetImpl.getLabelPrefix !== undefined && !widget.rawValue;
+    return [
+        widgetImpl.supportsNumberFormat?.() ? getNumberFormatModifierText(widget) : undefined,
+        getHideModifierText(widget, widgetImpl.getHideableStates?.() ?? []),
+        labelShows ? getLabelModifierText(widget) : undefined,
+        widget.rawValue && widgetImpl.supportsRawValue() ? '(raw value)' : undefined
+    ];
+}
+
+// How the widget sits in its line: merged into the next one, or kept out of auto-align
+function getLayoutTags(widgets: WidgetItem[], index: number, settings: Settings): (string | undefined)[] {
+    const widget = widgets[index];
+    const excludedFromAlign = Boolean(widget?.excludeFromAutoAlign)
+        && settings.powerline.enabled
+        && settings.powerline.autoAlign
+        && !isMergedIntoPreviousWidget(widgets, index);
+
+    return [
+        widget?.merge === true ? '(merged→)' : undefined,
+        widget?.merge === 'no-padding' ? '(merged-no-pad→)' : undefined,
+        excludedFromAlign ? '(no-align)' : undefined
+    ];
+}
+
+/**
+ * Pin state is per widget and per channel, so it belongs on the row rather than in a
+ * status line that only ever describes the highlighted widget. The tag shows whenever a
+ * pin is set, including with no theme active: a pin that overrides nothing right now is
+ * exactly the one worth surfacing, since it revives the moment a theme is turned on.
+ */
+function getPinTag(widget: WidgetItem, settings: Settings): string | undefined {
+    const pinnedChannels = [
+        widget.pinColor ? 'fg' : null,
+        widget.pinBackgroundColor ? 'bg' : null
+    ].filter(channel => channel !== null);
+
+    if (pinnedChannels.length === 0) {
+        return undefined;
+    }
+
+    const channels = pinnedChannels.join('+');
+    return isPowerlineThemeActive(settings) ? `(${channels} pinned)` : `(${channels} pinned, inactive)`;
+}
+
 /** The dim structure markers shown after a row label in both editor modes. */
 export function getWidgetRowTags(widgets: WidgetItem[], index: number, settings: Settings): string[] {
     const widget = widgets[index];
@@ -80,65 +132,12 @@ export function getWidgetRowTags(widgets: WidgetItem[], index: number, settings:
     const widgetImpl = widget.type !== 'separator' && widget.type !== 'flex-separator'
         ? getWidget(widget.type)
         : null;
-    const tags: string[] = [];
 
-    if (widgetImpl?.supportsNumberFormat?.()) {
-        const numberFormatModifierText = getNumberFormatModifierText(widget);
-        if (numberFormatModifierText) {
-            tags.push(numberFormatModifierText);
-        }
-    }
-
-    if (widgetImpl) {
-        const hideModifierText = getHideModifierText(widget, widgetImpl.getHideableStates?.() ?? []);
-        if (hideModifierText) {
-            tags.push(hideModifierText);
-        }
-    }
-
-    // A label override, while the label shows (not in raw value mode)
-    if (widgetImpl?.getLabelPrefix && !widget.rawValue) {
-        const labelModifierText = getLabelModifierText(widget);
-        if (labelModifierText) {
-            tags.push(labelModifierText);
-        }
-    }
-
-    if (widget.rawValue && widgetImpl?.supportsRawValue()) {
-        tags.push('(raw value)');
-    }
-
-    if (widget.merge === true) {
-        tags.push('(merged→)');
-    }
-
-    if (widget.merge === 'no-padding') {
-        tags.push('(merged-no-pad→)');
-    }
-
-    if (widget.excludeFromAutoAlign
-        && settings.powerline.enabled
-        && settings.powerline.autoAlign
-        && !isMergedIntoPreviousWidget(widgets, index)) {
-        tags.push('(no-align)');
-    }
-
-    // Pin state is per widget and per channel, so it belongs on the row rather than in a
-    // status line that only ever describes the highlighted widget. The tag shows whenever a
-    // pin is set, including with no theme active: a pin that overrides nothing right now is
-    // exactly the one worth surfacing, since it revives the moment a theme is turned on.
-    const pinnedChannels = [
-        widget.pinColor ? 'fg' : null,
-        widget.pinBackgroundColor ? 'bg' : null
-    ].filter(channel => channel !== null);
-
-    if (pinnedChannels.length > 0) {
-        tags.push(isPowerlineThemeActive(settings)
-            ? `(${pinnedChannels.join('+')} pinned)`
-            : `(${pinnedChannels.join('+')} pinned, inactive)`);
-    }
-
-    return tags;
+    return [
+        ...getOptionTags(widget, widgetImpl),
+        ...getLayoutTags(widgets, index, settings),
+        getPinTag(widget, settings)
+    ].filter((tag): tag is string => Boolean(tag));
 }
 
 function isOverrideSet(override: string | undefined): override is string {
