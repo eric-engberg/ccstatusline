@@ -10,6 +10,7 @@ import Gradient from 'ink-gradient';
 import React, {
     useCallback,
     useEffect,
+    useMemo,
     useState
 } from 'react';
 
@@ -80,7 +81,10 @@ import {
     runGlobalUpdateAction,
     type UpdateAction
 } from '../utils/update-checker';
-import { SkinToneContext } from '../widgets/shared/skin-tone';
+import {
+    SkinToneContext,
+    type SkinToneSetting
+} from '../widgets/shared/skin-tone';
 
 import { loadClaudeStatusLineState } from './claude-status';
 import {
@@ -872,6 +876,16 @@ export const App: React.FC = () => {
         setScreen('main');
     }, [importValidation, settings]);
 
+    // The glyph picker's skin tone (Ctrl+T there) is a setting; the same object
+    // until the tone changes, so the context doesn't redraw the editor otherwise
+    const emojiSkinTone = settings?.emojiSkinTone;
+    const skinToneSetting = useMemo<SkinToneSetting>(() => ({
+        tone: emojiSkinTone,
+        setTone: (tone) => {
+            setSettings(prev => (prev ? { ...prev, emojiSkinTone: tone } : prev));
+        }
+    }), [emojiSkinTone]);
+
     if (!settings || !hasLoadedClaudeStatus || !hasLoadedInstalledState) {
         return <Text>Loading settings...</Text>;
     }
@@ -1232,15 +1246,7 @@ export const App: React.FC = () => {
                     />
                 )}
                 {screen === 'items' && (
-                    // The glyph picker's skin tone (Ctrl+T there) is a setting
-                    <SkinToneContext.Provider
-                        value={{
-                            tone: settings.emojiSkinTone,
-                            setTone: (tone) => {
-                                setSettings(prev => (prev ? { ...prev, emojiSkinTone: tone } : prev));
-                            }
-                        }}
-                    >
+                    <SkinToneContext.Provider value={skinToneSetting}>
                         <ItemsEditor
                             widgets={settings.lines[selectedLine] ?? []}
                             onUpdate={(widgets) => { updateLine(selectedLine, widgets); }}
