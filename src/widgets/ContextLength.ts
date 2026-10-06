@@ -46,6 +46,7 @@ export class ContextLengthWidget implements Widget {
     getDescription(): string { return 'Shows the current context window size in tokens'; }
     getDisplayName(): string { return 'Context Length'; }
     getCategory(): string { return 'Context'; }
+    getLabelPrefix(): string { return LABEL; }
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         const valueColors = getValueColorsModifier(item);
         return { displayText: this.getDisplayName(), modifierText: makeModifierText(valueColors ? [valueColors] : []) };
@@ -70,7 +71,7 @@ export class ContextLengthWidget implements Widget {
         const format = resolveNumberFormat('token', item, settings);
         const formatOptions = getValueFormatOptions(settings, item.color ?? DEFAULT_COLOR);
         if (context.isPreview) {
-            return formatColoredValue(item, LABEL, formatTokens(PREVIEW_TOKENS, format), PREVIEW_PERCENT, LIMIT_SCALE, formatOptions);
+            return formatColoredValue(item, this.getLabelPrefix(), formatTokens(PREVIEW_TOKENS, format), PREVIEW_PERCENT, LIMIT_SCALE, formatOptions);
         }
 
         const contextLengthTokens = getContextWindowContextLengthTokens(context.data) ?? context.tokenMetrics?.contextLength ?? null;
@@ -79,7 +80,7 @@ export class ContextLengthWidget implements Widget {
         }
 
         const usedPercent = calculateContextPercentageMetrics(context)?.usedPercentage ?? null;
-        return formatColoredValue(item, LABEL, formatTokens(contextLengthTokens, format), usedPercent, LIMIT_SCALE, formatOptions);
+        return formatColoredValue(item, this.getLabelPrefix(), formatTokens(contextLengthTokens, format), usedPercent, LIMIT_SCALE, formatOptions);
     }
 
     supportsRawValue(): boolean { return true; }

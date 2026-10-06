@@ -253,6 +253,12 @@ describe('formatColoredValue', () => {
         expect(formatColoredValue({ ...colored, rawValue: true }, 'Spend Today: ', '$90.00', 90, BUDGET, options)).toBe(`${MID}$90.00${FG_RESET}`);
     });
 
+    // The label editor's override replaces the widget's own label
+    it('draws an edited label, or none, in the widget color', () => {
+        expect(formatColoredValue({ ...colored, metadata: { ...colored.metadata, label: 'x ' } }, 'Spend Today: ', '$90.00', 90, BUDGET, options)).toBe(`${BASE}x ${FG_RESET}${MID}$90.00${FG_RESET}`);
+        expect(formatColoredValue({ ...colored, metadata: { ...colored.metadata, label: '' } }, 'Spend Today: ', '$90.00', 90, BUDGET, options)).toBe(`${MID}$90.00${FG_RESET}`);
+    });
+
     it('keeps the widget color for a value with nothing to compare it to', () => {
         expect(formatColoredValue({ ...colored, rawValue: true }, 'Spend Today: ', '$90.00', null, BUDGET, options)).toBe(`${BASE}$90.00${FG_RESET}`);
     });

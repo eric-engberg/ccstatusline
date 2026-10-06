@@ -49,6 +49,7 @@ export class SessionCostWidget implements Widget {
     getDescription(): string { return 'Shows the total session cost in USD'; }
     getDisplayName(): string { return 'Session Cost'; }
     getCategory(): string { return 'Session'; }
+    getLabelPrefix(): string { return LABEL; }
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         const valueColors = getValueColorsModifier(item);
         return { displayText: this.getDisplayName(), modifierText: makeModifierText(valueColors ? [valueColors] : []) };
@@ -76,7 +77,7 @@ export class SessionCostWidget implements Widget {
         const format = resolveNumberFormat('cost', item, settings);
         const formatOptions = getValueFormatOptions(settings, item.color ?? DEFAULT_COLOR);
         if (context.isPreview) {
-            return formatColoredValue(item, LABEL, formatCost(PREVIEW_COST, format), PREVIEW_COST, COST_SCALE, formatOptions);
+            return formatColoredValue(item, this.getLabelPrefix(), formatCost(PREVIEW_COST, format), PREVIEW_COST, COST_SCALE, formatOptions);
         }
 
         const totalCost = context.data?.cost?.total_cost_usd;
@@ -91,7 +92,7 @@ export class SessionCostWidget implements Widget {
             return null;
         }
 
-        return formatColoredValue(item, LABEL, formatCost(totalCost, format), totalCost, COST_SCALE, formatOptions);
+        return formatColoredValue(item, this.getLabelPrefix(), formatCost(totalCost, format), totalCost, COST_SCALE, formatOptions);
     }
 
     supportsRawValue(): boolean { return true; }

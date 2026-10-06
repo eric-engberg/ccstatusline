@@ -20,6 +20,7 @@ import {
     removeMetadataKeys,
     setMetadataValue
 } from './metadata';
+import { getLabel } from './raw-or-labeled';
 import {
     DOLLARS_PER_HOUR_UNIT,
     PERCENT_UNIT,
@@ -285,7 +286,7 @@ export function formatColoredValue(
     options: ValueFormatOptions,
     suffix = ''
 ): string {
-    const shownLabel = item.rawValue ? '' : label;
+    const shownLabel = item.rawValue ? '' : getLabel(item, label);
     if (!isValueColorsEnabled(item) || options.colorsDisabled) {
         return `${shownLabel}${value}${suffix}`;
     }

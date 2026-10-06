@@ -18,6 +18,7 @@ import {
     ModelFamilyColorsEditor
 } from './shared/model-family-colors-editor';
 import {
+    MODEL_LABEL,
     formatModelName,
     getModelFamily,
     isFamilyColorsEnabled
@@ -35,6 +36,7 @@ export class ModelWidget implements Widget {
     getDescription(): string { return 'Displays the Claude model name (e.g., Claude 3.5 Sonnet).\nOptionally colors it by model family (Opus, Sonnet, Haiku, Fable).'; }
     getDisplayName(): string { return 'Model'; }
     getCategory(): string { return 'Core'; }
+    getLabelPrefix(): string { return MODEL_LABEL; }
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         return {
             displayText: this.getDisplayName(),
