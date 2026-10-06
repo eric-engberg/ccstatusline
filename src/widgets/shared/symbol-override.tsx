@@ -13,6 +13,7 @@ import type {
 import { getVisibleWidth } from '../../utils/ansi';
 import { shouldInsertInput } from '../../utils/input-guards';
 
+import { GlyphPicker } from './glyph-picker';
 import { removeMetadataKeys } from './metadata';
 
 export const SYMBOL_OVERRIDE_ACTION = 'edit-symbol-override';
@@ -107,10 +108,18 @@ function getFirstGrapheme(str: string): string {
 const SymbolSlotsEditor: React.FC<WidgetEditorProps & { slots: SymbolSlot[] }> = ({ widget, slots, onComplete, onCancel }) => {
     const [values, setValues] = useState<string[]>(() => slots.map(slot => getSlotSymbol(widget, slot)));
     const [selectedIndex, setSelectedIndex] = useState(0);
+    const [picking, setPicking] = useState(false);
     const labelWidth = Math.max(...slots.map(slot => getVisibleWidth(slot.label)), 0);
 
+    const setSelectedValue = (value: string) => {
+        setValues(values.map((current, index) => (index === selectedIndex ? value : current)));
+    };
+
+    // The picker takes the keys while it's open
     useInput((input, key) => {
-        if (key.return) {
+        if (key.rightArrow) {
+            setPicking(true);
+        } else if (key.return) {
             onComplete(slots.reduce((item, slot, index) => setSlotSymbol(item, slot, values[index] ?? ''), widget));
         } else if (key.escape) {
             onCancel();
@@ -119,25 +128,35 @@ const SymbolSlotsEditor: React.FC<WidgetEditorProps & { slots: SymbolSlot[] }> =
         } else if (key.downArrow && slots.length > 1) {
             setSelectedIndex(selectedIndex + 1 > slots.length - 1 ? 0 : selectedIndex + 1);
         } else if (key.tab) {
-            setValues(values.map((value, index) => (
-                index === selectedIndex ? slots[selectedIndex]?.defaultSymbol ?? '' : value
-            )));
+            setSelectedValue(slots[selectedIndex]?.defaultSymbol ?? '');
         } else if (key.backspace || key.delete) {
-            setValues(values.map((value, index) => (index === selectedIndex ? '' : value)));
+            setSelectedValue('');
         } else if (shouldInsertInput(input, key)) {
             // Take only the first grapheme (handles multi-byte emojis correctly)
-            const grapheme = getFirstGrapheme(input);
-            setValues(values.map((value, index) => (index === selectedIndex ? grapheme : value)));
+            setSelectedValue(getFirstGrapheme(input));
         }
-    });
+    }, { isActive: !picking });
+
+    if (picking) {
+        return (
+            <GlyphPicker
+                initialGlyph={values[selectedIndex] ?? ''}
+                onPick={(glyph) => {
+                    setSelectedValue(glyph);
+                    setPicking(false);
+                }}
+                onCancel={() => { setPicking(false); }}
+            />
+        );
+    }
 
     return (
         <Box flexDirection='column'>
             <Text bold>Glyphs</Text>
             <Text dimColor>
                 {slots.length > 1
-                    ? '↑↓ row, type to set, Tab default, Backspace none, Enter save, ESC cancel'
-                    : 'Type any character or emoji, Tab default, Backspace none, Enter save, ESC cancel'}
+                    ? '↑↓ row, type to set, → pick from a list, Tab default, Backspace none, Enter save, ESC cancel'
+                    : 'Type any character or emoji, → pick from a list, Tab default, Backspace none, Enter save, ESC cancel'}
             </Text>
             <Box marginTop={1} flexDirection='column'>
                 {slots.map((slot, index) => {
@@ -154,12 +173,12 @@ const SymbolSlotsEditor: React.FC<WidgetEditorProps & { slots: SymbolSlot[] }> =
                             <Text color={isSelected ? 'green' : undefined}>
                                 {`${labelPadding}${slot.label}: `}
                             </Text>
-                            {value ? (
-                                <Text inverse>{value}</Text>
-                            ) : (
-                                <Text inverse dimColor>(none)</Text>
-                            )}
-                            <Text dimColor>{` (default: ${slot.defaultSymbol})`}</Text>
+                            {/* One Text: Ink lays out each part of a multi-part emoji (👍🏾, 👩‍💻) as
+                                its own character, so a second Text would overwrite the rest of it */}
+                            <Text>
+                                {value ? <Text inverse>{value}</Text> : <Text inverse dimColor>(none)</Text>}
+                                <Text dimColor>{` (default: ${slot.defaultSymbol})`}</Text>
+                            </Text>
                         </Box>
                     );
                 })}

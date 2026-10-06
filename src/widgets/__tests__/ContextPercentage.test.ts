@@ -101,20 +101,61 @@ describe('ContextPercentageWidget', () => {
         });
     });
 
-    // The text keeps the slider's size and numbers setting for (p) to bring back
-    it('switches between the percentage and a slider', () => {
+    // The percentage and the glyph keep the slider's size and numbers setting
+    // for (p) to bring back
+    it('cycles the percentage, a slider and the level glyph', () => {
         const widget = new ContextPercentageWidget();
         const base: WidgetItem = { id: 'ctx', type: 'context-percentage' };
 
         const slider = widget.handleEditorAction('toggle-slider', base);
-        const text = widget.handleEditorAction('toggle-slider', slider ?? base);
+        const glyph = widget.handleEditorAction('toggle-slider', slider ?? base);
+        const text = widget.handleEditorAction('toggle-slider', glyph ?? base);
         const again = widget.handleEditorAction('toggle-slider', text ?? base);
 
         expect(slider?.metadata).toEqual({ display: 'slider' });
+        expect(glyph?.metadata).toEqual({ display: 'glyph', barWidth: 'short' });
         expect(text?.metadata).toEqual({ barWidth: 'short' });
         expect(again?.metadata).toEqual({ display: 'slider' });
         expect(widget.handleEditorAction('toggle-slider', { ...base, metadata: { display: 'slider-only' } })?.metadata)
-            .toEqual({ barWidth: 'short', barNumbers: 'none' });
+            .toEqual({ display: 'glyph', barWidth: 'short', barNumbers: 'none' });
+    });
+
+    describe('level glyph', () => {
+        const glyphItem = (metadata: Record<string, string> = {}): WidgetItem => ({ id: 'ctx', type: 'context-percentage', metadata: { display: 'glyph', ...metadata } });
+        // 50k of a 200k window: 25% used
+        const quarterUsed: RenderContext = { tokenMetrics: { inputTokens: 0, outputTokens: 0, cachedTokens: 0, totalTokens: 0, contextLength: 50000 } };
+
+        it('shows the glyph for the used percent instead of the number', () => {
+            const widget = new ContextPercentageWidget();
+
+            expect(widget.render(glyphItem(), quarterUsed, DEFAULT_SETTINGS)).toBe('Ctx Used: ⚡');
+            expect(widget.render({ ...glyphItem(), rawValue: true }, quarterUsed, DEFAULT_SETTINGS)).toBe('⚡');
+            expect(widget.render({ ...glyphItem(), rawValue: true }, { isPreview: true }, DEFAULT_SETTINGS)).toBe('🚨');
+        });
+
+        // What's left would flip the levels, so the glyph always measures what's used
+        it('follows the used percent while set to show what\'s left', () => {
+            const widget = new ContextPercentageWidget();
+
+            expect(widget.render(glyphItem({ inverse: 'true' }), quarterUsed, DEFAULT_SETTINGS)).toBe('Ctx Used: ⚡');
+        });
+
+        it('uses the widget\'s own glyphs and break points', () => {
+            const widget = new ContextPercentageWidget();
+            const item = { ...glyphItem({ levelFromMedium: '30', levelGlyphLow: '·' }), rawValue: true };
+
+            expect(widget.render(item, quarterUsed, DEFAULT_SETTINGS)).toBe('·');
+        });
+
+        it('offers (g) and (l) instead of the used/remaining and bar keys', () => {
+            const widget = new ContextPercentageWidget();
+
+            expect(widget.getCustomKeybinds(glyphItem()).map(keybind => keybind.key)).toEqual(['p', 'g', 'l']);
+            expect(widget.getEditorDisplay(glyphItem({ inverse: 'true' })).modifierText).toBe('(level glyph)');
+            expect(widget.handleEditorAction('edit-glyph-levels', glyphItem())).toBeNull();
+            expect(widget.renderEditor({ widget: glyphItem(), onComplete: () => undefined, onCancel: () => undefined, action: 'edit-glyph-levels' })).toBeTruthy();
+            expect(widget.renderEditor({ widget: glyphItem(), onComplete: () => undefined, onCancel: () => undefined, action: 'edit-symbol-override' })).toBeTruthy();
+        });
     });
 
     it('renders slider with percentage in slider mode', () => {

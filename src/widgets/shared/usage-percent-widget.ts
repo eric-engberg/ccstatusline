@@ -1,3 +1,5 @@
+import type React from 'react';
+
 import type { NumberFormat } from '../../types/NumberFormat';
 import type {
     RenderContext,
@@ -9,6 +11,7 @@ import type {
     HideableState,
     Widget,
     WidgetEditorDisplay,
+    WidgetEditorProps,
     WidgetItem
 } from '../../types/Widget';
 import {
@@ -30,6 +33,11 @@ import {
     cycleGradientPreset
 } from './gradient-bar';
 import { isHidden } from './hideable';
+import {
+    getLevelGlyph,
+    isLevelGlyphMode
+} from './level-glyph';
+import { renderLevelGlyphEditor } from './level-glyph-editor';
 import { formatRawOrLabeledValue } from './raw-or-labeled';
 import {
     USAGE_NO_DATA_HIDEABLE_STATE,
@@ -122,6 +130,10 @@ function renderUsageDisplay(
     settings: Settings,
     context: RenderContext
 ): string {
+    // The level glyph measures what's used, even while the widget shows what's left
+    if (isLevelGlyphMode(item)) {
+        return formatRawOrLabeledValue(item, label, getLevelGlyph(item, isUsageInverted(item) ? 100 - percent : percent));
+    }
     const bar = formatUsageBar(item, percent, format, settings, context, getCursorOptions);
     return formatRawOrLabeledValue(item, label, bar ?? formatPercent(percent, format));
 }
@@ -143,7 +155,7 @@ export function getUsagePercentWidgetEditorDisplay(kind: UsagePercentWidgetKind,
 
 export function handleUsagePercentWidgetEditorAction(action: string, item: WidgetItem): WidgetItem | null {
     if (action === 'toggle-progress') {
-        return cycleUsageDisplayMode(item, [], true, true);
+        return cycleUsageDisplayMode(item, [], true, true, true);
     }
 
     if (action === 'toggle-invert') {
@@ -233,6 +245,11 @@ export class UsagePercentWidget implements Widget {
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
         return getUsagePercentCustomKeybinds(item);
+    }
+
+    // The level glyph mode's glyph and break point editors
+    renderEditor(props: WidgetEditorProps): React.ReactElement | null {
+        return renderLevelGlyphEditor(props);
     }
 
     supportsRawValue(): boolean { return true; }
