@@ -11,7 +11,9 @@
 // from the same Unicode release.
 //
 // Emoji: every fully-qualified emoji, except the skin tone variants (over
-// 2,000 near-copies) and the skin tone and hair components on their own.
+// 2,000 near-copies) and the skin tone and hair components on their own. An
+// emoji that takes a skin tone also gets its light tone version, which the
+// picker turns into whichever tone is chosen.
 // Symbols: every named character in the symbol blocks below, plus a few
 // common ones from elsewhere.
 
@@ -43,8 +45,10 @@ const SYMBOL_BLOCKS: [number, number][] = [
     [0x2B00, 0x2BFF] // Miscellaneous Symbols and Arrows
 ];
 // § « ± µ ¶ · » × ÷ Δ Σ Ω λ π
-const EXTRA_SYMBOLS = [0xA7, 0xAB, 0xB1, 0xB5, 0xB6, 0xB7, 0xBB, 0xD7, 0xF7, 0x394, 0x3A3, 0x3A9, 0x3BB, 0x3C0];
-const SKIN_TONES = /\b1F3F[B-F]\b/;
+const EXTRA_SYMBOLS = new Set([0xA7, 0xAB, 0xB1, 0xB5, 0xB6, 0xB7, 0xBB, 0xD7, 0xF7, 0x394, 0x3A3, 0x3A9, 0x3BB, 0x3C0]);
+// The skin tone modifiers, light to dark
+const TONES = ['1F3FB', '1F3FC', '1F3FD', '1F3FE', '1F3FF'];
+const LIGHT = '1F3FB';
 
 for (const source of [EMOJI_SOURCE, UCD_SOURCE]) {
     if (!existsSync(source)) {
@@ -53,26 +57,65 @@ for (const source of [EMOJI_SOURCE, UCD_SOURCE]) {
     }
 }
 
-// "1F600 ; fully-qualified # 😀 E1.0 grinning face"
+interface EmojiLine {
+    codes: string[];
+    name: string;
+    group: string;
+}
+
+// "1F600 ; fully-qualified # 😀 E1.0 grinning face": after the "#", the emoji,
+// the Emoji version it came in, then its name
+function parseEmojiLine(line: string, group: string): EmojiLine | null {
+    const semicolon = line.indexOf(';');
+    const hash = line.indexOf('#', semicolon);
+    if (line.startsWith('#') || semicolon === -1 || hash === -1 || line.slice(semicolon + 1, hash).trim() !== 'fully-qualified') {
+        return null;
+    }
+    const words = line.slice(hash + 1).trim().split(' ');
+    return { codes: line.slice(0, semicolon).trim().split(' '), name: words.slice(2).join(' '), group };
+}
+
 const emojiText = readFileSync(EMOJI_SOURCE, 'utf-8');
 const version = /^# Version: (\S+)/m.exec(emojiText)?.[1] ?? 'unknown';
-const emoji: string[] = [];
+const emojiLines: EmojiLine[] = [];
 let group = '';
 for (const line of emojiText.split('\n')) {
     if (line.startsWith('# group: ')) {
         group = line.slice('# group: '.length).trim();
         continue;
     }
-    const match = /^([0-9A-F ]+?)\s*; fully-qualified\s*# \S+ E\S+ (.+)$/.exec(line);
-    if (!match || group === 'Component' || SKIN_TONES.test(match[1] ?? '')) {
-        continue;
+    const parsed = parseEmojiLine(line, group);
+    if (parsed) {
+        emojiLines.push(parsed);
     }
-    emoji.push(`${(match[1] ?? '').split(' ').join('-')} ${match[2] ?? ''}`);
 }
+
+// An emoji's light tone version, kept when it has the light tone on every
+// person and each other tone exists the same way. The emoji selector goes
+// when a tone comes in (1F590 FE0F, 1F590 1F3FB), so emoji match without it.
+const isTone = (code: string) => TONES.includes(code);
+const withoutTone = (codes: string[]) => codes.filter(code => code !== 'FE0F' && !isTone(code)).join('-');
+const fullyQualified = new Set(emojiLines.map(line => line.codes.join('-')));
+const lightTones = new Map<string, string>();
+for (const { codes } of emojiLines) {
+    const light = codes.join('-');
+    const tones = codes.filter(isTone);
+    if (tones.length > 0 && tones.every(code => code === LIGHT) && TONES.every(tone => fullyQualified.has(light.replaceAll(LIGHT, tone)))) {
+        lightTones.set(withoutTone(codes), light);
+    }
+}
+
+// "1F44D/1F44D-1F3FB thumbs up": the light tone version after a "/"
+const emoji = emojiLines
+    .filter(line => line.group !== 'Component' && !line.codes.some(isTone))
+    .map((line) => {
+        const codes = [line.codes.join('-'), lightTones.get(withoutTone(line.codes))].filter(Boolean).join('/');
+        return `${codes} ${line.name}`;
+    });
 
 // "2192;RIGHTWARDS ARROW;Sm;..." Spaces, controls, format and combining
 // characters show nothing on their own, so they're left out.
-const isSymbol = (code: number) => EXTRA_SYMBOLS.includes(code) || SYMBOL_BLOCKS.some(([first, last]) => code >= first && code <= last);
+const isSymbol = (code: number) => EXTRA_SYMBOLS.has(code) || SYMBOL_BLOCKS.some(([first, last]) => code >= first && code <= last);
 const symbols: string[] = [];
 for (const line of readFileSync(UCD_SOURCE, 'utf-8').split('\n')) {
     const [code = '', name = '', category = ''] = line.split(';');
@@ -81,18 +124,23 @@ for (const line of readFileSync(UCD_SOURCE, 'utf-8').split('\n')) {
     }
 }
 
-// For a single-quoted string literal
-const quote = (entries: string[]) => entries.join(';').replaceAll('\\', '\\\\').replaceAll('\'', '\\\'');
+// The data goes in single-quoted strings, so it can't hold ' or \ (Unicode's names don't)
+const unsafe = [...emoji, ...symbols].find(entry => /['\\]/.test(entry));
+if (unsafe) {
+    console.error(`Can't write ${JSON.stringify(unsafe)} into a quoted string.`);
+    process.exit(1);
+}
 
 writeFileSync(OUTPUT, `// Generated by scripts/generate-unicode-glyphs.ts from Unicode ${version}'s
 // emoji-test.txt and UnicodeData.txt. Do not edit by hand; regenerate it instead.
 //
 // Entries are "code name;...": the hex codepoint (an emoji sequence's are
-// joined with "-"), then the character's Unicode name.
+// joined with "-"), then the character's Unicode name. An emoji that takes a
+// skin tone has its light tone version after the code: "1F44D/1F44D-1F3FB".
 export const UNICODE_VERSION = '${version}';
 
-export const EMOJI_GLYPHS = '${quote(emoji)}';
+export const EMOJI_GLYPHS = '${emoji.join(';')}';
 
-export const SYMBOL_GLYPHS = '${quote(symbols)}';
+export const SYMBOL_GLYPHS = '${symbols.join(';')}';
 `);
-console.log(`Wrote ${emoji.length} emoji and ${symbols.length} symbols (Unicode ${version}) to ${OUTPUT}`);
+console.log(`Wrote ${emoji.length} emoji (${lightTones.size} with skin tones) and ${symbols.length} symbols (Unicode ${version}) to ${OUTPUT}`);

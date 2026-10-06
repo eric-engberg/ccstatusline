@@ -173,12 +173,12 @@ const SymbolSlotsEditor: React.FC<WidgetEditorProps & { slots: SymbolSlot[] }> =
                             <Text color={isSelected ? 'green' : undefined}>
                                 {`${labelPadding}${slot.label}: `}
                             </Text>
-                            {value ? (
-                                <Text inverse>{value}</Text>
-                            ) : (
-                                <Text inverse dimColor>(none)</Text>
-                            )}
-                            <Text dimColor>{` (default: ${slot.defaultSymbol})`}</Text>
+                            {/* One Text: Ink lays out each part of a multi-part emoji (👍🏾, 👩‍💻) as
+                                its own character, so a second Text would overwrite the rest of it */}
+                            <Text>
+                                {value ? <Text inverse>{value}</Text> : <Text inverse dimColor>(none)</Text>}
+                                <Text dimColor>{` (default: ${slot.defaultSymbol})`}</Text>
+                            </Text>
                         </Box>
                     );
                 })}

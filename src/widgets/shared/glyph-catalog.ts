@@ -58,13 +58,30 @@ function parseNerdFontSets(): GlyphGroup[] {
 }
 
 // "1F468-200D-1F4BB man technologist;...": an emoji sequence's codepoints are
-// joined with "-"
+// joined with "-", and an emoji that takes a skin tone has its light tone
+// version after a "/" ("1F44D/1F44D-1F3FB thumbs up")
 function parseUnicodeGlyphs(data: string): GlyphEntry[] {
+    const toGlyph = (codes: string) => String.fromCodePoint(...codes.split('-').map(code => Number.parseInt(code, 16)));
     return data.split(';').map((entry) => {
         const space = entry.indexOf(' ');
-        const codes = entry.slice(0, space).split('-').map(code => Number.parseInt(code, 16));
-        return { glyph: String.fromCodePoint(...codes), name: entry.slice(space + 1) };
+        const [codes = '', lightTone] = entry.slice(0, space).split('/');
+        const name = entry.slice(space + 1);
+        return lightTone ? { glyph: toGlyph(codes), name, lightTone: toGlyph(lightTone) } : { glyph: toGlyph(codes), name };
     });
+}
+
+// The curated emoji that take a skin tone get their light tone versions from
+// Unicode's data; a curated emoji may leave out its emoji selector (U+FE0F)
+function addSkinTones(groups: readonly GlyphGroup[], emoji: GlyphEntry[]): GlyphGroup[] {
+    const withoutSelector = (glyph: string) => glyph.replaceAll('\uFE0F', '');
+    const lightTones = new Map(emoji.filter(entry => entry.lightTone).map(entry => [withoutSelector(entry.glyph), entry.lightTone]));
+    return groups.map(group => ({
+        ...group,
+        glyphs: group.glyphs.map((entry) => {
+            const lightTone = lightTones.get(withoutSelector(entry.glyph));
+            return lightTone ? { ...entry, lightTone } : entry;
+        })
+    }));
 }
 
 // Lowercase, with _ and - as word breaks, so "pull req" finds git_pull_request
@@ -73,16 +90,18 @@ function toSearchText(text: string): string {
 }
 
 export function createGlyphCatalog(): GlyphCatalog {
+    const emoji = parseUnicodeGlyphs(EMOJI_GLYPHS);
+    const curatedGroups = addSkinTones(GLYPH_GROUPS, emoji);
     const nerdFontGroups = parseNerdFontSets();
-    const groups = [...GLYPH_GROUPS, ...nerdFontGroups];
+    const groups = [...curatedGroups, ...nerdFontGroups];
     // Search lists each glyph once, under its first name (curated, then the
     // emoji's, the character's, Nerd Font's), but finds it by any of them: ⚡
     // shows as "high voltage" and "high voltage sign" finds it too. An emoji's
     // text and emoji forms (❤ and ❤️) are different glyphs, so both show.
     const searchable = new Map<string, { entry: GlyphEntry; text: string }>();
     const everything = [
-        ...GLYPH_GROUPS.flatMap(group => group.glyphs),
-        ...parseUnicodeGlyphs(EMOJI_GLYPHS),
+        ...curatedGroups.flatMap(group => group.glyphs),
+        ...emoji,
         ...parseUnicodeGlyphs(SYMBOL_GLYPHS),
         ...nerdFontGroups.flatMap(group => group.glyphs)
     ];

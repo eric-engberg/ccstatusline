@@ -1,15 +1,19 @@
+import React from 'react';
 import {
     describe,
     expect,
-    it
+    it,
+    vi
 } from 'vitest';
 
+import type { SkinTone } from '../../../types/SkinTone';
 import type {
     WidgetEditorProps,
     WidgetItem
 } from '../../../types/Widget';
 import { createGlyphCatalog } from '../glyph-catalog';
 import { GLYPH_GROUPS } from '../glyph-groups';
+import { SkinToneContext } from '../skin-tone';
 import {
     renderSymbolOverrideEditor,
     renderSymbolSlotsEditor
@@ -27,6 +31,7 @@ const TAB = '\t';
 const SHIFT_TAB = '\x1b[Z';
 const PAGE_DOWN = '\x1b[6~';
 const PAGE_UP = '\x1b[5~';
+const CTRL_T = '\x14';
 
 const cwd: WidgetItem = { id: 'cwd', type: 'current-working-dir' };
 const singleGlyphEditor = (props: WidgetEditorProps) => renderSymbolOverrideEditor(props, '');
@@ -275,6 +280,94 @@ describe('glyph picker', () => {
                 const output = editor.takeOutput();
                 expect(output).toContain('↑ more');
                 expect(output).toMatch(/\[.{1,2}\s*\]/);
+            } finally {
+                editor.cleanup();
+            }
+        });
+    });
+
+    describe('skin tone', () => {
+        // The glyph editor inside the settings' skin tone, as the line editor provides it
+        const withTone = (tone: SkinTone | undefined, setTone: (next: SkinTone | undefined) => void = vi.fn()) => (props: WidgetEditorProps) => React.createElement(
+            SkinToneContext.Provider,
+            { value: { tone, setTone } },
+            singleGlyphEditor(props)
+        );
+
+        it('cycles the tone with Ctrl+T and shows and picks emoji in it', async () => {
+            const editor = renderWidgetEditor(singleGlyphEditor, cwd);
+
+            try {
+                await editor.ready();
+                expect(await openPicker(editor)).toContain('Skin tone: default (Ctrl+T)');
+                await type(editor, 'thumbs up');
+                editor.takeOutput();
+                await editor.press(CTRL_T);
+                const output = editor.takeOutput();
+                expect(output).toContain('Skin tone: 🏻 light');
+                // Ctrl+T isn't typed into the search
+                expect(output).toContain('Pick a glyph: "thumbs up"');
+                expect(output).toContain('👍🏻  thumbs up sign: light skin tone');
+                await editor.press(ENTER, ENTER);
+                expect(savedWidget(editor)?.character).toBe('👍🏻');
+            } finally {
+                editor.cleanup();
+            }
+        });
+
+        it('opens in the saved tone and saves the next one to the settings', async () => {
+            const setTone = vi.fn();
+            const editor = renderWidgetEditor(withTone('dark', setTone), cwd);
+
+            try {
+                await editor.ready();
+                expect(await openPicker(editor)).toContain('Skin tone: 🏿 dark');
+                await type(editor, 'thumbs up');
+                expect(editor.takeOutput()).toContain('👍🏿');
+                await editor.press(CTRL_T);
+                expect(setTone).toHaveBeenLastCalledWith(undefined);
+                expect(editor.takeOutput()).toContain('Skin tone: default');
+            } finally {
+                editor.cleanup();
+            }
+        });
+
+        it('leaves emoji without skin tones alone', async () => {
+            const editor = renderWidgetEditor(withTone('medium'), cwd);
+
+            try {
+                await editor.ready();
+                await openPicker(editor);
+                await type(editor, 'clown');
+                expect(editor.takeOutput()).toContain('🤡  clown face');
+                await editor.press(ENTER, ENTER);
+                expect(savedWidget(editor)?.character).toBe('🤡');
+            } finally {
+                editor.cleanup();
+            }
+        });
+
+        // Ink lays out each part of a multi-part emoji as its own character, so a
+        // second Text after it on the line would overwrite the tone or the rest
+        it('shows a toned or joined emoji whole in the glyph editor', async () => {
+            for (const character of ['👍🏾', '👩‍💻']) {
+                const editor = renderWidgetEditor(singleGlyphEditor, { ...cwd, character });
+
+                try {
+                    await editor.ready();
+                    expect(editor.takeOutput()).toContain(`${character} (default:`);
+                } finally {
+                    editor.cleanup();
+                }
+            }
+        });
+
+        it('opens on the emoji a toned glyph is made from', async () => {
+            const editor = renderWidgetEditor(withTone('medium-dark'), { ...cwd, character: '👍🏾' });
+
+            try {
+                await editor.ready();
+                expect(await openPicker(editor)).toContain('👍🏾  thumbs up sign: medium-dark skin tone');
             } finally {
                 editor.cleanup();
             }

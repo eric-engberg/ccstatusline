@@ -5,16 +5,26 @@ import {
     type Key
 } from 'ink';
 import React, {
+    useContext,
     useEffect,
     useMemo,
     useState
 } from 'react';
 
+import type { SkinTone } from '../../types/SkinTone';
 import { getVisibleWidth } from '../../utils/ansi';
 import { shouldInsertInput } from '../../utils/input-guards';
 
 import type { GlyphCatalog } from './glyph-catalog';
 import type { GlyphEntry } from './glyph-groups';
+import {
+    SkinToneContext,
+    applySkinTone,
+    cycleSkinTone,
+    formatSkinToneName,
+    getSkinToneModifier,
+    stripSkinTone
+} from './skin-tone';
 
 const COLUMNS = 10;
 const VISIBLE_ROWS = 6;
@@ -38,9 +48,12 @@ function loadGlyphCatalog(): Promise<GlyphCatalog> {
     return catalogPromise;
 }
 
+// A toned glyph (👍🏾) is found by the emoji it's made from
 function findGlyph(catalog: GlyphCatalog, glyph: string): { group: number; index: number } {
+    const untoned = stripSkinTone(glyph);
+    const matches = (entry: GlyphEntry) => entry.glyph === glyph || (entry.lightTone !== undefined && stripSkinTone(entry.lightTone) === untoned);
     for (const [group, entries] of catalog.groups.entries()) {
-        const index = entries.glyphs.findIndex(entry => entry.glyph === glyph);
+        const index = entries.glyphs.findIndex(matches);
         if (index !== -1) {
             return { group, index };
         }
@@ -53,10 +66,19 @@ function formatCell(glyph: string, selected: boolean): string {
     return selected ? `[${padded}]` : ` ${padded} `;
 }
 
-function chunkRows(glyphs: GlyphEntry[]): string[][] {
+// The glyph as it shows and picks: an emoji that takes a skin tone, in the chosen one
+function getShownGlyph(entry: GlyphEntry, tone: SkinTone | undefined): string {
+    return tone && entry.lightTone ? applySkinTone(entry.lightTone, tone) : entry.glyph;
+}
+
+function getShownName(entry: GlyphEntry, tone: SkinTone | undefined): string {
+    return tone && entry.lightTone ? formatSkinToneName(entry.name, tone) : entry.name;
+}
+
+function chunkRows(glyphs: GlyphEntry[], tone: SkinTone | undefined): string[][] {
     const rows: string[][] = [];
     for (let start = 0; start < glyphs.length; start += COLUMNS) {
-        rows.push(glyphs.slice(start, start + COLUMNS).map(entry => entry.glyph));
+        rows.push(glyphs.slice(start, start + COLUMNS).map(entry => getShownGlyph(entry, tone)));
     }
     return rows;
 }
@@ -70,6 +92,9 @@ function getVisibleRowRange(rowCount: number, selectedRow: number): { start: num
 const GlyphGrid: React.FC<GlyphPickerProps & { catalog: GlyphCatalog }> = ({ catalog, initialGlyph, onPick, onCancel }) => {
     const [position, setPosition] = useState(() => findGlyph(catalog, initialGlyph));
     const [query, setQuery] = useState('');
+    // The settings' tone; the picker keeps its own copy so Ctrl+T works without a provider
+    const skinToneSetting = useContext(SkinToneContext);
+    const [tone, setTone] = useState(skinToneSetting.tone);
     const results = useMemo(() => catalog.search(query), [catalog, query]);
     const searching = query.length > 0;
     const group = catalog.groups[position.group] ?? catalog.groups[0];
@@ -87,6 +112,13 @@ const GlyphGrid: React.FC<GlyphPickerProps & { catalog: GlyphCatalog }> = ({ cat
     const search = (nextQuery: string) => {
         setQuery(nextQuery);
         setPosition({ ...position, index: 0 });
+    };
+
+    // Ctrl+T: the next skin tone, saved to the settings
+    const changeSkinTone = () => {
+        const next = cycleSkinTone(tone);
+        setTone(next);
+        skinToneSetting.setTone(next);
     };
 
     // Keys that only browse the groups or only refine a search
@@ -122,7 +154,7 @@ const GlyphGrid: React.FC<GlyphPickerProps & { catalog: GlyphCatalog }> = ({ cat
         const target = getMoveTarget(key);
         if (key.return) {
             if (selected) {
-                onPick(selected.glyph);
+                onPick(getShownGlyph(selected, tone));
             }
         } else if (key.escape) {
             if (searching) {
@@ -130,6 +162,8 @@ const GlyphGrid: React.FC<GlyphPickerProps & { catalog: GlyphCatalog }> = ({ cat
             } else {
                 onCancel();
             }
+        } else if (key.ctrl && input === 't') {
+            changeSkinTone();
         } else if (target === null) {
             handleModeKey(input, key);
         } else {
@@ -137,16 +171,18 @@ const GlyphGrid: React.FC<GlyphPickerProps & { catalog: GlyphCatalog }> = ({ cat
         }
     });
 
-    const rows = chunkRows(glyphs);
+    const rows = chunkRows(glyphs, tone);
     const selectedRow = Math.floor(position.index / COLUMNS);
     const { start, end } = getVisibleRowRange(rows.length, selectedRow);
     const matchCount = `${results.length} ${results.length === 1 ? 'match' : 'matches'}`;
+    const toneLabel = tone ? [getSkinToneModifier(tone), tone].join(' ') : 'default';
 
     return (
         <Box flexDirection='column'>
             <Text>
                 <Text bold>{searching ? `Pick a glyph: "${query}"` : `Pick a glyph: ${group?.name ?? ''}`}</Text>
                 <Text dimColor>{searching ? ` (${matchCount})` : ` (${position.group + 1}/${catalog.groups.length})`}</Text>
+                <Text dimColor>{`   Skin tone: ${toneLabel} (Ctrl+T)`}</Text>
             </Text>
             <Text dimColor>
                 {searching
@@ -168,7 +204,7 @@ const GlyphGrid: React.FC<GlyphPickerProps & { catalog: GlyphCatalog }> = ({ cat
                 {glyphs.length === 0 && <Text dimColor>No glyph names match.</Text>}
             </Box>
             <Box marginTop={1}>
-                <Text color='cyan'>{selected ? `${selected.glyph}  ${selected.name}` : ''}</Text>
+                <Text color='cyan'>{selected ? `${getShownGlyph(selected, tone)}  ${getShownName(selected, tone)}` : ''}</Text>
             </Box>
         </Box>
     );
