@@ -43,6 +43,8 @@ export interface ExtraUsageValueColorsWording {
     title: string;
     // What the sample's percents are of, e.g. "of the limit"
     sampleNote: string;
+    // The amount is what's left, so the sample shows what's left of the limit
+    showsRemaining?: boolean;
 }
 
 // The Extra Usage Used and Remaining widgets show one labeled amount of money

@@ -5,7 +5,7 @@ import { ExtraUsageAmountWidget } from './shared/extra-usage-amount-widget';
 export class ExtraUsageRemainingWidget extends ExtraUsageAmountWidget {
     protected readonly label = 'Overage Left: ';
     protected readonly previewDollars = 3894;
-    protected override readonly valueColors = { title: 'Extra Usage Remaining: value colors', sampleNote: 'of the limit used' };
+    protected override readonly valueColors = { title: 'Extra Usage Remaining: value colors', sampleNote: 'of the limit left', showsRemaining: true };
 
     getDescription(): string { return 'Shows what\'s left of your monthly extra usage limit (Pro/Max overage or Enterprise spend)'; }
     getDisplayName(): string { return 'Extra Usage Remaining'; }

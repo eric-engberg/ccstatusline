@@ -1,3 +1,5 @@
+import React from 'react';
+import stripAnsi from 'strip-ansi';
 import {
     describe,
     expect,
@@ -6,8 +8,12 @@ import {
 
 import type { RenderContext } from '../../types/RenderContext';
 import { DEFAULT_SETTINGS } from '../../types/Settings';
-import type { WidgetItem } from '../../types/Widget';
+import type {
+    WidgetEditorProps,
+    WidgetItem
+} from '../../types/Widget';
 import { getWidget } from '../../utils/widgets';
+import { renderWidgetEditor } from '../shared/__tests__/helpers/widget-editor-harness';
 
 import { describeValueColorsOnTheLine } from './helpers/value-colors-line';
 
@@ -61,6 +67,31 @@ describe.each([
         expect(widget?.renderEditor?.({ ...editorProps, action: 'edit-value-colors' })).toBeTruthy();
         expect(widget?.colorsOnlyItsRuns?.(colored)).toBe(true);
         expect(widget?.colorsOnlyItsRuns?.({ id: 'c', type })).toBe(false);
+    });
+
+    // The sample shows what the widget shows, what's left, in the color of what's used
+    it('samples what\'s left in the color of what\'s used while showing what\'s left', async () => {
+        const remaining = { ...colored, rawValue: false, metadata: { ...BAND_COLORS, inverse: 'true' } };
+        const whole = { ...remaining, metadata: { ...remaining.metadata, valueColorScope: 'widget' } };
+        const leftLabel = label.replace('Used', 'Left');
+
+        for (const [item, sample, coloredValue] of [
+            [remaining, 'Sample: 65% 30% 10% 0% left', `${MID}30%`],
+            [whole, `Sample: ${leftLabel}65%  ${leftLabel}30%  ${leftLabel}10%  ${leftLabel}0% left`, `${MID}${leftLabel}30%`]
+        ] as const) {
+            const editor = renderWidgetEditor(
+                (props: WidgetEditorProps) => widget?.renderEditor?.({ ...props, action: 'edit-value-colors' }) ?? React.createElement(React.Fragment),
+                item
+            );
+            try {
+                await editor.ready();
+                const output = editor.takeColoredOutput();
+                expect(stripAnsi(output)).toContain(sample);
+                expect(output).toContain(coloredValue);
+            } finally {
+                editor.cleanup();
+            }
+        }
     });
 
     // The preview's 90% used

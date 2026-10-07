@@ -276,15 +276,18 @@ export class UsagePercentWidget implements Widget {
         return withValueColorsKeybind(getUsagePercentCustomKeybinds(item), item === undefined || showsPlainUsageValue(item));
     }
 
-    // The level glyph mode's glyph and break point editors, or value colors
+    // The level glyph mode's glyph and break point editors, or value colors,
+    // whose sample shows what's left while the widget does
     renderEditor(props: WidgetEditorProps): React.ReactElement | null {
+        const showsRemaining = isUsageInverted(props.widget);
         return renderLevelGlyphEditor(props) ?? renderValueColorsEditor(props, {
             title: `${this.getDisplayName()}: value colors`,
             scale: LIMIT_SCALE,
-            sampleNote: 'used',
+            sampleNote: showsRemaining ? 'left' : 'used',
             defaultColor: DEFAULT_COLOR,
             maxPercent: 100,
-            label: this.getLabelPrefix()
+            label: this.getLabelPrefix(),
+            showsRemaining
         });
     }
 

@@ -1,3 +1,5 @@
+import type React from 'react';
+import stripAnsi from 'strip-ansi';
 import {
     beforeEach,
     describe,
@@ -13,6 +15,7 @@ import type {
     WidgetEditorProps,
     WidgetItem
 } from '../../../types/Widget';
+import { renderWidgetEditor } from '../../shared/__tests__/helpers/widget-editor-harness';
 
 import { describeValueColorsOnTheLine } from './value-colors-line';
 
@@ -303,6 +306,29 @@ export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike & { g
             expect(labeled.endsWith(`${LOW}25.0%${FG_RESET}`)).toBe(true);
             expect(label.endsWith(': ')).toBe(true);
             expect(label).not.toContain('\x1b');
+        });
+
+        // The sample shows what the widget shows, what's left, in the color of what's used
+        it('samples what\'s left in the color of what\'s used while showing what\'s left', async () => {
+            const widget = config.createWidget();
+            const label = widget.getLabelPrefix();
+            const remaining = { ...colored, rawValue: false, metadata: { ...colored.metadata, invert: 'true' } };
+            const whole = { ...remaining, metadata: { ...remaining.metadata, valueColorScope: 'widget' } };
+
+            for (const [item, sample, coloredValue] of [
+                [remaining, 'Sample: 65% 30% 10% 0% left', `${MID}30%`],
+                [whole, `Sample: ${label}65%  ${label}30%  ${label}10%  ${label}0% left`, `${MID}${label}30%`]
+            ] as const) {
+                const editor = renderWidgetEditor(props => widget.renderEditor?.({ ...props, action: 'edit-value-colors' }) as React.ReactElement, item);
+                try {
+                    await editor.ready();
+                    const output = editor.takeColoredOutput();
+                    expect(stripAnsi(output)).toContain(sample);
+                    expect(output).toContain(coloredValue);
+                } finally {
+                    editor.cleanup();
+                }
+            }
         });
 
         it('colors the label with the percent when set to the whole widget', () => {

@@ -1,4 +1,5 @@
 import React from 'react';
+import stripAnsi from 'strip-ansi';
 import {
     describe,
     expect,
@@ -85,6 +86,31 @@ describe('extra-usage-remaining value colors', () => {
 
     it('leaves what\'s left to the renderer with a zero limit', () => {
         expect(render(spent(0, 0))).toBe('$0.00');
+    });
+
+    // The sample shows what's left, as the widget does, in the color of what's used
+    it('samples what\'s left of the limit in the color of what\'s used', async () => {
+        const whole = { ...colored('extra-usage-remaining'), rawValue: false, metadata: { ...colored('extra-usage-remaining').metadata, valueColorScope: 'widget' } };
+
+        // $150.00 left is 70% used, yellow
+        expect(widget?.render(whole, spent(35000), DEFAULT_SETTINGS)).toBe(`${MID}Overage Left: $150.00${FG_RESET}`);
+        for (const [item, sample, coloredValue] of [
+            [colored('extra-usage-remaining'), 'Sample: 65% 30% 10% 0% of the limit left', `${MID}30%`],
+            [whole, 'Sample: Overage Left: 65%  Overage Left: 30%  Overage Left: 10%  Overage Left: 0% of the limit left', `${MID}Overage Left: 30%`]
+        ] as const) {
+            const editor = renderWidgetEditor(
+                (props: WidgetEditorProps) => widget?.renderEditor?.({ ...props, action: 'edit-value-colors' }) ?? React.createElement(React.Fragment),
+                item
+            );
+            try {
+                await editor.ready();
+                const output = editor.takeColoredOutput();
+                expect(stripAnsi(output)).toContain(sample);
+                expect(output).toContain(coloredValue);
+            } finally {
+                editor.cleanup();
+            }
+        }
     });
 
     describeValueColorsOnTheLine({
