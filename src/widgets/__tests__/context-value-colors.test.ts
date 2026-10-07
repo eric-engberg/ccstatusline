@@ -1,3 +1,5 @@
+import React from 'react';
+import stripAnsi from 'strip-ansi';
 import {
     describe,
     expect,
@@ -6,8 +8,14 @@ import {
 
 import type { RenderContext } from '../../types/RenderContext';
 import { DEFAULT_SETTINGS } from '../../types/Settings';
-import type { WidgetItem } from '../../types/Widget';
+import type {
+    WidgetEditorProps,
+    WidgetItem
+} from '../../types/Widget';
 import { getWidget } from '../../utils/widgets';
+import { renderWidgetEditor } from '../shared/__tests__/helpers/widget-editor-harness';
+
+import { describeValueColorsOnTheLine } from './helpers/value-colors-line';
 
 const LOW = '\x1b[38;2;0;255;0m';
 const MID = '\x1b[38;2;255;255;0m';
@@ -28,7 +36,10 @@ function used(percent: number): RenderContext {
     };
 }
 
-describe.each(['context-percentage', 'context-percentage-usable'])('%s value colors', (type) => {
+describe.each([
+    ['context-percentage', 'Ctx Used: '],
+    ['context-percentage-usable', 'Ctx(u) Used: ']
+])('%s value colors', (type, label) => {
     const widget = getWidget(type);
     const colored: WidgetItem = { id: 'c', type, rawValue: true, color: 'hex:112233', metadata: BAND_COLORS };
     const render = (item: WidgetItem, context: RenderContext) => widget?.render(item, context, DEFAULT_SETTINGS);
@@ -44,18 +55,53 @@ describe.each(['context-percentage', 'context-percentage-usable'])('%s value col
 
             expect(render(item, { isPreview: true })).not.toContain(HIGH);
             expect(widget?.getCustomKeybinds?.(item).map(keybind => keybind.key)).not.toContain('v');
-            expect(widget?.preservesRenderedColors?.(item)).toBe(false);
+            expect(widget?.colorsOnlyItsRuns?.(item)).toBe(false);
         }
     });
 
-    it('offers (v), names it on the editor row, opens its editor and keeps its colors', () => {
+    it('offers (v), names it on the editor row, opens its editor and colors around its value', () => {
         const editorProps = { widget: colored, onComplete: () => undefined, onCancel: () => undefined };
 
         expect(widget?.getCustomKeybinds?.(colored).map(keybind => keybind.key)).toContain('v');
         expect(widget?.getEditorDisplay(colored).modifierText).toContain('value colors');
         expect(widget?.renderEditor?.({ ...editorProps, action: 'edit-value-colors' })).toBeTruthy();
-        expect(widget?.preservesRenderedColors?.(colored)).toBe(true);
-        expect(widget?.preservesRenderedColors?.({ id: 'c', type })).toBe(false);
+        expect(widget?.colorsOnlyItsRuns?.(colored)).toBe(true);
+        expect(widget?.colorsOnlyItsRuns?.({ id: 'c', type })).toBe(false);
+    });
+
+    // The sample shows what the widget shows, what's left, in the color of what's used
+    it('samples what\'s left in the color of what\'s used while showing what\'s left', async () => {
+        const remaining = { ...colored, rawValue: false, metadata: { ...BAND_COLORS, inverse: 'true' } };
+        const whole = { ...remaining, metadata: { ...remaining.metadata, valueColorScope: 'widget' } };
+        const leftLabel = label.replace('Used', 'Left');
+
+        for (const [item, sample, coloredValue] of [
+            [remaining, 'Sample: 65% 30% 10% 0% left', `${MID}30%`],
+            [whole, `Sample: ${leftLabel}65%  ${leftLabel}30%  ${leftLabel}10%  ${leftLabel}0% left`, `${MID}${leftLabel}30%`]
+        ] as const) {
+            const editor = renderWidgetEditor(
+                (props: WidgetEditorProps) => widget?.renderEditor?.({ ...props, action: 'edit-value-colors' }) ?? React.createElement(React.Fragment),
+                item
+            );
+            try {
+                await editor.ready();
+                const output = editor.takeColoredOutput();
+                expect(stripAnsi(output)).toContain(sample);
+                expect(output).toContain(coloredValue);
+            } finally {
+                editor.cleanup();
+            }
+        }
+    });
+
+    // The preview's 90% used
+    describeValueColorsOnTheLine({
+        item: { id: 'c', type, metadata: BAND_COLORS },
+        context: { isPreview: true },
+        label,
+        value: '90.0%',
+        valueCode: HIGH,
+        fallbacks: []
     });
 });
 
@@ -81,17 +127,26 @@ describe('context-length value colors', () => {
         expect(widget?.render(colored, { isPreview: true }, DEFAULT_SETTINGS)).toBe(`${LOW}18.6k${FG_RESET}`);
     });
 
-    it('keeps the label in the widget color and draws plainly with value colors off', () => {
-        expect(widget?.render({ ...colored, rawValue: false }, used(95), DEFAULT_SETTINGS)).toBe(`\x1b[38;2;17;34;51mCtx: ${FG_RESET}${HIGH}190.0k${FG_RESET}`);
+    it('paints only the length, and draws plainly with value colors off', () => {
+        expect(widget?.render({ ...colored, rawValue: false }, used(95), DEFAULT_SETTINGS)).toBe(`Ctx: ${HIGH}190.0k${FG_RESET}`);
         expect(widget?.render({ id: 'l', type: 'context-length' }, used(95), DEFAULT_SETTINGS)).toBe('Ctx: 190.0k');
     });
 
-    it('offers (v), names it on the editor row, opens its editor and keeps its colors', () => {
+    it('offers (v), names it on the editor row, opens its editor and colors around its value', () => {
         const editorProps = { widget: colored, onComplete: () => undefined, onCancel: () => undefined };
 
         expect(widget?.getCustomKeybinds?.(colored)).toEqual([{ key: 'v', label: '(v)alue colors', action: 'edit-value-colors' }]);
         expect(widget?.getEditorDisplay(colored).modifierText).toBe('(value colors)');
         expect(widget?.renderEditor?.(editorProps)).toBeTruthy();
-        expect(widget?.preservesRenderedColors?.(colored)).toBe(true);
+        expect(widget?.colorsOnlyItsRuns?.(colored)).toBe(true);
+    });
+
+    describeValueColorsOnTheLine({
+        item: { id: 'l', type: 'context-length', metadata: BAND_COLORS },
+        context: used(50),
+        label: 'Ctx: ',
+        value: '100.0k',
+        valueCode: LOW,
+        fallbacks: []
     });
 });

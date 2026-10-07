@@ -1,3 +1,5 @@
+import type React from 'react';
+import stripAnsi from 'strip-ansi';
 import {
     beforeEach,
     describe,
@@ -13,13 +15,16 @@ import type {
     WidgetEditorProps,
     WidgetItem
 } from '../../../types/Widget';
+import { renderWidgetEditor } from '../../shared/__tests__/helpers/widget-editor-harness';
+
+import { describeValueColorsOnTheLine } from './value-colors-line';
 
 interface UsageWidgetLike {
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[];
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay;
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null;
     renderEditor?(props: WidgetEditorProps): unknown;
-    preservesRenderedColors?(item: WidgetItem): boolean;
+    colorsOnlyItsRuns?(item: WidgetItem): boolean;
     supportsRawValue(): boolean;
 }
 
@@ -99,7 +104,7 @@ function getExpectedUsageKeybinds(item: WidgetItem, includeCursor = false): Cust
     return keybinds;
 }
 
-export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike>(config: UsagePercentWidgetSuiteConfig<TWidget>): void {
+export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike & { getLabelPrefix(): string }>(config: UsagePercentWidgetSuiteConfig<TWidget>): void {
     beforeEach(() => {
         vi.clearAllMocks();
     });
@@ -267,7 +272,6 @@ export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike>(conf
         const LOW = '\x1b[38;2;0;255;0m';
         const MID = '\x1b[38;2;255;255;0m';
         const HIGH = '\x1b[38;2;255;0;0m';
-        const BASE = '\x1b[38;2;17;34;51m';
         const FG_RESET = '\x1b[39m';
         // Custom colors, so the escape codes don't depend on the terminal's color support
         const colored: WidgetItem = {
@@ -292,17 +296,39 @@ export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike>(conf
             expect(config.render(widget, colored, used(90))).toBe(`${HIGH}90.0%${FG_RESET}`);
         });
 
-        it('colors by the used percent while showing what\'s left, and keeps the label in the widget color', () => {
+        it('colors by the used percent while showing what\'s left, and paints only the percent', () => {
             const widget = config.createWidget();
             const remaining = { ...colored, metadata: { ...colored.metadata, invert: 'true' } };
 
             expect(config.render(widget, remaining, used(95))).toBe(`${HIGH}5.0%${FG_RESET}`);
-            // The label is drawn in the widget's color, which resets before the value
             const labeled = config.render(widget, { ...colored, rawValue: false }, used(25)) ?? '';
-            const label = labeled.slice(BASE.length, labeled.indexOf(FG_RESET));
-            expect(labeled.startsWith(BASE)).toBe(true);
+            const label = labeled.slice(0, labeled.indexOf(LOW));
+            expect(labeled.endsWith(`${LOW}25.0%${FG_RESET}`)).toBe(true);
             expect(label.endsWith(': ')).toBe(true);
             expect(label).not.toContain('\x1b');
+        });
+
+        // The sample shows what the widget shows, what's left, in the color of what's used
+        it('samples what\'s left in the color of what\'s used while showing what\'s left', async () => {
+            const widget = config.createWidget();
+            const label = widget.getLabelPrefix();
+            const remaining = { ...colored, rawValue: false, metadata: { ...colored.metadata, invert: 'true' } };
+            const whole = { ...remaining, metadata: { ...remaining.metadata, valueColorScope: 'widget' } };
+
+            for (const [item, sample, coloredValue] of [
+                [remaining, 'Sample: 65% 30% 10% 0% left', `${MID}30%`],
+                [whole, `Sample: ${label}65%  ${label}30%  ${label}10%  ${label}0% left`, `${MID}${label}30%`]
+            ] as const) {
+                const editor = renderWidgetEditor(props => widget.renderEditor?.({ ...props, action: 'edit-value-colors' }) as React.ReactElement, item);
+                try {
+                    await editor.ready();
+                    const output = editor.takeColoredOutput();
+                    expect(stripAnsi(output)).toContain(sample);
+                    expect(output).toContain(coloredValue);
+                } finally {
+                    editor.cleanup();
+                }
+            }
         });
 
         it('colors the label with the percent when set to the whole widget', () => {
@@ -325,18 +351,27 @@ export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike>(conf
             expect(config.render(widget, glyph, used(95))).toBe('🚨');
             for (const item of [bar, glyph]) {
                 expect(widget.getCustomKeybinds(item).map(keybind => keybind.key)).not.toContain('v');
-                expect(widget.preservesRenderedColors?.(item)).toBe(false);
+                expect(widget.colorsOnlyItsRuns?.(item)).toBe(false);
             }
         });
 
-        it('names the option on the editor row, opens its editor and keeps its colors', () => {
+        it('names the option on the editor row, opens its editor and colors around its value', () => {
             const widget = config.createWidget();
             const editorProps = { widget: colored, onComplete: () => undefined, onCancel: () => undefined };
 
             expect(widget.getEditorDisplay(colored).modifierText).toContain('value colors');
             expect(widget.renderEditor?.({ ...editorProps, action: 'edit-value-colors' })).toBeTruthy();
-            expect(widget.preservesRenderedColors?.(colored)).toBe(true);
-            expect(widget.preservesRenderedColors?.(config.baseItem)).toBe(false);
+            expect(widget.colorsOnlyItsRuns?.(colored)).toBe(true);
+            expect(widget.colorsOnlyItsRuns?.(config.baseItem)).toBe(false);
+        });
+
+        describeValueColorsOnTheLine({
+            item: { ...config.baseItem, metadata: colored.metadata },
+            context: used(25),
+            label: config.createWidget().getLabelPrefix(),
+            value: '25.0%',
+            valueCode: LOW,
+            fallbacks: [{ context: { usageData: { error: 'timeout' } }, text: '[Timeout]' }]
         });
     });
 
@@ -436,6 +471,18 @@ export function runUsageTimerEditorSuite<TWidget extends UsageWidgetLike & { get
         } else {
             expect(second?.metadata?.display).toBe('time');
         }
+    });
+
+    // Changing a widget's type keeps its metadata, so a percent widget's level
+    // glyph can come along. A timer has no glyph and shows the time, so the
+    // editor reads it as the time too, and (p) goes on to the block bar.
+    it('treats a level glyph carried over from a percent widget as the time', () => {
+        const widget = config.createWidget();
+        const glyphItem: WidgetItem = { ...config.baseItem, metadata: { display: 'glyph', compact: 'true' } };
+
+        expect(widget.getEditorDisplay(glyphItem).modifierText).toBe('(compact)');
+        expect(widget.getCustomKeybinds(glyphItem)).toEqual(config.expectedTimeKeybinds ?? EXPECTED_TIMER_TIME_KEYBINDS);
+        expect(widget.handleEditorAction('toggle-progress', glyphItem)?.metadata).toEqual({ display: 'progress' });
     });
 
     it('clears compact metadata when cycling into progress mode', () => {

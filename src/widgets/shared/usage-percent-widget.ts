@@ -154,7 +154,7 @@ function renderUsageDisplay(
     if (bar !== null) {
         return formatRawOrLabeledValue(item, label, bar);
     }
-    const formatOptions = getValueFormatOptions(settings, item.color ?? DEFAULT_COLOR);
+    const formatOptions = getValueFormatOptions(settings);
     return formatColoredValue(item, label, formatPercent(percent, format), usedPercent, LIMIT_SCALE, formatOptions);
 }
 
@@ -174,6 +174,7 @@ export function getUsagePercentWidgetEditorDisplay(kind: UsagePercentWidgetKind,
     return {
         displayText: getUsagePercentWidgetDisplayName(kind),
         modifierText: getUsageDisplayModifierText(item, {
+            includeGlyph: true,
             showUsageDirection: true,
             extraModifiers: [showsPlainUsageValue(item) ? getValueColorsModifier(item) : null].filter((modifier): modifier is string => modifier !== null)
         })
@@ -275,21 +276,24 @@ export class UsagePercentWidget implements Widget {
         return withValueColorsKeybind(getUsagePercentCustomKeybinds(item), item === undefined || showsPlainUsageValue(item));
     }
 
-    // The level glyph mode's glyph and break point editors, or value colors
+    // The level glyph mode's glyph and break point editors, or value colors,
+    // whose sample shows what's left while the widget does
     renderEditor(props: WidgetEditorProps): React.ReactElement | null {
+        const showsRemaining = isUsageInverted(props.widget);
         return renderLevelGlyphEditor(props) ?? renderValueColorsEditor(props, {
             title: `${this.getDisplayName()}: value colors`,
             scale: LIMIT_SCALE,
-            sampleNote: 'used',
+            sampleNote: showsRemaining ? 'left' : 'used',
             defaultColor: DEFAULT_COLOR,
             maxPercent: 100,
-            label: this.getLabelPrefix()
+            label: this.getLabelPrefix(),
+            showsRemaining
         });
     }
 
-    // Value colors embed their own foreground codes, so the renderer must
-    // leave this widget's foreground alone while they show
-    preservesRenderedColors(item: WidgetItem): boolean {
+    // Value colors paint only the value (or the whole text), so the renderer
+    // colors the rest with the theme or widget color
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
         return isValueColorsEnabled(item) && showsPlainUsageValue(item);
     }
 

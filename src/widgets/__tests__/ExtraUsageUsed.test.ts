@@ -14,6 +14,8 @@ import * as usage from '../../utils/usage';
 import { ExtraUsageUsedWidget } from '../ExtraUsageUsed';
 import { gradientPresetCodeAt } from '../shared/gradient-bar';
 
+import { describeValueColorsOnTheLine } from './helpers/value-colors-line';
+
 let mockGetUsageErrorMessage: { mockReturnValue: (value: string) => void };
 
 function render(widget: ExtraUsageUsedWidget, item: WidgetItem, context: RenderContext = {}): string | null {
@@ -153,7 +155,6 @@ describe('ExtraUsageUsedWidget', () => {
         const LOW = '\x1b[38;2;0;255;0m';
         const MID = '\x1b[38;2;255;255;0m';
         const HIGH = '\x1b[38;2;255;0;0m';
-        const BASE = '\x1b[38;2;17;34;51m';
         const FG_RESET = '\x1b[39m';
         const widget = new ExtraUsageUsedWidget();
         const item: WidgetItem = { id: 'extra', type: 'extra-usage-used' };
@@ -184,13 +185,13 @@ describe('ExtraUsageUsedWidget', () => {
             expect(render(widget, colored, used(45000))).toBe(`${HIGH}$450.00${FG_RESET}`);
         });
 
-        it('keeps the label in the widget color', () => {
-            expect(render(widget, { ...colored, rawValue: false }, used(10000))).toBe(`${BASE}Overage Used: ${FG_RESET}${LOW}$100.00${FG_RESET}`);
+        it('colors only the spend, leaving the label to the renderer', () => {
+            expect(render(widget, { ...colored, rawValue: false }, used(10000))).toBe(`Overage Used: ${LOW}$100.00${FG_RESET}`);
         });
 
-        it('keeps the widget color without a monthly limit', () => {
-            expect(render(widget, colored, { usageData: { extraUsageEnabled: true, extraUsageUsed: 10000 } })).toBe(`${BASE}$100.00${FG_RESET}`);
-            expect(render(widget, colored, used(10000, 0))).toBe(`${BASE}$100.00${FG_RESET}`);
+        it('leaves the spend to the renderer without a monthly limit', () => {
+            expect(render(widget, colored, { usageData: { extraUsageEnabled: true, extraUsageUsed: 10000 } })).toBe('$100.00');
+            expect(render(widget, colored, used(10000, 0))).toBe('$100.00');
         });
 
         // The gradient reaches its end color at the limit unless it's set to end sooner
@@ -201,7 +202,7 @@ describe('ExtraUsageUsedWidget', () => {
             expect(at(3, 50000)).toBe(`${gradientPresetCodeAt('traffic', 1, 'truecolor')}$500.00${FG_RESET}`);
             expect(at(3, 25000, { ...gradient, metadata: { ...gradient.metadata, valueGradientEnd: '50' } })).toBe(`${gradientPresetCodeAt('traffic', 1, 'truecolor')}$250.00${FG_RESET}`);
             expect(at(2, 25000)).toBe(`${gradientPresetCodeAt('traffic', 0.5, 'ansi256')}$250.00${FG_RESET}`);
-            expect(at(1, 25000)).toBe(`${BASE}$250.00${FG_RESET}`);
+            expect(at(1, 25000)).toBe('$250.00');
         });
 
         it('renders plain text when colors are off for the whole status line', () => {
@@ -210,17 +211,30 @@ describe('ExtraUsageUsedWidget', () => {
 
         // The sample is $106.00 of Remaining's $3,894.00 sample plus it
         it('previews its sample in its color', () => {
-            expect(render(widget, { ...colored, rawValue: false }, { isPreview: true })).toBe(`${BASE}Overage Used: ${FG_RESET}${LOW}$106.00${FG_RESET}`);
+            expect(render(widget, { ...colored, rawValue: false }, { isPreview: true })).toBe(`Overage Used: ${LOW}$106.00${FG_RESET}`);
         });
 
-        it('offers value colors, names them on the editor row and keeps their colors', () => {
+        it('offers value colors, names them on the editor row and colors around their runs', () => {
             expect(widget.getCustomKeybinds()).toEqual([{ key: 'v', label: '(v)alue colors', action: 'edit-value-colors' }]);
             expect(widget.renderEditor({ widget: colored, onComplete: () => undefined, onCancel: () => undefined })).toBeTruthy();
             expect(widget.getEditorDisplay(item).modifierText).toBeUndefined();
             expect(widget.getEditorDisplay(colored).modifierText).toBe('(value colors)');
             expect(widget.getEditorDisplay(gradient).modifierText).toBe('(value colors: traffic gradient)');
-            expect(widget.preservesRenderedColors(colored)).toBe(true);
-            expect(widget.preservesRenderedColors(item)).toBe(false);
+            expect(widget.colorsOnlyItsRuns(colored)).toBe(true);
+            expect(widget.colorsOnlyItsRuns(item)).toBe(false);
+        });
+
+        describeValueColorsOnTheLine({
+            item: { ...item, metadata: colored.metadata },
+            context: used(10000),
+            label: 'Overage Used: ',
+            value: '$100.00',
+            valueCode: LOW,
+            fallbacks: [
+                { context: { usageData: { extraUsageEnabled: true, extraUsageUsed: 10000 } }, text: 'Overage Used: $100.00' },
+                { context: { usageData: { extraUsageEnabled: false } }, text: 'Overage Used: n/a' },
+                { context: { usageData: { error: 'timeout' } }, text: '[Timeout]' }
+            ]
         });
     });
 });

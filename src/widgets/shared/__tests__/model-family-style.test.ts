@@ -17,13 +17,12 @@ import {
 
 const base: WidgetItem = { id: 'm', type: 'model' };
 const ORANGE = '\x1b[38;2;255;136;0m';
-const BASE = '\x1b[38;2;17;34;51m';
 const FG_RESET = '\x1b[39m';
 
 // Family colors on, Opus set to a custom orange so the escape codes don't
 // depend on the terminal's color support (named colors go through chalk)
 const orangeOpus: WidgetItem = { ...base, metadata: { 'familyColors': 'true', 'familyColor.opus': 'hex:ff8800' } };
-const options = { colorLevel: 'truecolor', colorsDisabled: false, baseColor: 'hex:112233' } as const;
+const options = { colorLevel: 'truecolor', colorsDisabled: false } as const;
 
 describe('getModelFamily', () => {
     it.each([
@@ -74,21 +73,17 @@ describe('formatModelName', () => {
         expect(formatModelName({ ...base, rawValue: true }, 'Opus 5.5', 'opus', options)).toBe('Opus 5.5');
     });
 
-    it('colors the name by family and keeps the label in the widget color', () => {
-        expect(formatModelName(orangeOpus, 'Opus 5.5', 'opus', options)).toBe(`${BASE}Model: ${FG_RESET}${ORANGE}Opus 5.5${FG_RESET}`);
+    // The renderer colors the rest with the widget color (Widget.colorsOnlyItsRuns)
+    it('colors the name by family, and leaves the label uncolored', () => {
+        expect(formatModelName(orangeOpus, 'Opus 5.5', 'opus', options)).toBe(`Model: ${ORANGE}Opus 5.5${FG_RESET}`);
         expect(formatModelName({ ...orangeOpus, rawValue: true }, 'Opus 5.5', 'opus', options)).toBe(`${ORANGE}Opus 5.5${FG_RESET}`);
     });
 
-    it('keeps the widget color for a model of no known family', () => {
-        expect(formatModelName({ ...orangeOpus, rawValue: true }, 'GPT-5', null, options)).toBe(`${BASE}GPT-5${FG_RESET}`);
+    it('leaves a model of no known family uncolored', () => {
+        expect(formatModelName(orangeOpus, 'GPT-5', null, options)).toBe('Model: GPT-5');
     });
 
     it('renders plain text when colors are off for the whole status line', () => {
         expect(formatModelName(orangeOpus, 'Opus 5.5', 'opus', { ...options, colorsDisabled: true })).toBe('Model: Opus 5.5');
-    });
-
-    // The color menu's "Default" stores an empty color: no code at all
-    it('leaves the label unpainted when the widget has no color', () => {
-        expect(formatModelName(orangeOpus, 'Opus 5.5', 'opus', { ...options, baseColor: '' })).toBe(`Model: ${ORANGE}Opus 5.5${FG_RESET}`);
     });
 });

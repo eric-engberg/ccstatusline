@@ -8,6 +8,7 @@ import {
     applySkinTone,
     cycleSkinTone,
     formatSkinToneName,
+    getSkinTone,
     stripSkinTone
 } from '../skin-tone';
 
@@ -36,6 +37,12 @@ describe('skin tone', () => {
         expect(stripSkinTone('👍🏾')).toBe('👍');
         expect(stripSkinTone('🧑🏿‍🤝‍🧑🏿')).toBe('🧑‍🤝‍🧑');
         expect(stripSkinTone('🤡')).toBe('🤡');
+    });
+
+    it('reads the tone an emoji is in', () => {
+        expect(getSkinTone('👍🏾')).toBe('medium-dark');
+        expect(getSkinTone('🧑🏻‍🤝‍🧑🏻')).toBe('light');
+        expect(getSkinTone('👍')).toBeUndefined();
     });
 
     // Unicode's own names for the toned versions

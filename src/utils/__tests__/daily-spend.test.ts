@@ -61,6 +61,13 @@ function seen(day: string, baselineUsed: number, lastSeenUsed: number, lastSeenA
     return { day, baselineUsed, lastSeenDay: day, lastSeenUsed, lastSeenAt };
 }
 
+// One render with the system clock at `clock`, of a total fetched then unless
+// the usage cache replays an earlier fetch.
+function renderAt(deps: DailyStateDeps, clock: string, used: number, fetchedAtMs = Date.parse(clock)): number | undefined {
+    deps.now = () => Date.parse(clock);
+    return observeExtraUsageSpend('work', used, fetchedAtMs, deps);
+}
+
 describe('advanceSpendRecord', () => {
     it('starts today at the first value seen when there is no earlier record', () => {
         const record = advanceSpendRecord(undefined, 12345, NOW);
@@ -177,5 +184,60 @@ describe('observeExtraUsageSpend', () => {
         expect(observeExtraUsageSpend('work', 99000, lastFetchOfMonth, deps)).toBeUndefined();
         // The first fresh fetch of the month.
         expect(observeExtraUsageSpend('work', 150, Date.parse('2026-11-01T00:01:00Z'), deps)).toBe(150);
+    });
+
+    // A render whose system clock runs a day ahead stores a record seen at a
+    // time that hasn't come yet. Once the clock is put right, that record must
+    // neither hide today's spend nor become the next day's starting point.
+    it('starts afresh after a render whose clock ran ahead', () => {
+        const deps = makeDeps(null);
+
+        expect(renderAt(deps, '2026-10-07T09:00:00Z', 1000)).toBe(0);
+        expect(renderAt(deps, '2026-10-08T09:00:00Z', 1500)).toBe(500);
+        // The clock is put right.
+        expect(renderAt(deps, '2026-10-07T12:05:00Z', 2500)).toBe(0);
+        expect(renderAt(deps, '2026-10-07T20:00:00Z', 4000)).toBe(1500);
+        expect(renderAt(deps, '2026-10-08T13:00:00Z', 5000)).toBe(1000);
+    });
+
+    // The usage cache that render wrote is stamped by the same clock, and is
+    // replayed at that time until the clock catches up with it.
+    it('records nothing fetched later than now', () => {
+        const deps = makeDeps(null);
+        const fetchedAhead = Date.parse('2026-10-08T09:00:00Z');
+
+        expect(renderAt(deps, '2026-10-07T09:00:00Z', 1000)).toBe(0);
+        expect(renderAt(deps, '2026-10-08T09:00:00Z', 1500)).toBe(500);
+        // The clock is put right.
+        expect(renderAt(deps, '2026-10-07T12:05:00Z', 1500, fetchedAhead)).toBeUndefined();
+        expect(renderAt(deps, '2026-10-07T20:00:00Z', 1500, fetchedAhead)).toBeUndefined();
+        expect(renderAt(deps, '2026-10-08T09:05:00Z', 4500)).toBe(0);
+        expect(renderAt(deps, '2026-10-08T13:00:00Z', 5000)).toBe(500);
+    });
+
+    // A small step back, such as an NTP correction just after a fetch was
+    // recorded, isn't a clock that ran ahead: the day keeps its starting point.
+    it('keeps a record a few seconds ahead of now', () => {
+        const stored = seen('2026-10-05', 9000, 12800, NOW + 5000);
+        const deps = makeDeps({ version: 1, spend: { work: stored } });
+
+        expect(observeExtraUsageSpend('work', 12700, NOW, deps)).toBe(3800);
+        expect(readDailyState(deps).spend.work).toEqual(stored);
+    });
+
+    // Another render can store a newer fetch while this one is held up on its
+    // way to the state file (say the machine slept); that record is not from
+    // the future.
+    it('keeps a newer fetch another render stored after this one began', () => {
+        const newer = seen('2026-10-05', 9000, 12800, NOW + 2 * 60 * 1000);
+        const deps = makeDeps({ version: 1, spend: { work: newer } });
+        const { readFileSync } = deps;
+        deps.readFileSync = (p: string) => {
+            deps.now = () => NOW + 3 * 60 * 1000;
+            return readFileSync(p);
+        };
+
+        expect(observeExtraUsageSpend('work', 12500, NOW - 60 * 1000, deps)).toBe(3800);
+        expect(readDailyState(deps).spend.work).toEqual(newer);
     });
 });

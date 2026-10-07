@@ -6,10 +6,7 @@ import type { Settings } from '../../types/Settings';
 import type { WidgetItem } from '../../types/Widget';
 import { getColorAnsiCode } from '../../utils/colors';
 
-import {
-    paintCode,
-    paintForeground
-} from './foreground';
+import { paintCode } from './foreground';
 import {
     BAR_GRADIENT_PRESETS,
     gradientPresetCodeAt,
@@ -271,23 +268,21 @@ export function getValueColorCode(item: WidgetItem, measure: number, scale: Valu
 export interface ValueFormatOptions {
     colorLevel: ColorLevelString;
     colorsDisabled: boolean;
-    // The color the renderer would have used for the whole widget; it still
-    // owns the label and values with nothing to compare them to
-    baseColor: string;
 }
 
-export function getValueFormatOptions(settings: Settings, baseColor: string): ValueFormatOptions {
+export function getValueFormatOptions(settings: Settings): ValueFormatOptions {
     return {
         colorLevel: getColorLevelString(settings.colorLevel),
-        colorsDisabled: settings.colorLevel === 0,
-        baseColor
+        colorsDisabled: settings.colorLevel === 0
     };
 }
 
 /**
- * The value colored by its measure on the scale; a null measure keeps the
- * widget color. With the whole widget colored, the label and any suffix after
- * the value take the value's color too; otherwise they stay in the widget color.
+ * The value colored by its measure on the scale, and the label and any suffix
+ * after the value with it when the whole widget is colored. Only that run is
+ * painted, ending with the default-foreground code; the renderer colors the
+ * rest, and a value with a null measure (or no color at 16 colors), with the
+ * widget color (Widget.colorsOnlyItsRuns).
  */
 export function formatColoredValue(
     item: WidgetItem,
@@ -303,11 +298,9 @@ export function formatColoredValue(
         return `${shownLabel}${value}${suffix}`;
     }
 
-    const valueCode = (measure === null ? null : getValueColorCode(item, measure, scale, options.colorLevel))
-        ?? getColorAnsiCode(options.baseColor, options.colorLevel);
+    const valueCode = (measure === null ? null : getValueColorCode(item, measure, scale, options.colorLevel)) ?? '';
     if (getValueColorScope(item) === 'widget') {
         return paintCode(`${shownLabel}${value}${suffix}`, valueCode);
     }
-    const paintBase = (text: string) => paintForeground(text, options.baseColor, options.colorLevel);
-    return `${paintBase(shownLabel)}${paintCode(value, valueCode)}${paintBase(suffix)}`;
+    return `${shownLabel}${paintCode(value, valueCode)}${suffix}`;
 }

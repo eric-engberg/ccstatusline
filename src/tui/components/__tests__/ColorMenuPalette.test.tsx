@@ -1,8 +1,11 @@
+import chalk from 'chalk';
 import { render } from 'ink';
 import { PassThrough } from 'node:stream';
 import React from 'react';
 import stripAnsi from 'strip-ansi';
 import {
+    afterEach,
+    beforeEach,
     describe,
     expect,
     it,
@@ -14,6 +17,7 @@ import {
     type Settings
 } from '../../../types/Settings';
 import type { WidgetItem } from '../../../types/Widget';
+import { updateColorMap } from '../../../utils/colors';
 import { ColorMenu } from '../ColorMenu';
 
 class MockTtyStream extends PassThrough {
@@ -71,6 +75,7 @@ const ESC = '\x1b';
 const ENTER = '\r';
 const DOWN = '\x1b[B';
 const RIGHT = '\x1b[C';
+const LEFT = '\x1b[D';
 const PICKER_TITLE = 'Select ANSI 256 Color';
 
 function renderMenu(widgets: WidgetItem[], settings: Partial<Settings> = {}, columns = 160) {
@@ -151,6 +156,19 @@ function renderMenu(widgets: WidgetItem[], settings: Partial<Settings> = {}, col
 const orangeModel: WidgetItem = { id: '1', type: 'model', color: 'ansi256:208' };
 
 describe('ColorMenu 256-color grid', () => {
+    // Named colors resolve through chalk, which tests run with colors off
+    const originalLevel = chalk.level;
+
+    beforeEach(() => {
+        chalk.level = 3;
+        updateColorMap();
+    });
+
+    afterEach(() => {
+        chalk.level = originalLevel;
+        updateColorMap();
+    });
+
     it('opens with (a) at 256 colors and at truecolor, on the current color', async () => {
         for (const colorLevel of [2, 3] as const) {
             const menu = renderMenu([orangeModel], { colorLevel });
@@ -187,22 +205,65 @@ describe('ColorMenu 256-color grid', () => {
     });
 
     it('leaves the settings untouched when opened on a palette color', async () => {
+        const widgets: WidgetItem[] = [
+            // The model's default color, cyan
+            { id: '1', type: 'model' },
+            { id: '1', type: 'model', color: 'red' },
+            { id: '1', type: 'model', color: 'ansi256:1' },
+            { id: '1', type: 'model', color: 'hex:FF8800' }
+        ];
+        for (const colorLevel of [2, 3] as const) {
+            for (const widget of widgets) {
+                const menu = renderMenu([widget], { colorLevel });
+                try {
+                    await menu.press('a', ENTER);
+                    expect(menu.lastUpdate() ?? [widget]).toEqual([widget]);
+                } finally {
+                    menu.cleanup();
+                }
+            }
+        }
+    });
+
+    it('starts a named color on the palette color it is drawn with', async () => {
         const defaultColored: WidgetItem = { id: '1', type: 'model' };
-        const menu = renderMenu([defaultColored]);
+        const green: WidgetItem = { id: '1', type: 'model', color: 'green' };
+        const starts: [WidgetItem, 2 | 3, string][] = [
+            // The model's default cyan is palette color 30 at 256 colors
+            [defaultColored, 2, 'ANSI 30  #008787'],
+            [green, 2, 'ANSI 70  #5FAF00'],
+            // At truecolor green is #4E9A06, nearest to palette color 64
+            [green, 3, 'ANSI 64  #5F8700']
+        ];
+        for (const [widget, colorLevel, label] of starts) {
+            const menu = renderMenu([widget], { colorLevel });
+            try {
+                await menu.press('a');
+                expect(menu.latestScreen()).toContain(label);
+            } finally {
+                menu.cleanup();
+            }
+        }
+    });
+
+    it('saves a basic color as the palette color its swatch shows', async () => {
+        const menu = renderMenu([orangeModel]);
         try {
-            await menu.press('a');
-            expect(menu.latestScreen()).toContain('ANSI 6  Cyan');
-            expect(menu.lastUpdate() ?? [defaultColored]).toEqual([defaultColored]);
+            await menu.press('a', '1');
+            expect(menu.latestScreen()).toContain('ANSI 1  Red');
+            expect(menu.lastUpdate()?.[0]?.color).toBe('ansi256:1');
         } finally {
             menu.cleanup();
         }
     });
 
-    it('starts a hex color on the nearest palette color, and previews it', async () => {
+    it('starts a hex color on the nearest palette color, applying it once the cursor moves', async () => {
         const menu = renderMenu([{ id: '1', type: 'model', color: 'hex:FF8800' }], { colorLevel: 3 });
         try {
             await menu.press('a');
             expect(menu.latestScreen()).toContain('ANSI 208  #FF8700');
+            expect(menu.lastUpdate()).toBeUndefined();
+            await menu.press(RIGHT, LEFT);
             expect(menu.lastUpdate()?.[0]?.color).toBe('ansi256:208');
         } finally {
             menu.cleanup();
@@ -255,12 +316,12 @@ describe('ColorMenu 256-color grid', () => {
         }
     });
 
-    it('sets the background in background mode, keeping basic colors as named colors', async () => {
+    it('sets the background in background mode, saving basic colors as ansi256 values', async () => {
         const widget: WidgetItem = { id: '1', type: 'model', color: 'cyan', backgroundColor: 'bgRed' };
         const menu = renderMenu([widget]);
         try {
-            await menu.press('f', 'a', RIGHT);
-            expect(menu.lastUpdate()?.[0]).toEqual({ ...widget, backgroundColor: 'bgGreen' });
+            await menu.press('f', 'a', '2');
+            expect(menu.lastUpdate()?.[0]).toEqual({ ...widget, backgroundColor: 'ansi256:2' });
         } finally {
             menu.cleanup();
         }

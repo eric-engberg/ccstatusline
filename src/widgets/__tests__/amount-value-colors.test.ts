@@ -18,7 +18,6 @@ import { renderWidgetEditor } from '../shared/__tests__/helpers/widget-editor-ha
 const LOW = '\x1b[38;2;0;255;0m';
 const MID = '\x1b[38;2;255;255;0m';
 const HIGH = '\x1b[38;2;255;0;0m';
-const BASE = '\x1b[38;2;17;34;51m';
 const FG_RESET = '\x1b[39m';
 // Custom colors, so the escape codes don't depend on the terminal's color support
 const colored = (type: string, metadata: Record<string, string> = {}): WidgetItem => ({
@@ -33,7 +32,7 @@ const colored = (type: string, metadata: Record<string, string> = {}): WidgetIte
         ...metadata
     }
 });
-const labeled = (label: string, code: string, value: string) => `${BASE}${label}${FG_RESET}${code}${value}${FG_RESET}`;
+const labeled = (label: string, code: string, value: string) => `${label}${code}${value}${FG_RESET}`;
 
 async function renderEditorOutput(type: string, action = 'edit-value-colors'): Promise<string> {
     const widget = getWidget(type);
@@ -176,7 +175,7 @@ describe('compaction-counter value colors', () => {
     const compactions = (count: number, tokensReclaimed = 0): RenderContext => ({ compactionData: { ...ZERO_COMPACTION_STATS, count, byTrigger: { auto: count, manual: 0, unknown: 0 }, tokensReclaimed } });
     const render = (item: WidgetItem, context: RenderContext) => widget?.render(item, context, DEFAULT_SETTINGS);
 
-    it('colors the count green at 0, yellow from 1 and red from 3, with the icon in the widget color', () => {
+    it('colors the count green at 0, yellow from 1 and red from 3, and not the icon', () => {
         const item = colored('compaction-counter');
 
         expect(render(item, compactions(0))).toBe(labeled('↻ ', LOW, '0'));
@@ -184,12 +183,12 @@ describe('compaction-counter value colors', () => {
         expect(render(item, compactions(3))).toBe(labeled('↻ ', HIGH, '3'));
     });
 
-    it('keeps the label and the trigger split and reclaimed tokens in the widget color', () => {
+    it('colors neither the label nor the trigger split and reclaimed tokens', () => {
         const textItem = colored('compaction-counter', { format: 'text-and-number' });
         const splitItem = colored('compaction-counter', { showTriggers: 'true', showReclaimed: 'true' });
 
         expect(render(textItem, compactions(2))).toBe(labeled('Compactions: ', MID, '2'));
-        expect(render(splitItem, compactions(2, 120000))).toBe(`${labeled('↻ ', MID, '2')}${BASE} (2 auto) ↓120.0k${FG_RESET}`);
+        expect(render(splitItem, compactions(2, 120000))).toBe(`${labeled('↻ ', MID, '2')} (2 auto) ↓120.0k`);
     });
 
     it('colors the label and the trigger split with the count when set to the whole widget', () => {

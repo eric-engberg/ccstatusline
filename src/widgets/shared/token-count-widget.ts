@@ -85,7 +85,7 @@ export abstract class TokenCountWidget implements Widget {
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
         const format = resolveNumberFormat('token', item, settings);
-        const formatOptions = getValueFormatOptions(settings, item.color ?? this.getDefaultColor());
+        const formatOptions = getValueFormatOptions(settings);
         if (context.isPreview) {
             return formatColoredValue(item, this.getLabelPrefix(), formatTokens(this.previewTokens, format), this.previewTokens, this.valueColorScale, formatOptions);
         }

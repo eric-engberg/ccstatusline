@@ -75,7 +75,7 @@ export class CacheHitRateWidget implements Widget {
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
         const format = resolveNumberFormat('percent', item, settings);
-        const formatOptions = getValueFormatOptions(settings, item.color ?? DEFAULT_COLOR);
+        const formatOptions = getValueFormatOptions(settings);
         if (context.isPreview) {
             return formatColoredValue(item, this.getLabelPrefix(), formatPercent(87, format), 87, HIT_RATE_SCALE, formatOptions);
         }
@@ -106,9 +106,9 @@ export class CacheHitRateWidget implements Widget {
         return renderValueColorsEditor(props, VALUE_COLORS_EDITOR);
     }
 
-    // Value colors embed their own foreground codes, so the renderer must
-    // leave this widget's foreground alone while they're on
-    preservesRenderedColors(item: WidgetItem): boolean {
+    // Value colors paint only the value (or the whole text), so the renderer
+    // colors the rest with the theme or widget color
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
         return isValueColorsEnabled(item);
     }
 

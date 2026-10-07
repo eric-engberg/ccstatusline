@@ -20,7 +20,6 @@ import {
 
 const base: WidgetItem = { id: 'e', type: 'thinking-effort' };
 const ORANGE = '\x1b[38;5;208m';
-const BASE = '\x1b[38;2;17;34;51m';
 const FG_RESET = '\x1b[39m';
 
 function withMetadata(metadata: Record<string, string>, overrides: Partial<WidgetItem> = {}): WidgetItem {
@@ -100,7 +99,7 @@ describe('level colors', () => {
 
 describe('formatThinkingEffort', () => {
     const xhigh = { text: 'xhigh', level: 'xhigh' } as const;
-    const plain = { colorLevel: 'ansi256', colorsDisabled: false, baseColor: 'hex:112233' } as const;
+    const plain = { colorLevel: 'ansi256', colorsDisabled: false } as const;
 
     it('renders the label, or just the value in raw mode, when nothing is customized', () => {
         expect(formatThinkingEffort(base, xhigh, plain)).toBe('Thinking: xhigh');
@@ -113,26 +112,25 @@ describe('formatThinkingEffort', () => {
         expect(formatThinkingEffort(withMetadata({ brackets: '[]' }), xhigh, plain)).toBe('[Thinking: xhigh]');
     });
 
-    it('colors the value and matching brackets by level, and the label with the widget color', () => {
+    // The renderer colors the rest with the widget color (Widget.colorsOnlyItsRuns)
+    it('colors the value and matching brackets by level, and leaves the label uncolored', () => {
         const item = withMetadata({ brackets: '()', levelColors: 'true' });
 
         expect(formatThinkingEffort(item, xhigh, plain)).toBe(
-            `${ORANGE}(${FG_RESET}${BASE}Thinking: ${FG_RESET}${ORANGE}xhigh${FG_RESET}${ORANGE})${FG_RESET}`
+            `${ORANGE}(${FG_RESET}Thinking: ${ORANGE}xhigh${FG_RESET}${ORANGE})${FG_RESET}`
         );
     });
 
-    it('colors brackets with the widget color when asked to', () => {
+    it('leaves brackets uncolored when they take the widget color', () => {
         const item = withMetadata({ brackets: '()', levelColors: 'true', bracketColor: 'widget' }, { rawValue: true });
 
-        expect(formatThinkingEffort(item, xhigh, plain)).toBe(
-            `${BASE}(${FG_RESET}${ORANGE}xhigh${FG_RESET}${BASE})${FG_RESET}`
-        );
+        expect(formatThinkingEffort(item, xhigh, plain)).toBe(`(${ORANGE}xhigh${FG_RESET})`);
     });
 
-    it('uses the widget color for levels it does not know', () => {
-        const item = withMetadata({ levelColors: 'true' }, { rawValue: true });
+    it('leaves levels it does not know uncolored', () => {
+        const item = withMetadata({ levelColors: 'true', brackets: '()' }, { rawValue: true });
 
-        expect(formatThinkingEffort(item, { text: 'super-max?', level: null }, plain)).toBe(`${BASE}super-max?${FG_RESET}`);
+        expect(formatThinkingEffort(item, { text: 'super-max?', level: null }, plain)).toBe('(super-max?)');
     });
 
     it('emits plain text when colors are disabled', () => {

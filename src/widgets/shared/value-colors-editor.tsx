@@ -9,7 +9,6 @@ import type {
 
 import {
     ColorListEditor,
-    EDITOR_COLOR_LEVEL,
     type ColorListEditorConfig
 } from './color-list-editor';
 import {
@@ -22,7 +21,6 @@ import {
     getScaleUnit,
     getValueColorMode,
     getValueColorScope,
-    getValueFormatOptions,
     getValueGradient,
     isValueColorsEnabled,
     resetValueColors,
@@ -36,8 +34,7 @@ import {
     typeGradientEnd,
     type BreakPoint,
     type ValueBand,
-    type ValueColorScale,
-    type ValueFormatOptions
+    type ValueColorScale
 } from './value-coloring';
 import {
     floorToUnit,
@@ -75,6 +72,11 @@ export interface ValueColorsEditorOptions {
     maxPercent?: number;
     /** The widget's default label, for the sample while the whole widget is colored. */
     label?: string;
+    /**
+     * The widget shows what's left of 100%, while its colors follow the share
+     * used, so the sample shows what's left in the color of what's used.
+     */
+    showsRemaining?: boolean;
 }
 
 // Values on both sides of each break point, or along the gradient and past its
@@ -107,7 +109,7 @@ function getGradientNotice(settings: Settings | undefined): string | null {
     }
 }
 
-// Without settings (outside the line editor) the sample is drawn at the default 256 colors
+// Without settings (outside the line editor) there's no color level to warn about
 export function makeValueColorsConfig(options: ValueColorsEditorOptions, settings?: Settings): ColorListEditorConfig<ValueBand, ValueSetting> {
     const { scale } = options;
     const unit = getScaleUnit(scale);
@@ -173,17 +175,17 @@ export function makeValueColorsConfig(options: ValueColorsEditorOptions, setting
             }
         },
         resetColors: resetValueColors,
-        renderSample: (item) => {
-            const baseColor = item.color ?? options.defaultColor;
-            const formatOptions: ValueFormatOptions = settings
-                ? getValueFormatOptions(settings, baseColor)
-                : { colorLevel: EDITOR_COLOR_LEVEL, colorsDisabled: false, baseColor };
+        renderSample: (item, _band, colors) => {
             // With the whole widget colored, each value is shown with its label
             const withLabel = getValueColorScope(item) === 'widget' && Boolean(options.label) && !item.rawValue;
-            const values = getSampleValues(item, options)
-                .map(value => formatColoredValue({ ...item, rawValue: !withLabel }, options.label ?? '', unit.format(value), value, scale, formatOptions));
-            return `${values.join(withLabel ? '  ' : ' ')} ${options.sampleNote}`;
+            const values = getSampleValues(item, options).map((value) => {
+                const shown = options.showsRemaining ? 100 - value : value;
+                return formatColoredValue({ ...item, rawValue: !withLabel }, options.label ?? '', unit.format(shown), value, scale, colors);
+            });
+            return values.join(withLabel ? '  ' : ' ');
         },
+        sampleNote: options.sampleNote,
+        defaultColor: options.defaultColor,
         extraHelp: unit.typeHelp
     };
 }

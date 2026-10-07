@@ -108,7 +108,7 @@ export abstract class ContextPercentageWidgetBase implements Widget {
             return formatRawOrLabeledValue(item, this.getLabelPrefix(item), paintWidgetBar(slider, item, settings, isInverse));
         }
         // Value colors follow the used percent, even while the widget shows what's left
-        const formatOptions = getValueFormatOptions(settings, item.color ?? this.getDefaultColor());
+        const formatOptions = getValueFormatOptions(settings);
         return formatColoredValue(item, this.getLabelPrefix(item), formatPercent(displayPercentage, format), usedPercentage, LIMIT_SCALE, formatOptions);
     }
 
@@ -122,21 +122,24 @@ export abstract class ContextPercentageWidgetBase implements Widget {
         ], item === undefined || showsPlainPercent(item));
     }
 
-    // The level glyph mode's glyph and break point editors, or value colors
+    // The level glyph mode's glyph and break point editors, or value colors,
+    // whose sample shows what's left while the widget does
     renderEditor(props: WidgetEditorProps): React.ReactElement | null {
+        const showsRemaining = isContextInverse(props.widget);
         return renderLevelGlyphEditor(props) ?? renderValueColorsEditor(props, {
             title: `${this.getDisplayName()}: value colors`,
             scale: LIMIT_SCALE,
-            sampleNote: 'used',
+            sampleNote: showsRemaining ? 'left' : 'used',
             defaultColor: this.getDefaultColor(),
             maxPercent: 100,
-            label: this.getLabelPrefix(props.widget)
+            label: this.getLabelPrefix(props.widget),
+            showsRemaining
         });
     }
 
-    // Value colors embed their own foreground codes, so the renderer must
-    // leave this widget's foreground alone while they show
-    preservesRenderedColors(item: WidgetItem): boolean {
+    // Value colors paint only the value (or the whole text), so the renderer
+    // colors the rest with the theme or widget color
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
         return isValueColorsEnabled(item) && showsPlainPercent(item);
     }
 

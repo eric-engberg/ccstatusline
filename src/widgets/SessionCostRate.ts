@@ -85,7 +85,7 @@ export class SessionCostRateWidget implements Widget {
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
         const format = resolveNumberFormat('cost', item, settings);
-        const formatOptions = getValueFormatOptions(settings, item.color ?? DEFAULT_COLOR);
+        const formatOptions = getValueFormatOptions(settings);
         if (context.isPreview) {
             return formatColoredValue(item, LABEL, `${formatCost(PREVIEW_RATE, format)}/hr`, PREVIEW_RATE, COST_RATE_SCALE, formatOptions);
         }

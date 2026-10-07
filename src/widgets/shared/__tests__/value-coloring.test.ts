@@ -49,7 +49,6 @@ const UTILIZATION: ValueColorScale = { midFrom: 70, highFrom: 90, highEdge: 'fro
 const LOW = '\x1b[38;2;0;255;0m';
 const MID = '\x1b[38;2;255;255;0m';
 const HIGH = '\x1b[38;2;255;0;0m';
-const BASE = '\x1b[38;2;17;34;51m';
 const FG_RESET = '\x1b[39m';
 
 // Value colors on with custom band colors, so the escape codes don't depend on
@@ -65,7 +64,7 @@ const colored: WidgetItem = {
 };
 const gradient: WidgetItem = { ...colored, metadata: { ...colored.metadata, valueColorMode: 'gradient' } };
 const wholeWidget: WidgetItem = { ...colored, metadata: { ...colored.metadata, valueColorScope: 'widget' } };
-const options = { colorLevel: 'truecolor', colorsDisabled: false, baseColor: 'hex:112233' } as const;
+const options = { colorLevel: 'truecolor', colorsDisabled: false } as const;
 
 describe('getValueBand', () => {
     it.each([
@@ -260,19 +259,20 @@ describe('formatColoredValue', () => {
         expect(formatColoredValue({ ...base, rawValue: true }, 'Spend Today: ', '$40.00', 40, BUDGET, options)).toBe('$40.00');
     });
 
-    it('colors the value and keeps the label in the widget color', () => {
-        expect(formatColoredValue(colored, 'Spend Today: ', '$90.00', 90, BUDGET, options)).toBe(`${BASE}Spend Today: ${FG_RESET}${MID}$90.00${FG_RESET}`);
+    // The renderer colors the rest with the widget color (Widget.colorsOnlyItsRuns)
+    it('colors the value, and leaves the label uncolored', () => {
+        expect(formatColoredValue(colored, 'Spend Today: ', '$90.00', 90, BUDGET, options)).toBe(`Spend Today: ${MID}$90.00${FG_RESET}`);
         expect(formatColoredValue({ ...colored, rawValue: true }, 'Spend Today: ', '$90.00', 90, BUDGET, options)).toBe(`${MID}$90.00${FG_RESET}`);
     });
 
     // The label editor's override replaces the widget's own label
-    it('draws an edited label, or none, in the widget color', () => {
-        expect(formatColoredValue({ ...colored, metadata: { ...colored.metadata, label: 'x ' } }, 'Spend Today: ', '$90.00', 90, BUDGET, options)).toBe(`${BASE}x ${FG_RESET}${MID}$90.00${FG_RESET}`);
+    it('draws an edited label, or none, uncolored', () => {
+        expect(formatColoredValue({ ...colored, metadata: { ...colored.metadata, label: 'x ' } }, 'Spend Today: ', '$90.00', 90, BUDGET, options)).toBe(`x ${MID}$90.00${FG_RESET}`);
         expect(formatColoredValue({ ...colored, metadata: { ...colored.metadata, label: '' } }, 'Spend Today: ', '$90.00', 90, BUDGET, options)).toBe(`${MID}$90.00${FG_RESET}`);
     });
 
-    it('keeps the widget color for a value with nothing to compare it to', () => {
-        expect(formatColoredValue({ ...colored, rawValue: true }, 'Spend Today: ', '$90.00', null, BUDGET, options)).toBe(`${BASE}$90.00${FG_RESET}`);
+    it('leaves a value with nothing to compare it to uncolored', () => {
+        expect(formatColoredValue({ ...colored, rawValue: true }, 'Spend Today: ', '$90.00', null, BUDGET, options)).toBe('$90.00');
     });
 
     it('renders plain text when colors are off for the whole status line', () => {
@@ -285,7 +285,7 @@ describe('formatColoredValue', () => {
         expect(formatColoredValue(wholeWidget, 'Spend Today: ', '$90.00', 90, BUDGET, options)).toBe(`${MID}Spend Today: $90.00${FG_RESET}`);
         expect(formatColoredValue({ ...wholeWidget, metadata: { ...wholeWidget.metadata, label: 'x ' } }, 'Spend Today: ', '$120.00', 120, BUDGET, options)).toBe(`${HIGH}x $120.00${FG_RESET}`);
         expect(formatColoredValue({ ...wholeWidget, rawValue: true }, 'Spend Today: ', '$40.00', 40, BUDGET, options)).toBe(`${LOW}$40.00${FG_RESET}`);
-        expect(formatColoredValue(wholeWidget, 'Spend Today: ', '$90.00', null, BUDGET, options)).toBe(`${BASE}Spend Today: $90.00${FG_RESET}`);
+        expect(formatColoredValue(wholeWidget, 'Spend Today: ', '$90.00', null, BUDGET, options)).toBe('Spend Today: $90.00');
     });
 
     it('colors the label at the value\'s point on the gradient', () => {
@@ -296,8 +296,8 @@ describe('formatColoredValue', () => {
     });
 
     // Compaction Counter's trigger split, after the count
-    it('keeps a suffix in the widget color too', () => {
-        expect(formatColoredValue(colored, '↻ ', '2', 90, BUDGET, options, ' (2 auto)')).toBe(`${BASE}↻ ${FG_RESET}${MID}2${FG_RESET}${BASE} (2 auto)${FG_RESET}`);
+    it('leaves a suffix uncolored too', () => {
+        expect(formatColoredValue(colored, '↻ ', '2', 90, BUDGET, options, ' (2 auto)')).toBe(`↻ ${MID}2${FG_RESET} (2 auto)`);
         expect(formatColoredValue(base, '↻ ', '2', 90, BUDGET, options, ' (2 auto)')).toBe('↻ 2 (2 auto)');
     });
 });
