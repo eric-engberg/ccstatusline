@@ -73,7 +73,7 @@ function formatUsedPercent(item: WidgetItem, label: string, usedPercent: number,
         return formatRawOrLabeledValue(item, label, bar);
     }
 
-    const formatOptions = getValueFormatOptions(settings, item.color ?? DEFAULT_COLOR);
+    const formatOptions = getValueFormatOptions(settings);
     return formatColoredValue(item, label, formatPercent(renderedPercent, format), usedPercent, LIMIT_SCALE, formatOptions);
 }
 
@@ -147,9 +147,9 @@ export class ExtraUsageUtilizationWidget implements Widget {
         return renderValueColorsEditor(props, VALUE_COLORS_EDITOR);
     }
 
-    // Value colors embed their own foreground codes, so the renderer must
-    // leave this widget's foreground alone while they show
-    preservesRenderedColors(item: WidgetItem): boolean {
+    // Value colors paint only the value (or the whole text), so the renderer
+    // colors the rest with the theme or widget color
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
         return showsValueColors(item);
     }
 

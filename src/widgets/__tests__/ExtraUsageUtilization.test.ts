@@ -15,6 +15,8 @@ import { ExtraUsageUtilizationWidget } from '../ExtraUsageUtilization';
 import { renderWidgetEditor } from '../shared/__tests__/helpers/widget-editor-harness';
 import { gradientPresetCodeAt } from '../shared/gradient-bar';
 
+import { describeValueColorsOnTheLine } from './helpers/value-colors-line';
+
 let mockGetUsageErrorMessage: { mockReturnValue: (value: string) => void };
 
 function render(widget: ExtraUsageUtilizationWidget, item: WidgetItem, context: RenderContext = {}): string | null {
@@ -201,7 +203,6 @@ describe('ExtraUsageUtilizationWidget', () => {
         const LOW = '\x1b[38;2;0;255;0m';
         const MID = '\x1b[38;2;255;255;0m';
         const HIGH = '\x1b[38;2;255;0;0m';
-        const BASE = '\x1b[38;2;17;34;51m';
         const FG_RESET = '\x1b[39m';
         // Custom colors, so the escape codes don't depend on the terminal's
         // color support (named colors go through chalk)
@@ -228,8 +229,8 @@ describe('ExtraUsageUtilizationWidget', () => {
             expect(render(widget, raw, used(90))).toBe(`${HIGH}90.0%${FG_RESET}`);
         });
 
-        it('keeps the label in the widget color', () => {
-            expect(render(new ExtraUsageUtilizationWidget(), colored, used(25))).toBe(`${BASE}Overage: ${FG_RESET}${LOW}25.0%${FG_RESET}`);
+        it('colors only the percent, leaving the label to the renderer', () => {
+            expect(render(new ExtraUsageUtilizationWidget(), colored, used(25))).toBe(`Overage: ${LOW}25.0%${FG_RESET}`);
         });
 
         it('colors the label with the percent when set to the whole widget', async () => {
@@ -261,7 +262,7 @@ describe('ExtraUsageUtilizationWidget', () => {
 
             expect(widget.render(item, used(50), { ...DEFAULT_SETTINGS, colorLevel: 3 })).toBe(`${gradientPresetCodeAt('traffic', 0.5, 'truecolor')}50.0%${FG_RESET}`);
             expect(widget.render(item, used(50), { ...DEFAULT_SETTINGS, colorLevel: 2 })).toBe(`${gradientPresetCodeAt('traffic', 0.5, 'ansi256')}50.0%${FG_RESET}`);
-            expect(widget.render(item, used(50), { ...DEFAULT_SETTINGS, colorLevel: 1 })).toBe(`${BASE}50.0%${FG_RESET}`);
+            expect(widget.render(item, used(50), { ...DEFAULT_SETTINGS, colorLevel: 1 })).toBe('50.0%');
         });
 
         it('renders plain text when colors are off for the whole status line', () => {
@@ -273,7 +274,7 @@ describe('ExtraUsageUtilizationWidget', () => {
             const item = { ...colored, metadata: { ...colored.metadata, display: 'progress-short' } };
 
             expect(render(widget, item, used(25))).toBe('Overage: [████░░░░░░░░░░░░] 25.0%');
-            expect(widget.preservesRenderedColors(item)).toBe(false);
+            expect(widget.colorsOnlyItsRuns(item)).toBe(false);
             expect(widget.getCustomKeybinds(item).map(keybind => keybind.key)).not.toContain('v');
             expect(widget.getEditorDisplay(item).modifierText).toBe('(block bar, medium, used)');
         });
@@ -281,8 +282,8 @@ describe('ExtraUsageUtilizationWidget', () => {
         it('previews 85% in its color', () => {
             const widget = new ExtraUsageUtilizationWidget();
 
-            expect(render(widget, colored, { isPreview: true })).toBe(`${BASE}Overage: ${FG_RESET}${MID}85.0%${FG_RESET}`);
-            expect(render(widget, { ...colored, metadata: { ...colored.metadata, invert: 'true' } }, { isPreview: true })).toBe(`${BASE}Overage: ${FG_RESET}${MID}15.0%${FG_RESET}`);
+            expect(render(widget, colored, { isPreview: true })).toBe(`Overage: ${MID}85.0%${FG_RESET}`);
+            expect(render(widget, { ...colored, metadata: { ...colored.metadata, invert: 'true' } }, { isPreview: true })).toBe(`Overage: ${MID}15.0%${FG_RESET}`);
         });
 
         it('names the option on the editor row and opens its editor with v', () => {
@@ -294,13 +295,23 @@ describe('ExtraUsageUtilizationWidget', () => {
             expect(widget.renderEditor({ widget: colored, onComplete: () => undefined, onCancel: () => undefined })).toBeTruthy();
         });
 
-        // Value colors embed their own foreground codes, so the renderer has
-        // to leave this widget's foreground alone
-        it('keeps its own colors only while value colors are on', () => {
+        it('asks the renderer to color around its value only while value colors are on', () => {
             const widget = new ExtraUsageUtilizationWidget();
 
-            expect(widget.preservesRenderedColors(colored)).toBe(true);
-            expect(widget.preservesRenderedColors({ id: 'extra', type: 'extra-usage-utilization' })).toBe(false);
+            expect(widget.colorsOnlyItsRuns(colored)).toBe(true);
+            expect(widget.colorsOnlyItsRuns({ id: 'extra', type: 'extra-usage-utilization' })).toBe(false);
+        });
+
+        describeValueColorsOnTheLine({
+            item: { id: 'extra', type: 'extra-usage-utilization', metadata: colored.metadata },
+            context: used(25),
+            label: 'Overage: ',
+            value: '25.0%',
+            valueCode: LOW,
+            fallbacks: [
+                { context: { usageData: { extraUsageEnabled: false } }, text: 'Overage: n/a' },
+                { context: { usageData: { error: 'timeout' } }, text: '[Timeout]' }
+            ]
         });
     });
 });

@@ -156,11 +156,10 @@ export function makeValueColorsConfig(options: ValueColorsEditorOptions, setting
         },
         resetColors: resetValueColors,
         renderSample: (item, _band, colors) => {
-            const formatOptions = { ...colors, baseColor: item.color ?? options.defaultColor };
             // With the whole widget colored, each value is shown with its label
             const withLabel = getValueColorScope(item) === 'widget' && options.label !== undefined && !item.rawValue;
             const values = getSamplePercents(item, options)
-                .map(percent => formatColoredValue({ ...item, rawValue: !withLabel }, options.label ?? '', `${percent}%`, percent, scale, formatOptions));
+                .map(percent => formatColoredValue({ ...item, rawValue: !withLabel }, options.label ?? '', `${percent}%`, percent, scale, colors));
             return values.join(withLabel ? '  ' : ' ');
         },
         sampleNote: options.sampleNote,
