@@ -174,6 +174,7 @@ export function getUsagePercentWidgetEditorDisplay(kind: UsagePercentWidgetKind,
     return {
         displayText: getUsagePercentWidgetDisplayName(kind),
         modifierText: getUsageDisplayModifierText(item, {
+            includeGlyph: true,
             showUsageDirection: true,
             extraModifiers: [showsPlainUsageValue(item) ? getValueColorsModifier(item) : null].filter((modifier): modifier is string => modifier !== null)
         })

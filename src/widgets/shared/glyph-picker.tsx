@@ -22,6 +22,7 @@ import {
     applySkinTone,
     cycleSkinTone,
     formatSkinToneName,
+    getSkinTone,
     getSkinToneModifier,
     stripSkinTone
 } from './skin-tone';
@@ -92,9 +93,10 @@ function getVisibleRowRange(rowCount: number, selectedRow: number): { start: num
 const GlyphGrid: React.FC<GlyphPickerProps & { catalog: GlyphCatalog }> = ({ catalog, initialGlyph, onPick, onCancel }) => {
     const [position, setPosition] = useState(() => findGlyph(catalog, initialGlyph));
     const [query, setQuery] = useState('');
-    // The settings' tone; the picker keeps its own copy so Ctrl+T works without a provider
+    // The settings' tone; the picker keeps its own copy so Ctrl+T works without a provider.
+    // A toned glyph opens in its own tone instead, so Enter keeps it; only Ctrl+T saves a tone.
     const skinToneSetting = useContext(SkinToneContext);
-    const [tone, setTone] = useState(skinToneSetting.tone);
+    const [tone, setTone] = useState(() => getSkinTone(initialGlyph) ?? skinToneSetting.tone);
     const results = useMemo(() => catalog.search(query), [catalog, query]);
     const searching = query.length > 0;
     const group = catalog.groups[position.group] ?? catalog.groups[0];

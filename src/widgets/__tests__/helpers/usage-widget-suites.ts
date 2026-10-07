@@ -436,6 +436,18 @@ export function runUsageTimerEditorSuite<TWidget extends UsageWidgetLike & { get
         }
     });
 
+    // Changing a widget's type keeps its metadata, so a percent widget's level
+    // glyph can come along. A timer has no glyph and shows the time, so the
+    // editor reads it as the time too, and (p) goes on to the block bar.
+    it('treats a level glyph carried over from a percent widget as the time', () => {
+        const widget = config.createWidget();
+        const glyphItem: WidgetItem = { ...config.baseItem, metadata: { display: 'glyph', compact: 'true' } };
+
+        expect(widget.getEditorDisplay(glyphItem).modifierText).toBe('(compact)');
+        expect(widget.getCustomKeybinds(glyphItem)).toEqual(config.expectedTimeKeybinds ?? EXPECTED_TIMER_TIME_KEYBINDS);
+        expect(widget.handleEditorAction('toggle-progress', glyphItem)?.metadata).toEqual({ display: 'progress' });
+    });
+
     it('clears compact metadata when cycling into progress mode', () => {
         const widget = config.createWidget();
         const updated = widget.handleEditorAction('toggle-progress', {

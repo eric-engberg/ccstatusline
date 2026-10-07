@@ -372,5 +372,67 @@ describe('glyph picker', () => {
                 editor.cleanup();
             }
         });
+
+        // Opening the picker and pressing Enter keeps the glyph as it was
+        it('opens in a toned glyph\'s own tone, without saving it', async () => {
+            const setTone = vi.fn();
+            const editor = renderWidgetEditor(withTone(undefined, setTone), { ...cwd, character: '👍🏾' });
+
+            try {
+                await editor.ready();
+                const output = await openPicker(editor);
+                expect(output).toContain('Skin tone: 🏾 medium-dark');
+                expect(output).toContain('👍🏾  thumbs up: medium-dark skin tone');
+                await editor.press(ENTER, ENTER);
+                expect(savedWidget(editor)?.character).toBe('👍🏾');
+                expect(setTone).not.toHaveBeenCalled();
+            } finally {
+                editor.cleanup();
+            }
+        });
+
+        it('cycles on from a toned glyph\'s tone with Ctrl+T, and saves it', async () => {
+            const setTone = vi.fn();
+            const editor = renderWidgetEditor(withTone('light', setTone), { ...cwd, character: '👍🏾' });
+
+            try {
+                await editor.ready();
+                await openPicker(editor);
+                await editor.press(CTRL_T);
+                expect(setTone).toHaveBeenLastCalledWith('dark');
+                expect(editor.takeOutput()).toContain('👍🏿  thumbs up: dark skin tone');
+            } finally {
+                editor.cleanup();
+            }
+        });
+
+        // The groups don't hold two-person emoji, so search finds it
+        it('opens in a two-person emoji\'s tone when the groups don\'t have it', async () => {
+            const editor = renderWidgetEditor(withTone('light'), { ...cwd, character: '🧑🏾‍🤝‍🧑🏾' });
+
+            try {
+                await editor.ready();
+                expect(await openPicker(editor)).toContain('Skin tone: 🏾 medium-dark');
+                await type(editor, 'people holding');
+                expect(editor.takeOutput()).toContain('🧑🏾‍🤝‍🧑🏾  people holding hands: medium-dark skin tone');
+                await editor.press(ENTER, ENTER);
+                expect(savedWidget(editor)?.character).toBe('🧑🏾‍🤝‍🧑🏾');
+            } finally {
+                editor.cleanup();
+            }
+        });
+
+        it('opens a glyph without a tone in the saved tone', async () => {
+            const editor = renderWidgetEditor(withTone('dark'), { ...cwd, character: '👍' });
+
+            try {
+                await editor.ready();
+                const output = await openPicker(editor);
+                expect(output).toContain('Skin tone: 🏿 dark');
+                expect(output).toContain('👍🏿  thumbs up: dark skin tone');
+            } finally {
+                editor.cleanup();
+            }
+        });
     });
 });

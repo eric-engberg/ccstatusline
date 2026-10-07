@@ -97,6 +97,7 @@ export class ExtraUsageUtilizationWidget implements Widget {
         return {
             displayText: this.getDisplayName(),
             modifierText: getUsageDisplayModifierText(item, {
+                includeGlyph: true,
                 showUsageDirection: true,
                 extraModifiers: [showsPlainUsageValue(item) ? getValueColorsModifier(item) : null].filter((modifier): modifier is string => modifier !== null)
             })
