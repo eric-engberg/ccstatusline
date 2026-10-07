@@ -79,7 +79,7 @@ describe('bar width', () => {
     it('grows a fill bar to the edge of the line', () => {
         const line = renderLine([text('t', 'model'), contextBar('bar', 'fill')], TERMINAL);
         expect(getVisibleWidth(line)).toBe(LINE);
-        expect(line).not.toContain('…');
+        expect(line).not.toContain('...');
     });
 
     it('gives a percentage bar that share of the line', () => {
@@ -93,7 +93,7 @@ describe('bar width', () => {
         const line = renderLine([contextBar('bar', '50')], 50);
         expect(getVisibleWidth(line)).toBe(44);
         expect(countCells(line)).toBeLessThan(22);
-        expect(line).not.toContain('…');
+        expect(line).not.toContain('...');
     });
 
     it('never shrinks a bar below the minimum', () => {
@@ -132,7 +132,7 @@ describe('bar width', () => {
         expect(getVisibleWidth(withBar)).toBe(LINE);
         // The column above holds "Context: [█████] 100k/200k (50%)" at its minimum
         expect(getVisibleWidth(below)).toBeLessThan(45);
-        expect(below).not.toContain('…');
+        expect(below).not.toContain('...');
     });
 
     // The 50-column widget below pads the bar's column 18 past the bar's minimum
