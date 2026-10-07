@@ -61,6 +61,21 @@ export function getSpentToday(record: SpendDayRecord | undefined, nowMs: number)
     return Math.max(0, record.lastSeenUsed - record.baselineUsed);
 }
 
+// A small step back of the clock, such as an NTP correction, leaves times just
+// ahead of now; those are real and mustn't drop the day's starting point.
+const CLOCK_SKEW_TOLERANCE_MS = 60 * 1000;
+
+// A time further ahead was stamped while the system clock ran ahead. A record
+// last seen then would hide every real fetch until the clock caught up, and
+// then start that day from the day before's figures; a fetch stamped then (the
+// usage cache written then replays at that time) can't be placed on a day.
+// Such a record is dropped, and such a fetch isn't recorded.
+function advanceAsOf(record: SpendDayRecord | undefined, used: number, fetchedAtMs: number, nowMs: number): SpendDayRecord | undefined {
+    const latestTrusted = nowMs + CLOCK_SKEW_TOLERANCE_MS;
+    const trusted = record !== undefined && record.lastSeenAt <= latestTrusted ? record : undefined;
+    return fetchedAtMs > latestTrusted ? trusted : advanceSpendRecord(trusted, used, fetchedAtMs);
+}
+
 function isSameRecord(a: SpendDayRecord, b: SpendDayRecord): boolean {
     return a.day === b.day
         && a.baselineUsed === b.baselineUsed
@@ -77,21 +92,28 @@ function isSameRecord(a: SpendDayRecord, b: SpendDayRecord): boolean {
  * worked out from it.
  */
 export function observeExtraUsageSpend(accountKey: string, used: number, fetchedAtMs: number, deps?: DailyStateDeps): number | undefined {
-    const nowMs = deps ? deps.now() : Date.now();
+    // Read after the state each time, so a fetch another render has just
+    // recorded is never taken for one from the future.
+    const now = () => (deps ? deps.now() : Date.now());
     const result: { record?: SpendDayRecord } = {};
 
     const ran = updateDailyState((state) => {
         const current = state.spend[accountKey];
-        const next = advanceSpendRecord(current, used, fetchedAtMs);
+        const next = advanceAsOf(current, used, fetchedAtMs, now());
         result.record = next;
-        if (current && isSameRecord(current, next)) {
+        if (current === next || (current && next && isSameRecord(current, next))) {
             return null;
         }
-        return { ...state, spend: { ...state.spend, [accountKey]: next } };
+        if (next) {
+            return { ...state, spend: { ...state.spend, [accountKey]: next } };
+        }
+        // The stored record was dropped, and there's nothing to replace it.
+        return { ...state, spend: Object.fromEntries(Object.entries(state.spend).filter(([key]) => key !== accountKey)) };
     }, deps);
 
     if (!ran || !result.record) {
-        result.record = advanceSpendRecord(readDailyState(deps).spend[accountKey], used, fetchedAtMs);
+        const stored = readDailyState(deps).spend[accountKey];
+        result.record = advanceAsOf(stored, used, fetchedAtMs, now());
     }
-    return getSpentToday(result.record, nowMs);
+    return getSpentToday(result.record, now());
 }
