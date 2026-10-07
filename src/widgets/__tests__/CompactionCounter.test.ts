@@ -249,6 +249,18 @@ describe('CompactionCounterWidget', () => {
                 item: { ...ITEM, metadata: { showReclaimed: 'true', symbolReclaimed: '' } }
             })).toBe('↻ 2 887.0k');
         });
+
+        // Minimalist mode renders every widget as a raw value, but this one has
+        // no raw value mode: its icon or label is part of its format
+        it('keeps its icon or label as a raw value, as minimalist mode renders it, with or without value colors', () => {
+            const compactionData = { count: 2, byTrigger: { auto: 2, manual: 0, unknown: 0 } };
+
+            for (const metadata of [{}, { valueColors: 'true' }] as Record<string, string>[]) {
+                expect(render({ compactionData, item: { ...ITEM, rawValue: true, metadata } })).toBe('↻ 2');
+                expect(render({ compactionData, item: { ...ITEM, rawValue: true, metadata: { ...metadata, format: 'text-and-number' } } })).toBe('Compactions: 2');
+                expect(render({ compactionData, item: { ...ITEM, rawValue: true, metadata: { ...metadata, showTriggers: 'true' } } })).toBe('↻ 2 (2 auto)');
+            }
+        });
     });
 
     describe('editor', () => {

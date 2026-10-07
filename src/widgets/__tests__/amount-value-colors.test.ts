@@ -224,6 +224,11 @@ describe('compaction-counter value colors', () => {
         expect(renderWidgetLine(item, { colorLevel: 3 }, compactions(2, 120000))).toBe(`${BASE}↻ ${MID}2${BASE} (2 auto) ↓120.0k${FG_RESET}`);
     });
 
+    it('keeps its icon in minimalist mode, with the count in its color', () => {
+        expect(renderWidgetLine(colored('compaction-counter'), { colorLevel: 3 }, { ...compactions(2), minimalist: true }))
+            .toBe(`${BASE}↻ ${MID}2${BASE}${FG_RESET}`);
+    });
+
     it('colors the label and the trigger split with the count when set to the whole widget', () => {
         const item = colored('compaction-counter', { showTriggers: 'true', showReclaimed: 'true', valueColorScope: 'widget' });
 

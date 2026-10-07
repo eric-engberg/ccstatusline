@@ -160,7 +160,10 @@ function formatStats(data: CompactionData, item: WidgetItem, icon: string, forma
     if (isMetadataFlagEnabled(item, SHOW_RECLAIMED_METADATA_KEY)) {
         suffix += formatReclaimedSuffix(data.tokensReclaimed, item, format);
     }
-    return formatColoredValue(item, getCountLabel(getFormat(item, FORMAT_OPTIONS), icon), String(data.count), data.count, COUNT_SCALE, formatOptions, suffix);
+    // The icon or label is part of the format, which has no raw value mode
+    // (supportsRawValue), though minimalist mode renders every widget raw
+    const labeled = { ...item, rawValue: false };
+    return formatColoredValue(labeled, getCountLabel(getFormat(item, FORMAT_OPTIONS), icon), String(data.count), data.count, COUNT_SCALE, formatOptions, suffix);
 }
 
 function getIcon(item: WidgetItem): string {
