@@ -1,11 +1,15 @@
 import {
     Box,
     Text,
-    useInput
+    useInput,
+    type Key
 } from 'ink';
 import React, { useState } from 'react';
 
-import type { WidgetEditorProps } from '../../types/Widget';
+import type {
+    WidgetEditorProps,
+    WidgetItem
+} from '../../types/Widget';
 import {
     getAvailableColorsForUI,
     getColorAnsiCode,
@@ -47,10 +51,10 @@ const NAMED_COLORS = getAvailableColorsForUI().map(color => color.value).filter(
 // starts at either end of it
 function cycleNamedColor(current: string, direction: 1 | -1): string {
     const index = NAMED_COLORS.indexOf(current);
-    const nextIndex = index === -1
-        ? (direction === 1 ? 0 : NAMED_COLORS.length - 1)
-        : (index + direction + NAMED_COLORS.length) % NAMED_COLORS.length;
-    return NAMED_COLORS[nextIndex] ?? current;
+    if (index === -1) {
+        return NAMED_COLORS.at(direction === 1 ? 0 : -1) ?? current;
+    }
+    return NAMED_COLORS[(index + direction + NAMED_COLORS.length) % NAMED_COLORS.length] ?? current;
 }
 
 // Custom colors are labeled the way Edit Colors labels them (ANSI n, #RRGGBB),
@@ -73,6 +77,15 @@ function paint(text: string, color: string): string {
     return code ? `${code}${text}\x1b[39m` : text;
 }
 
+// What a row shows: the brackets' color mode, or the level's color drawn in it
+function getRowValue(widget: WidgetItem, row: Row): string {
+    if (row === 'brackets') {
+        return getBracketColorMode(widget) === 'effort' ? 'Match effort' : 'Widget color';
+    }
+    const color = getLevelColor(widget, row, EDITOR_COLOR_LEVEL);
+    return paint(getColorLabel(color), color);
+}
+
 export const EffortColorsEditor: React.FC<WidgetEditorProps> = ({ widget, onComplete, onCancel }) => {
     const [draft, setDraft] = useState(widget);
     const [selectedIndex, setSelectedIndex] = useState(0);
@@ -86,7 +99,9 @@ export const EffortColorsEditor: React.FC<WidgetEditorProps> = ({ widget, onComp
     const enabled = isLevelColorsEnabled(draft);
     const baseColor = draft.color ?? THINKING_EFFORT_DEFAULT_COLOR;
 
-    const moveTo = (index: number) => {
+    // Moves the cursor up (-1) or down (1), wrapping past either end
+    const moveBy = (delta: 1 | -1) => {
+        const index = (selectedIndex + delta + ROWS.length) % ROWS.length;
         setSelectedIndex(index);
         const row = ROWS[index];
         if (row && row !== 'brackets') {
@@ -94,26 +109,44 @@ export const EffortColorsEditor: React.FC<WidgetEditorProps> = ({ widget, onComp
         }
     };
 
+    // The brackets row switches mode; a level row steps through the named colors
+    const changeColor = (direction: 1 | -1) => {
+        if (selectedRow === 'brackets') {
+            setDraft(setBracketColorMode(draft, getBracketColorMode(draft) === 'effort' ? 'widget' : 'effort'));
+            return;
+        }
+        const current = getLevelColor(draft, selectedRow, EDITOR_COLOR_LEVEL);
+        setDraft(setLevelColor(draft, selectedRow, cycleNamedColor(current, direction)));
+    };
+
+    const closeCustomInput = () => {
+        setCustomInput(null);
+        setCustomError(false);
+    };
+
+    // Typing a custom color for the selected level
+    const handleCustomInput = (text: string, input: string, key: Key) => {
+        if (key.escape) {
+            closeCustomInput();
+        } else if (key.return) {
+            const color = parseCustomColor(text);
+            if (color && selectedRow !== 'brackets') {
+                setDraft(setLevelColor(draft, selectedRow, color));
+                closeCustomInput();
+            } else {
+                setCustomError(true);
+            }
+        } else if (key.backspace || key.delete) {
+            setCustomInput(text.slice(0, -1));
+        } else if (shouldInsertInput(input, key)) {
+            setCustomInput(text + input);
+            setCustomError(false);
+        }
+    };
+
     useInput((input, key) => {
         if (customInput !== null) {
-            if (key.escape) {
-                setCustomInput(null);
-                setCustomError(false);
-            } else if (key.return) {
-                const color = parseCustomColor(customInput);
-                if (color && selectedRow !== 'brackets') {
-                    setDraft(setLevelColor(draft, selectedRow, color));
-                    setCustomInput(null);
-                    setCustomError(false);
-                } else {
-                    setCustomError(true);
-                }
-            } else if (key.backspace || key.delete) {
-                setCustomInput(customInput.slice(0, -1));
-            } else if (shouldInsertInput(input, key)) {
-                setCustomInput(customInput + input);
-                setCustomError(false);
-            }
+            handleCustomInput(customInput, input, key);
             return;
         }
 
@@ -123,17 +156,10 @@ export const EffortColorsEditor: React.FC<WidgetEditorProps> = ({ widget, onComp
             onComplete(draft);
         } else if (key.escape) {
             onCancel();
-        } else if (key.upArrow) {
-            moveTo(selectedIndex - 1 < 0 ? ROWS.length - 1 : selectedIndex - 1);
-        } else if (key.downArrow) {
-            moveTo(selectedIndex + 1 > ROWS.length - 1 ? 0 : selectedIndex + 1);
+        } else if (key.upArrow || key.downArrow) {
+            moveBy(key.downArrow ? 1 : -1);
         } else if (key.leftArrow || key.rightArrow) {
-            if (selectedRow === 'brackets') {
-                setDraft(setBracketColorMode(draft, getBracketColorMode(draft) === 'effort' ? 'widget' : 'effort'));
-            } else {
-                const current = getLevelColor(draft, selectedRow, EDITOR_COLOR_LEVEL);
-                setDraft(setLevelColor(draft, selectedRow, cycleNamedColor(current, key.rightArrow ? 1 : -1)));
-            }
+            changeColor(key.rightArrow ? 1 : -1);
         } else if (shortcut === ' ') {
             setDraft(setLevelColorsEnabled(draft, !enabled));
         } else if (shortcut === 'x' && selectedRow !== 'brackets') {
@@ -175,9 +201,7 @@ export const EffortColorsEditor: React.FC<WidgetEditorProps> = ({ widget, onComp
             <Box marginTop={1} flexDirection='column'>
                 {ROWS.map((row, index) => {
                     const isSelected = index === selectedIndex;
-                    const value = row === 'brackets'
-                        ? (getBracketColorMode(draft) === 'effort' ? 'Match effort' : 'Widget color')
-                        : paint(getColorLabel(getLevelColor(draft, row, EDITOR_COLOR_LEVEL)), getLevelColor(draft, row, EDITOR_COLOR_LEVEL));
+                    const value = getRowValue(draft, row);
                     return (
                         <Box key={row} flexDirection='row' flexWrap='nowrap'>
                             <Box width={3}>
