@@ -141,7 +141,10 @@ export function applyColors(
     backgroundColor?: string,
     bold?: boolean,
     colorLevel: 'ansi16' | 'ansi256' | 'truecolor' = 'ansi16',
-    dim?: boolean | 'parens'
+    dim?: boolean | 'parens',
+    // The text colors some runs itself (Widget.colorsOnlyItsRuns), so the
+    // foreground goes around those runs instead of over them
+    keepColoredRuns = false
 ): string {
     let styledText = dim === 'parens' ? applyParensDim(text, bold) : text;
 
@@ -184,7 +187,7 @@ export function applyColors(
         // as the prefix guard.
         const gradientStops = parseGradientSpec(foregroundColor);
         if (gradientStops && colorLevel !== 'ansi16') {
-            return prefix + applyGradientToText(styledText, gradientStops, colorLevel) + '\x1b[39m' + suffix;
+            return prefix + applyGradientToText(styledText, gradientStops, colorLevel, keepColoredRuns) + '\x1b[39m' + suffix;
         }
 
         const fgCode = getColorAnsiCode(foregroundColor, colorLevel, false);
