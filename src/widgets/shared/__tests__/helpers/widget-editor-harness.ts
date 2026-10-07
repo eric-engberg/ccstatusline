@@ -5,6 +5,7 @@ import React from 'react';
 import stripAnsi from 'strip-ansi';
 import { vi } from 'vitest';
 
+import type { Settings } from '../../../../types/Settings';
 import type {
     WidgetEditorProps,
     WidgetItem
@@ -91,7 +92,7 @@ export const RIGHT = '\x1b[C';
 export const LEFT = '\x1b[D';
 
 /** Renders a widget's editor the way the line editor does. */
-export function renderWidgetEditor(editor: React.FC<WidgetEditorProps>, widget: WidgetItem) {
+export function renderWidgetEditor(editor: React.FC<WidgetEditorProps>, widget: WidgetItem, settings?: Settings) {
     const stdin = new MockTtyStream() as unknown as NodeJS.ReadStream;
     const stdout = createMockStdout();
     const stderr = createMockStdout();
@@ -99,7 +100,7 @@ export function renderWidgetEditor(editor: React.FC<WidgetEditorProps>, widget: 
     const onCancel = vi.fn<() => void>();
 
     const instance = render(
-        React.createElement(editor, { widget, onComplete, onCancel }),
+        React.createElement(editor, { widget, onComplete, onCancel, settings }),
         { stdin, stdout, stderr, debug: true, exitOnCtrlC: false, patchConsole: false }
     );
 

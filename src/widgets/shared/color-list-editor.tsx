@@ -6,6 +6,10 @@ import {
 } from 'ink';
 import React, { useState } from 'react';
 
+import {
+    getColorLevelString,
+    type ColorLevelString
+} from '../../types/ColorLevel';
 import type {
     WidgetEditorProps,
     WidgetItem
@@ -26,9 +30,12 @@ import { parseCustomColor } from './custom-color';
 // An editor for a list of per-item colors that can be turned on and off as a
 // whole: Thinking Effort's level colors, the Model widget's family colors.
 
-// The editor has no access to the configured color level, so it previews at
-// the default (256 colors)
-export const EDITOR_COLOR_LEVEL = 'ansi256';
+// The colors the status line draws at the configured color level; at No Color
+// (colorsDisabled) it draws none
+export interface EditorColors {
+    colorLevel: ColorLevelString;
+    colorsDisabled: boolean;
+}
 
 const NAMED_COLORS = getAvailableColorsForUI().map(color => color.value).filter(value => value !== '');
 
@@ -59,8 +66,8 @@ function getColorLabel(color: string): string {
     return getColorDisplayName(color);
 }
 
-function paint(text: string, color: string): string {
-    const code = getColorAnsiCode(color, EDITOR_COLOR_LEVEL);
+function paint(text: string, color: string, colors: EditorColors): string {
+    const code = colors.colorsDisabled ? '' : getColorAnsiCode(color, colors.colorLevel);
     return code ? `${code}${text}\x1b[39m` : text;
 }
 
@@ -77,7 +84,8 @@ export interface ColorListEditorConfig<C extends string, X extends string = neve
     rows: readonly ColorListRow<C, X>[];
     isEnabled: (item: WidgetItem) => boolean;
     setEnabled: (item: WidgetItem, enabled: boolean) => WidgetItem;
-    getColor: (item: WidgetItem, key: C) => string;
+    /** The color the status line draws at the given color level. */
+    getColor: (item: WidgetItem, key: C, colorLevel: ColorLevelString) => string;
     setColor: (item: WidgetItem, key: C, color: string) => WidgetItem;
     getChoiceLabel?: (item: WidgetItem, key: X) => string;
     cycleChoice?: (item: WidgetItem, key: X) => WidgetItem;
@@ -87,14 +95,14 @@ export interface ColorListEditorConfig<C extends string, X extends string = neve
      * The sample shows the highlighted color row, or the last one highlighted:
      * the widget's text with only its own runs colored (Widget.colorsOnlyItsRuns).
      */
-    renderSample: (item: WidgetItem, key: C) => string;
+    renderSample: (item: WidgetItem, key: C, colors: EditorColors) => string;
     /** The widget's default color, for the rest of the sample while the item has none. */
     defaultColor: string;
 }
 
 export interface ColorListEditorProps<C extends string, X extends string> extends WidgetEditorProps { config: ColorListEditorConfig<C, X> }
 
-export function ColorListEditor<C extends string, X extends string = never>({ widget, onComplete, onCancel, config }: Readonly<ColorListEditorProps<C, X>>): React.ReactElement {
+export function ColorListEditor<C extends string, X extends string = never>({ widget, onComplete, onCancel, settings, config }: Readonly<ColorListEditorProps<C, X>>): React.ReactElement {
     const { rows } = config;
     const firstColorRow = rows.find(row => row.kind === 'color');
     const [draft, setDraft] = useState(widget);
@@ -105,6 +113,10 @@ export function ColorListEditor<C extends string, X extends string = never>({ wi
 
     const selectedRow = rows[selectedIndex];
     const enabled = config.isEnabled(draft);
+    const colors: EditorColors = {
+        colorLevel: getColorLevelString(settings?.colorLevel),
+        colorsDisabled: settings?.colorLevel === 0
+    };
 
     const moveTo = (index: number) => {
         setSelectedIndex(index);
@@ -141,7 +153,7 @@ export function ColorListEditor<C extends string, X extends string = never>({ wi
         if (selectedRow?.kind === 'choice' && config.cycleChoice) {
             setDraft(config.cycleChoice(draft, selectedRow.key));
         } else if (selectedRow?.kind === 'color') {
-            const current = config.getColor(draft, selectedRow.key);
+            const current = config.getColor(draft, selectedRow.key, colors.colorLevel);
             setDraft(config.setColor(draft, selectedRow.key, cycleNamedColor(current, direction)));
         }
     };
@@ -177,11 +189,11 @@ export function ColorListEditor<C extends string, X extends string = never>({ wi
     // Colored as the status line colors it: the widget color around the runs
     // the widget colors itself
     const sample = sampleKey === undefined ? '' : applyColors(
-        config.renderSample(draft, sampleKey),
+        config.renderSample(draft, sampleKey, colors),
         draft.color ?? config.defaultColor,
         undefined,
         false,
-        EDITOR_COLOR_LEVEL,
+        colors.colorLevel,
         undefined,
         true
     );
@@ -215,8 +227,8 @@ export function ColorListEditor<C extends string, X extends string = never>({ wi
                     if (row.kind === 'choice') {
                         value = config.getChoiceLabel ? config.getChoiceLabel(draft, row.key) : '';
                     } else {
-                        const color = config.getColor(draft, row.key);
-                        value = paint(getColorLabel(color), color);
+                        const color = config.getColor(draft, row.key, colors.colorLevel);
+                        value = paint(getColorLabel(color), color, colors);
                     }
                     return (
                         <Box key={row.key} flexDirection='row' flexWrap='nowrap'>

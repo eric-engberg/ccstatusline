@@ -4,7 +4,6 @@ import type { WidgetEditorProps } from '../../types/Widget';
 
 import {
     ColorListEditor,
-    EDITOR_COLOR_LEVEL,
     type ColorListEditorConfig
 } from './color-list-editor';
 import {
@@ -37,10 +36,7 @@ const FAMILY_COLORS_CONFIG: ColorListEditorConfig<ModelFamily> = {
     getColor: getFamilyColor,
     setColor: setFamilyColor,
     resetColors: resetFamilyColors,
-    renderSample: (item, family) => formatModelName(item, SAMPLE_NAMES[family], family, {
-        colorLevel: EDITOR_COLOR_LEVEL,
-        colorsDisabled: false
-    }),
+    renderSample: (item, family, colors) => formatModelName(item, SAMPLE_NAMES[family], family, colors),
     defaultColor: MODEL_DEFAULT_COLOR
 };
 

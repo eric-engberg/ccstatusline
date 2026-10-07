@@ -8,7 +8,6 @@ import {
 
 import {
     ColorListEditor,
-    EDITOR_COLOR_LEVEL,
     type ColorListEditorConfig
 } from './color-list-editor';
 import {
@@ -34,15 +33,12 @@ const LEVEL_COLORS_CONFIG: ColorListEditorConfig<TranscriptThinkingEffort, 'brac
     ],
     isEnabled: isLevelColorsEnabled,
     setEnabled: setLevelColorsEnabled,
-    getColor: (item, level) => getLevelColor(item, level, EDITOR_COLOR_LEVEL),
+    getColor: getLevelColor,
     setColor: setLevelColor,
     getChoiceLabel: item => (getBracketColorMode(item) === 'effort' ? 'Match effort' : 'Widget color'),
     cycleChoice: item => setBracketColorMode(item, getBracketColorMode(item) === 'effort' ? 'widget' : 'effort'),
     resetColors: resetLevelColors,
-    renderSample: (item, level) => formatThinkingEffort(item, { text: level, level }, {
-        colorLevel: EDITOR_COLOR_LEVEL,
-        colorsDisabled: false
-    }),
+    renderSample: (item, level, colors) => formatThinkingEffort(item, { text: level, level }, colors),
     defaultColor: THINKING_EFFORT_DEFAULT_COLOR
 };
 
