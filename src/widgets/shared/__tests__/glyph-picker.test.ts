@@ -36,7 +36,7 @@ const CTRL_T = '\x14';
 const cwd: WidgetItem = { id: 'cwd', type: 'current-working-dir' };
 const singleGlyphEditor = (props: WidgetEditorProps) => renderSymbolOverrideEditor(props, '');
 
-// The curated groups, then a group per Nerd Font icon set
+// The curated groups, with skin tones added to their emoji
 const groups = createGlyphCatalog().groups;
 const firstGroup = groups[0];
 const lastGroup = groups.at(-1);
@@ -129,19 +129,19 @@ describe('glyph picker', () => {
         try {
             await editor.ready();
             await openPicker(editor);
-            await editor.press(SHIFT_TAB, PAGE_DOWN);
+            await editor.press(PAGE_DOWN);
             const output = editor.takeOutput();
-            expect(lastGroup?.glyphs.length).toBeGreaterThan(120);
+            expect(firstGroup?.glyphs.length).toBeGreaterThan(60);
             expect(output).toContain('↑ more');
-            expect(output).toContain(lastGroup?.glyphs[60]?.name);
+            expect(output).toContain(firstGroup?.glyphs[60]?.name);
             await editor.press(PAGE_UP);
-            expect(editor.takeOutput()).toContain(lastGroup?.glyphs[0]?.name);
+            expect(editor.takeOutput()).toContain(firstGroup?.glyphs[0]?.name);
         } finally {
             editor.cleanup();
         }
     });
 
-    it('notes that the Nerd Font groups need a Nerd Font', async () => {
+    it('notes that the Nerd Font group needs a Nerd Font', async () => {
         const editor = renderWidgetEditor(singleGlyphEditor, cwd);
 
         try {

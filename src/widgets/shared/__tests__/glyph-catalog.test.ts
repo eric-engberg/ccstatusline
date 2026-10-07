@@ -16,17 +16,11 @@ const glyphsFor = (query: string): string[] => catalog.search(query).map(entry =
 const unicodeFor = (query: string): string[] => catalog.search(query).filter(entry => !entry.name.includes('(nf-')).map(entry => entry.glyph);
 
 describe('glyph catalog', () => {
-    it('browses the curated groups, then every Nerd Font icon set as a group', () => {
-        const setGroups = catalog.groups.slice(GLYPH_GROUPS.length);
-
-        // The curated groups, with skin tones added to their emoji
+    // With skin tones added to their emoji
+    it('browses the curated groups', () => {
         const withoutTones = (groups: readonly GlyphGroup[]) => groups.map(group => ({ ...group, glyphs: group.glyphs.map(({ glyph, name }) => ({ glyph, name })) }));
-        expect(withoutTones(catalog.groups.slice(0, GLYPH_GROUPS.length))).toEqual(withoutTones(GLYPH_GROUPS));
-        expect(setGroups.map(group => group.name)).toContain('Nerd Font: Octicons');
-        expect(setGroups.every(group => group.needsNerdFont)).toBe(true);
-        expect(setGroups.reduce((count, group) => count + group.glyphs.length, 0)).toBeGreaterThan(10000);
-        expect(setGroups.find(group => group.name === 'Nerd Font: Material Design')?.glyphs).toHaveLength(6896);
-        expect(setGroups.find(group => group.name === 'Nerd Font: Octicons')?.glyphs.map(entry => entry.glyph)).toContain('\uF4C9');
+
+        expect(withoutTones(catalog.groups)).toEqual(withoutTones(GLYPH_GROUPS));
     });
 
     it('finds Nerd Font glyphs the groups leave out, by any words of their name', () => {
@@ -92,7 +86,7 @@ describe('glyph catalog', () => {
     });
 
     it('gives the curated groups\' emoji their skin tones too', () => {
-        const curated = catalog.groups.slice(0, GLYPH_GROUPS.length).flatMap(group => group.glyphs);
+        const curated = catalog.groups.flatMap(group => group.glyphs);
 
         expect(curated.find(entry => entry.glyph === '👍')?.lightTone).toBe('👍🏻');
         expect(curated.filter(entry => entry.lightTone).length).toBeGreaterThan(5);
