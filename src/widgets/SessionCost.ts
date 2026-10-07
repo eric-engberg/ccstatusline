@@ -41,7 +41,8 @@ const VALUE_COLORS_EDITOR: ValueColorsEditorOptions = {
     title: 'Session Cost: value colors',
     scale: COST_SCALE,
     sampleNote: 'this session',
-    defaultColor: DEFAULT_COLOR
+    defaultColor: DEFAULT_COLOR,
+    label: LABEL
 };
 
 export class SessionCostWidget implements Widget {

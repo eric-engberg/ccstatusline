@@ -163,6 +163,10 @@ function formatStats(data: CompactionData, item: WidgetItem, icon: string, forma
     return formatColoredValue(item, getCountLabel(getFormat(item, FORMAT_OPTIONS), icon), String(data.count), data.count, COUNT_SCALE, formatOptions, suffix);
 }
 
+function getIcon(item: WidgetItem): string {
+    return isNerdFontEnabled(item, FORMAT_OPTIONS) ? COMPACTION_NERD_FONT_ICON : COMPACTION_ICON;
+}
+
 function getCountLabel(format: CompactionCounterFormat, icon: string): string {
     switch (format) {
         case 'icon-space-number': return `${icon} `;
@@ -265,8 +269,7 @@ export class CompactionCounterWidget implements Widget {
             return null;
         }
 
-        const icon = isNerdFontEnabled(item, FORMAT_OPTIONS) ? COMPACTION_NERD_FONT_ICON : COMPACTION_ICON;
-        return formatStats(data, item, icon, format, formatOptions);
+        return formatStats(data, item, getIcon(item), format, formatOptions);
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
@@ -298,7 +301,9 @@ export class CompactionCounterWidget implements Widget {
                 title: 'Compaction Counter: value colors',
                 scale: COUNT_SCALE,
                 sampleNote: 'compactions',
-                defaultColor: DEFAULT_COLOR
+                defaultColor: DEFAULT_COLOR,
+                // A single trigger's count shows without a label
+                label: getMetric(props.widget) === DEFAULT_METRIC ? getCountLabel(getFormat(props.widget, FORMAT_OPTIONS), getIcon(props.widget)) : ''
             });
         }
         return renderSymbolSlotsEditor(props, [RECLAIMED_SLOT]);

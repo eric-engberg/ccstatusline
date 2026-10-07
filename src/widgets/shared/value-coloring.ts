@@ -39,12 +39,15 @@ const VALUE_COLORS_KEY = 'valueColors';
 const MODE_KEY = 'valueColorMode';
 const GRADIENT_KEY = 'valueGradient';
 const GRADIENT_END_KEY = 'valueGradientEnd';
+const SCOPE_KEY = 'valueColorScope';
 const BAND_COLOR_KEY_PREFIX = 'valueColor.';
 const BREAK_POINT_KEYS = { midFrom: 'valueMidFrom', highFrom: 'valueHighFrom' } as const;
 
 export const VALUE_BANDS = ['low', 'mid', 'high'] as const;
 export type ValueBand = typeof VALUE_BANDS[number];
 export type ValueColorMode = 'breakpoints' | 'gradient';
+// What takes the value's color: the value alone, or the label with it
+export type ValueColorScope = 'value' | 'widget';
 export type BreakPoint = keyof typeof BREAK_POINT_KEYS;
 
 const DEFAULT_BAND_COLORS: Record<ValueBand, string> = {
@@ -102,6 +105,14 @@ export function getValueColorMode(item: WidgetItem): ValueColorMode {
 
 export function setValueColorMode(item: WidgetItem, mode: ValueColorMode): WidgetItem {
     return setMetadataValue(item, MODE_KEY, mode === 'gradient' ? 'gradient' : null);
+}
+
+export function getValueColorScope(item: WidgetItem): ValueColorScope {
+    return item.metadata?.[SCOPE_KEY] === 'widget' ? 'widget' : 'value';
+}
+
+export function setValueColorScope(item: WidgetItem, scope: ValueColorScope): WidgetItem {
+    return setMetadataValue(item, SCOPE_KEY, scope === 'widget' ? 'widget' : null);
 }
 
 export function getValueGradient(item: WidgetItem): BarGradientPreset {
@@ -222,13 +233,14 @@ export function getValueColorsModifier(item: WidgetItem): string | null {
     if (!isValueColorsEnabled(item)) {
         return null;
     }
-    return getValueColorMode(item) === 'gradient' ? `value colors: ${getValueGradient(item)} gradient` : 'value colors';
+    const mode = getValueColorMode(item) === 'gradient' ? `value colors: ${getValueGradient(item)} gradient` : 'value colors';
+    return getValueColorScope(item) === 'widget' ? `${mode}, whole widget` : mode;
 }
 
-/** (d)efaults: colors, break points, mode, gradient and its end; value colors stay on or off. */
+/** (d)efaults: colors, break points, mode, gradient and its end, and what's colored; value colors stay on or off. */
 export function resetValueColors(item: WidgetItem): WidgetItem {
     const keys = Object.keys(item.metadata ?? {}).filter(key => key.startsWith(BAND_COLOR_KEY_PREFIX));
-    return removeMetadataKeys(item, [...keys, MODE_KEY, GRADIENT_KEY, GRADIENT_END_KEY, ...Object.values(BREAK_POINT_KEYS)]);
+    return removeMetadataKeys(item, [...keys, MODE_KEY, GRADIENT_KEY, GRADIENT_END_KEY, SCOPE_KEY, ...Object.values(BREAK_POINT_KEYS)]);
 }
 
 // The measure is a percent, or an amount in the scale's unit
@@ -274,8 +286,8 @@ export function getValueFormatOptions(settings: Settings, baseColor: string): Va
 
 /**
  * The value colored by its measure on the scale; a null measure keeps the
- * widget color. The label, and any suffix after the value, stay in the widget
- * color.
+ * widget color. With the whole widget colored, the label and any suffix after
+ * the value take the value's color too; otherwise they stay in the widget color.
  */
 export function formatColoredValue(
     item: WidgetItem,
@@ -293,6 +305,9 @@ export function formatColoredValue(
 
     const valueCode = (measure === null ? null : getValueColorCode(item, measure, scale, options.colorLevel))
         ?? getColorAnsiCode(options.baseColor, options.colorLevel);
+    if (getValueColorScope(item) === 'widget') {
+        return paintCode(`${shownLabel}${value}${suffix}`, valueCode);
+    }
     const paintBase = (text: string) => paintForeground(text, options.baseColor, options.colorLevel);
     return `${paintBase(shownLabel)}${paintCode(value, valueCode)}${paintBase(suffix)}`;
 }

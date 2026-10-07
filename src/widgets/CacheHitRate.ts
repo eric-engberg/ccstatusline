@@ -44,15 +44,15 @@ import {
 const DEFAULT_COLOR = 'green';
 // A higher hit rate is the good one: red below 50%, yellow below 80%, green from 80%
 const HIT_RATE_SCALE: ValueColorScale = { midFrom: 50, highFrom: 80, highEdge: 'from', higherIsBetter: true };
+const LABEL = 'Cache Hit: ';
 const VALUE_COLORS_EDITOR: ValueColorsEditorOptions = {
     title: 'Cache Hit Rate: value colors',
     scale: HIT_RATE_SCALE,
     sampleNote: 'hit',
     defaultColor: DEFAULT_COLOR,
-    maxPercent: 100
+    maxPercent: 100,
+    label: LABEL
 };
-
-const LABEL = 'Cache Hit: ';
 
 export class CacheHitRateWidget implements Widget {
     getDefaultColor(): string { return DEFAULT_COLOR; }

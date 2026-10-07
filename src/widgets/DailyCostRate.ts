@@ -101,7 +101,8 @@ export class DailyCostRateWidget implements Widget {
             title: `${this.getDisplayName()}: value colors`,
             scale: COST_RATE_SCALE,
             sampleNote: 'over today',
-            defaultColor: DEFAULT_COLOR
+            defaultColor: DEFAULT_COLOR,
+            label: LABEL
         });
     }
 

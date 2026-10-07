@@ -35,7 +35,8 @@ const VALUE_COLORS_EDITOR: ValueColorsEditorOptions = {
     scale: LIMIT_SCALE,
     sampleNote: 'of the context window',
     defaultColor: DEFAULT_COLOR,
-    maxPercent: 100
+    maxPercent: 100,
+    label: LABEL
 };
 const PREVIEW_TOKENS = 18600;
 // The preview's tokens in a 200k context window

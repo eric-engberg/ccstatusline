@@ -72,7 +72,8 @@ export abstract class TokenCountWidget implements Widget {
             title: `${this.getDisplayName()}: value colors`,
             scale: this.valueColorScale,
             sampleNote: 'this session',
-            defaultColor: this.getDefaultColor()
+            defaultColor: this.getDefaultColor(),
+            label: this.getLabelPrefix()
         });
     }
 

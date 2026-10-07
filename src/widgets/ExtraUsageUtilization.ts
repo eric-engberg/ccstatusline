@@ -52,12 +52,14 @@ import {
 } from './shared/value-colors-editor';
 
 const DEFAULT_COLOR = 'green';
+const LABEL = 'Overage: ';
 const VALUE_COLORS_EDITOR: ValueColorsEditorOptions = {
     title: 'Extra Usage Utilization: value colors',
     scale: LIMIT_SCALE,
     sampleNote: 'used',
     defaultColor: DEFAULT_COLOR,
-    maxPercent: 100
+    maxPercent: 100,
+    label: LABEL
 };
 
 // Value colors apply to the plain percent; the bar modes have bar gradients,
@@ -83,8 +85,6 @@ function formatUsedPercent(item: WidgetItem, label: string, usedPercent: number,
     const formatOptions = getValueFormatOptions(settings, item.color ?? DEFAULT_COLOR);
     return formatColoredValue(item, label, formatPercent(renderedPercent, format), usedPercent, LIMIT_SCALE, formatOptions);
 }
-
-const LABEL = 'Overage: ';
 
 export class ExtraUsageUtilizationWidget implements Widget {
     getDefaultColor(): string { return DEFAULT_COLOR; }

@@ -129,7 +129,8 @@ export abstract class ContextPercentageWidgetBase implements Widget {
             scale: LIMIT_SCALE,
             sampleNote: 'used',
             defaultColor: this.getDefaultColor(),
-            maxPercent: 100
+            maxPercent: 100,
+            label: this.getLabelPrefix(props.widget)
         });
     }
 

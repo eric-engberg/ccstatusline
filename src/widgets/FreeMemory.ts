@@ -38,7 +38,8 @@ const VALUE_COLORS_EDITOR: ValueColorsEditorOptions = {
     scale: LIMIT_SCALE,
     sampleNote: 'of memory used',
     defaultColor: DEFAULT_COLOR,
-    maxPercent: 100
+    maxPercent: 100,
+    label: LABEL
 };
 
 function formatBytes(bytes: number, format: NumberFormat): string {

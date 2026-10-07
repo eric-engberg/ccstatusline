@@ -192,6 +192,12 @@ describe('compaction-counter value colors', () => {
         expect(render(splitItem, compactions(2, 120000))).toBe(`${labeled('↻ ', MID, '2')}${BASE} (2 auto) ↓120.0k${FG_RESET}`);
     });
 
+    it('colors the label and the trigger split with the count when set to the whole widget', () => {
+        const item = colored('compaction-counter', { showTriggers: 'true', showReclaimed: 'true', valueColorScope: 'widget' });
+
+        expect(render(item, compactions(2, 120000))).toBe(`${MID}↻ 2 (2 auto) ↓120.0k${FG_RESET}`);
+    });
+
     it('colors the auto, manual and unknown counts, but not tokens reclaimed', () => {
         const auto = colored('compaction-counter', { metric: 'auto' });
         const reclaimed = colored('compaction-counter', { metric: 'reclaimed' });

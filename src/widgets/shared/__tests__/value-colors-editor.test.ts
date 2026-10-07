@@ -237,6 +237,42 @@ describe('value colors editor', () => {
         }
     });
 
+    // The last row, in both modes: whether the label takes the value's color too
+    it('switches between coloring the value only and the whole widget, sampling with the label', async () => {
+        const editor = renderEditor({ ...today, rawValue: false }, { ...TODAY_OPTIONS, label: 'Spend Today: ' });
+
+        try {
+            await editor.ready();
+            let output = editor.takeOutput();
+            expect(output).toMatch(/colors\s+Value only/);
+            expect(output).toContain('Sample: 40% 80% 100% 120% of today\'s budget');
+
+            // mode, low, mid, high, mid from, high above, then colors
+            await editor.press(DOWN, DOWN, DOWN, DOWN, DOWN, DOWN, RIGHT);
+            output = editor.takeOutput();
+            expect(output).toMatch(/colors\s+Whole widget/);
+            expect(output).toContain('Sample: Spend Today: 40%  Spend Today: 80%  Spend Today: 100%  Spend Today: 120% of today\'s budget');
+
+            await editor.press(ENTER);
+            expect(editor.savedMetadata()).toEqual({ valueColorScope: 'widget' });
+        } finally {
+            editor.cleanup();
+        }
+    });
+
+    it('offers the colors row in gradient mode, and samples without a label in raw value mode', async () => {
+        const editor = renderEditor({ ...todayGradient, metadata: { ...todayGradient.metadata, valueColorScope: 'widget' } }, { ...TODAY_OPTIONS, label: 'Spend Today: ' });
+
+        try {
+            await editor.ready();
+            const output = editor.takeOutput();
+            expect(output).toMatch(/colors\s+Whole widget/);
+            expect(output).toContain('Sample: 25% 50% 75% 100% 125% of today\'s budget');
+        } finally {
+            editor.cleanup();
+        }
+    });
+
     it('restores the defaults with d and keeps the on/off switch', async () => {
         const editor = renderEditor({ ...today, metadata: { valueColors: 'true', valueColorMode: 'gradient', valueMidFrom: '50' } });
 

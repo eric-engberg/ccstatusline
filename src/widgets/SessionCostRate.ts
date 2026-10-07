@@ -72,7 +72,8 @@ export class SessionCostRateWidget implements Widget {
             title: `${this.getDisplayName()}: value colors`,
             scale: COST_RATE_SCALE,
             sampleNote: 'over this session',
-            defaultColor: DEFAULT_COLOR
+            defaultColor: DEFAULT_COLOR,
+            label: LABEL
         });
     }
 

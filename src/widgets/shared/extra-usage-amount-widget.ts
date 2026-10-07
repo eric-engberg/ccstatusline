@@ -82,7 +82,8 @@ export abstract class ExtraUsageAmountWidget implements Widget {
             ...this.valueColors,
             scale: LIMIT_SCALE,
             defaultColor: DEFAULT_COLOR,
-            maxPercent: 100
+            maxPercent: 100,
+            label: this.label
         });
     }
 
