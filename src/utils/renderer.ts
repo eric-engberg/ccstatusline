@@ -1093,36 +1093,40 @@ function getAlignmentColumns(preRenderedLine: PreRenderedWidget[], settings: Set
         if (widget.widget.excludeFromAutoAlign)
             break;
 
-        // Calculate the total width for this alignment position
-        // If this widget is merged with the next, accumulate their widths
-        let totalWidth = (widget.alignmentWidth ?? widget.plainLength) + paddingPairLength;
-        const indices = [widget.originalIndex];
-
-        // Check if this widget merges with the next one(s)
-        let j = i;
-        while (j < renderedWidgets.length - 1 && renderedWidgets[j]?.mergesWithNext) {
-            j++;
-            const nextWidget = renderedWidgets[j];
-            if (nextWidget) {
-                // For merged widgets, add width but account for padding adjustments
-                // When merging with 'no-padding', don't count padding between widgets
-                const nextWidth = nextWidget.alignmentWidth ?? nextWidget.plainLength;
-                if (renderedWidgets[j - 1]?.widget.merge === 'no-padding') {
-                    totalWidth += nextWidth;
-                } else {
-                    totalWidth += nextWidth + paddingPairLength;
-                }
-                indices.push(nextWidget.originalIndex);
-            }
-        }
-
-        columns.push({ width: totalWidth, indices });
+        const group = getMergeGroup(renderedWidgets, i, paddingPairLength);
+        columns.push(group.column);
 
         // Skip over merged widgets since we've already processed them
-        i = j;
+        i = group.end;
     }
 
     return columns;
+}
+
+// The column a widget heads: its width plus the widths of the widgets merged
+// into it, and the position of the group's last widget
+function getMergeGroup(
+    renderedWidgets: (PreRenderedWidget & { originalIndex: number; mergesWithNext: boolean })[],
+    start: number,
+    paddingPairLength: number
+): { column: AlignmentColumn; end: number } {
+    const head = renderedWidgets[start];
+    let totalWidth = head ? (head.alignmentWidth ?? head.plainLength) + paddingPairLength : 0;
+    const indices = head ? [head.originalIndex] : [];
+
+    let j = start;
+    while (j < renderedWidgets.length - 1 && renderedWidgets[j]?.mergesWithNext) {
+        j++;
+        const nextWidget = renderedWidgets[j];
+        if (nextWidget) {
+            // When merging with 'no-padding', don't count padding between widgets
+            const padding = renderedWidgets[j - 1]?.widget.merge === 'no-padding' ? 0 : paddingPairLength;
+            totalWidth += (nextWidget.alignmentWidth ?? nextWidget.plainLength) + padding;
+            indices.push(nextWidget.originalIndex);
+        }
+    }
+
+    return { column: { width: totalWidth, indices }, end: j };
 }
 
 // Calculate max widths from pre-rendered widgets for alignment
