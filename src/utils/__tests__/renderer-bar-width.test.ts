@@ -69,6 +69,7 @@ const countCells = (line: string): number => line.match(/[█░▓│]/g)?.leng
 // 'full' flex mode leaves 6 columns free, so a 100-column terminal gives 94
 const TERMINAL = 100;
 const LINE = 94;
+const AUTO_ALIGN: Partial<Settings> = { powerline: { ...DEFAULT_SETTINGS.powerline, enabled: true, autoAlign: true } };
 
 describe('bar width', () => {
     it('leaves a bar without a width setting at its mode\'s size', () => {
@@ -124,14 +125,48 @@ describe('bar width', () => {
     });
 
     it('lines other lines up with the bar at its minimum, so a grown bar doesn\'t widen them', () => {
-        const powerline = { powerline: { ...DEFAULT_SETTINGS.powerline, enabled: true, autoAlign: true } };
         const [withBar = '', below = ''] = renderLines([
             [contextBar('bar', 'fill'), text('a', 'a')],
             [text('x', 'xxxxxxxx'), text('y', 'y')]
-        ], TERMINAL, powerline);
+        ], TERMINAL, AUTO_ALIGN);
         expect(getVisibleWidth(withBar)).toBe(LINE);
         // The column above holds "Context: [█████] 100k/200k (50%)" at its minimum
         expect(getVisibleWidth(below)).toBeLessThan(45);
         expect(below).not.toContain('…');
+    });
+
+    // The 50-column widget below pads the bar's column 18 past the bar's minimum
+    const widerBelow = [text('x', 'x'.repeat(50)), text('y', 'y')];
+
+    it('grows a fill bar into the padding auto-align gives its column', () => {
+        const [withBar = ''] = renderLines([[contextBar('bar', 'fill'), text('a', 'a')], widerBelow], TERMINAL, AUTO_ALIGN);
+        expect(getVisibleWidth(withBar)).toBe(LINE);
+    });
+
+    it('counts that padding as room for a percentage bar', () => {
+        const [withBar = ''] = renderLines([[contextBar('bar', '60'), text('a', 'a')], widerBelow], TERMINAL, AUTO_ALIGN);
+        expect(countCells(withBar)).toBe(Math.round(LINE * 0.6));
+    });
+
+    it('counts no padding when auto-align is off', () => {
+        const [withBar = ''] = renderLines([[contextBar('bar', 'fill'), text('a', 'a')], widerBelow], TERMINAL, { powerline: { ...DEFAULT_SETTINGS.powerline, enabled: true } });
+        expect(getVisibleWidth(withBar)).toBe(LINE);
+        expect(withBar).not.toContain('...');
+    });
+
+    it('leaves padding a bar fits in to that bar, not to the line\'s other bars', () => {
+        // 10% of the line fits in the first column's padding
+        const [withBars = ''] = renderLines([[contextBar('small', '10'), contextBar('bar', 'fill')], widerBelow], TERMINAL, AUTO_ALIGN);
+        expect(getVisibleWidth(withBars)).toBe(LINE);
+        expect(withBars).not.toContain('...');
+    });
+
+    it('counts a merge group\'s padding once for the bars in it', () => {
+        const [withBars = ''] = renderLines([
+            [{ ...contextBar('a', 'fill'), merge: true }, contextBar('b', 'fill')],
+            [text('x', 'x'.repeat(80))]
+        ], TERMINAL, AUTO_ALIGN);
+        expect(getVisibleWidth(withBars)).toBe(LINE);
+        expect(withBars).not.toContain('...');
     });
 });

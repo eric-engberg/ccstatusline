@@ -895,6 +895,26 @@ function findSizedBar(widgetImpl: Widget, item: WidgetItem, index: number, getLi
     return showsBar && getLineWidth() ? { index, width, widgetImpl, item } : null;
 }
 
+// The padding auto-align gives each bar's column on its line, beyond the bar's
+// minimum: room the bar grows into without widening the line. A merge group's
+// padding goes to its first bar.
+function getBarColumnPadding(preRenderedLine: PreRenderedWidget[], bars: SizedBar[], maxWidths: number[], settings: Settings): number[] {
+    if (!settings.powerline.enabled || !settings.powerline.autoAlign) {
+        return bars.map(() => 0);
+    }
+    const columns = getAlignmentColumns(preRenderedLine, settings);
+    const claimed = new Set<number>();
+    return bars.map((bar) => {
+        const position = columns.findIndex(column => column.indices.includes(bar.index));
+        const column = columns[position];
+        if (!column || claimed.has(position)) {
+            return 0;
+        }
+        claimed.add(position);
+        return Math.max(0, (maxWidths[position] ?? 0) - column.width);
+    });
+}
+
 // Grows each line's sized bars into the room the line leaves at the terminal's
 // width, measured with every bar at MIN_BAR_CELLS and flex separators at their
 // narrowest. Auto-align keeps the minimum widths, so a grown bar doesn't widen
@@ -917,7 +937,11 @@ function sizeBarsToLines(
 
         const measureContext = { ...context, terminalWidth: 0, lineIndex };
         const minimumWidth = getVisibleWidth(renderStatusLine(allLinesWidgets[lineIndex] ?? [], settings, measureContext, preRenderedLine, maxWidths));
-        const cells = allocateBarCells(shownBars.map(bar => getDesiredBarCells(bar.width, lineWidth)), lineWidth - minimumWidth);
+        // A bar fills its column's padding before it takes the line's room
+        const padding = getBarColumnPadding(preRenderedLine, shownBars, maxWidths, settings);
+        const desired = shownBars.map(bar => getDesiredBarCells(bar.width, lineWidth));
+        const cells = allocateBarCells(desired.map((count, position) => Math.max(MIN_BAR_CELLS, count - (padding[position] ?? 0))), lineWidth - minimumWidth)
+            .map((count, position) => Math.min(desired[position] ?? count, count + (padding[position] ?? 0)));
         shownBars.forEach((bar, position) => {
             const entry = preRenderedLine[bar.index];
             if (!entry) {
@@ -985,85 +1009,97 @@ export function preRenderAllWidgets(
     return preRenderedLines;
 }
 
+// One auto-align column on a line: a widget, or a merge group
+interface AlignmentColumn {
+    width: number;  // Padding included
+    indices: number[];  // Positions in the pre-rendered line
+}
+
+// A line's auto-align columns, in order
+function getAlignmentColumns(preRenderedLine: PreRenderedWidget[], settings: Settings): AlignmentColumn[] {
+    const columns: AlignmentColumn[] = [];
+    const defaultPadding = settings.defaultPadding ?? '';
+    const { leading: sideLeadingPadding, trailing: sideTrailingPadding } = resolvePaddingSides(defaultPadding, settings.defaultPaddingSide);
+    const paddingPairLength = sideLeadingPadding.length + sideTrailingPadding.length;
+
+    const isSeparatorBoundary = (entry: PreRenderedWidget | undefined): boolean => (
+        entry?.widget.type === 'separator' || entry?.widget.type === 'flex-separator'
+    );
+    const hasNextRenderedWidgetBeforeSeparator = (originalIndex: number): boolean => {
+        for (let j = originalIndex + 1; j < preRenderedLine.length; j++) {
+            const nextEntry = preRenderedLine[j];
+            if (!nextEntry)
+                continue;
+            if (isSeparatorBoundary(nextEntry))
+                return false;
+            if (nextEntry.content)
+                return true;
+        }
+
+        return false;
+    };
+
+    const renderedWidgets = preRenderedLine
+        .map((entry, originalIndex) => ({
+            ...entry,
+            originalIndex,
+            mergesWithNext: Boolean(entry.widget.merge && hasNextRenderedWidgetBeforeSeparator(originalIndex))
+        }))
+        .filter(entry => !isSeparatorBoundary(entry) && entry.content);
+
+    for (let i = 0; i < renderedWidgets.length; i++) {
+        const widget = renderedWidgets[i];
+        if (!widget)
+            continue;
+
+        // An excluded widget opts itself and the rest of the line out of the
+        // shared column widths. This only applies to merge-group heads;
+        // widgets merged into a previous widget keep the group's width.
+        if (widget.widget.excludeFromAutoAlign)
+            break;
+
+        // Calculate the total width for this alignment position
+        // If this widget is merged with the next, accumulate their widths
+        let totalWidth = (widget.alignmentWidth ?? widget.plainLength) + paddingPairLength;
+        const indices = [widget.originalIndex];
+
+        // Check if this widget merges with the next one(s)
+        let j = i;
+        while (j < renderedWidgets.length - 1 && renderedWidgets[j]?.mergesWithNext) {
+            j++;
+            const nextWidget = renderedWidgets[j];
+            if (nextWidget) {
+                // For merged widgets, add width but account for padding adjustments
+                // When merging with 'no-padding', don't count padding between widgets
+                const nextWidth = nextWidget.alignmentWidth ?? nextWidget.plainLength;
+                if (renderedWidgets[j - 1]?.widget.merge === 'no-padding') {
+                    totalWidth += nextWidth;
+                } else {
+                    totalWidth += nextWidth + paddingPairLength;
+                }
+                indices.push(nextWidget.originalIndex);
+            }
+        }
+
+        columns.push({ width: totalWidth, indices });
+
+        // Skip over merged widgets since we've already processed them
+        i = j;
+    }
+
+    return columns;
+}
+
 // Calculate max widths from pre-rendered widgets for alignment
 export function calculateMaxWidthsFromPreRendered(
     preRenderedLines: PreRenderedWidget[][],
     settings: Settings
 ): number[] {
     const maxWidths: number[] = [];
-    const defaultPadding = settings.defaultPadding ?? '';
-    const { leading: sideLeadingPadding, trailing: sideTrailingPadding } = resolvePaddingSides(defaultPadding, settings.defaultPaddingSide);
-    const paddingPairLength = sideLeadingPadding.length + sideTrailingPadding.length;
-
     for (const preRenderedLine of preRenderedLines) {
-        const isSeparatorBoundary = (entry: PreRenderedWidget | undefined): boolean => (
-            entry?.widget.type === 'separator' || entry?.widget.type === 'flex-separator'
-        );
-        const hasNextRenderedWidgetBeforeSeparator = (originalIndex: number): boolean => {
-            for (let j = originalIndex + 1; j < preRenderedLine.length; j++) {
-                const nextEntry = preRenderedLine[j];
-                if (!nextEntry)
-                    continue;
-                if (isSeparatorBoundary(nextEntry))
-                    return false;
-                if (nextEntry.content)
-                    return true;
-            }
-
-            return false;
-        };
-
-        const renderedWidgets = preRenderedLine
-            .map((entry, originalIndex) => ({
-                ...entry,
-                mergesWithNext: Boolean(entry.widget.merge && hasNextRenderedWidgetBeforeSeparator(originalIndex))
-            }))
-            .filter(entry => !isSeparatorBoundary(entry) && entry.content);
-
-        let alignmentPos = 0;
-        for (let i = 0; i < renderedWidgets.length; i++) {
-            const widget = renderedWidgets[i];
-            if (!widget)
-                continue;
-
-            // An excluded widget opts itself and the rest of the line out of the
-            // shared column widths. This only applies to merge-group heads;
-            // widgets merged into a previous widget keep the group's width.
-            if (widget.widget.excludeFromAutoAlign)
-                break;
-
-            // Calculate the total width for this alignment position
-            // If this widget is merged with the next, accumulate their widths
-            let totalWidth = (widget.alignmentWidth ?? widget.plainLength) + paddingPairLength;
-
-            // Check if this widget merges with the next one(s)
-            let j = i;
-            while (j < renderedWidgets.length - 1 && renderedWidgets[j]?.mergesWithNext) {
-                j++;
-                const nextWidget = renderedWidgets[j];
-                if (nextWidget) {
-                    // For merged widgets, add width but account for padding adjustments
-                    // When merging with 'no-padding', don't count padding between widgets
-                    const nextWidth = nextWidget.alignmentWidth ?? nextWidget.plainLength;
-                    if (renderedWidgets[j - 1]?.widget.merge === 'no-padding') {
-                        totalWidth += nextWidth;
-                    } else {
-                        totalWidth += nextWidth + paddingPairLength;
-                    }
-                }
-            }
-
-            const currentMax = maxWidths[alignmentPos];
-            if (currentMax === undefined) {
-                maxWidths[alignmentPos] = totalWidth;
-            } else {
-                maxWidths[alignmentPos] = Math.max(currentMax, totalWidth);
-            }
-
-            // Skip over merged widgets since we've already processed them
-            i = j;
-            alignmentPos++;
-        }
+        getAlignmentColumns(preRenderedLine, settings).forEach((column, alignmentPos) => {
+            maxWidths[alignmentPos] = Math.max(maxWidths[alignmentPos] ?? 0, column.width);
+        });
     }
 
     return maxWidths;
