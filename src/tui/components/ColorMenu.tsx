@@ -106,7 +106,7 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
     const [editingBackground, setEditingBackground] = useState(false);
 
     const applyPaletteColor = (session: PaletteSession, index: number) => {
-        const color = paletteIndexToColor(index, editingBackground);
+        const color = paletteIndexToColor(index);
         // Landing back on the color the grid opened on leaves the settings as they were
         onUpdate(color === session.startColor ? session.widgets : setWidgetColor(session.widgets, session.widgetId, color, editingBackground));
     };
@@ -250,10 +250,10 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
             const selectedWidget = colorableWidgets.find(widget => widget.id === highlightedItemId);
             if (selectedWidget && settings.colorLevel >= 2) {
                 const startColor = getEffectiveColor(selectedWidget, editingBackground);
-                const session = { widgets, widgetId: selectedWidget.id, startColor, startIndex: colorToPaletteIndex(startColor) };
-                setPalette(session);
-                // The preview shows the highlighted color from the start, so Enter keeps what it shows
-                applyPaletteColor(session, session.startIndex);
+                const startIndex = colorToPaletteIndex(startColor, getColorLevelString(settings.colorLevel));
+                // The widget keeps its color until the cursor moves: a named or
+                // hex color may only be near the color the cursor starts on
+                setPalette({ widgets, widgetId: selectedWidget.id, startColor, startIndex });
             }
         } else if (shortcut === 'g' || shortcut === 'G') {
             // Enter gradient selection mode (foreground only, needs a real color palette)
@@ -466,8 +466,8 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
                 onHighlight={(index) => {
                     applyPaletteColor(palette, index);
                 }}
-                onSelect={(index) => {
-                    applyPaletteColor(palette, index);
+                onSelect={() => {
+                    // Moving the cursor already applied its color
                     setPalette(null);
                 }}
                 onCancel={() => {
