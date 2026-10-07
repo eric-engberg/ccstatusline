@@ -196,9 +196,9 @@ describe('glyph picker', () => {
     });
 
     it('opens on the current glyph when the picker has it', async () => {
-        const groupIndex = GLYPH_GROUPS.findIndex(group => group.glyphs.some(entry => entry.glyph === '⎇'));
-        const entry = GLYPH_GROUPS[groupIndex]?.glyphs.find(candidate => candidate.glyph === '⎇');
-        const editor = renderWidgetEditor(singleGlyphEditor, { ...cwd, character: '⎇' });
+        const groupIndex = GLYPH_GROUPS.findIndex(group => group.glyphs.some(entry => entry.glyph === '✔'));
+        const entry = GLYPH_GROUPS[groupIndex]?.glyphs.find(candidate => candidate.glyph === '✔');
+        const editor = renderWidgetEditor(singleGlyphEditor, { ...cwd, character: '✔' });
 
         try {
             await editor.ready();
@@ -307,7 +307,7 @@ describe('glyph picker', () => {
                 expect(output).toContain('Skin tone: 🏻 light');
                 // Ctrl+T isn't typed into the search
                 expect(output).toContain('Pick a glyph: "thumbs up"');
-                expect(output).toContain('👍🏻  thumbs up sign: light skin tone');
+                expect(output).toContain('👍🏻  thumbs up: light skin tone');
                 await editor.press(ENTER, ENTER);
                 expect(savedWidget(editor)?.character).toBe('👍🏻');
             } finally {
@@ -367,7 +367,7 @@ describe('glyph picker', () => {
 
             try {
                 await editor.ready();
-                expect(await openPicker(editor)).toContain('👍🏾  thumbs up sign: medium-dark skin tone');
+                expect(await openPicker(editor)).toContain('👍🏾  thumbs up: medium-dark skin tone');
             } finally {
                 editor.cleanup();
             }

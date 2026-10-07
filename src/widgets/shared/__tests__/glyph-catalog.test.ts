@@ -105,8 +105,8 @@ describe('glyph catalog', () => {
     });
 
     it('finds the curated emoji and symbols by their Unicode names', () => {
-        expect(glyphsFor('file folder')[0]).toBe('📁');
-        expect(glyphsFor('alternative key')).toContain('⎇');
+        expect(glyphsFor('grinning face')[0]).toBe('😀');
+        expect(glyphsFor('heavy check mark')).toContain('✔');
     });
 
     // A handful (oct-heart, the IEC power symbols) are ordinary Unicode
