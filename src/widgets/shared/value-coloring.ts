@@ -6,10 +6,7 @@ import type { Settings } from '../../types/Settings';
 import type { WidgetItem } from '../../types/Widget';
 import { getColorAnsiCode } from '../../utils/colors';
 
-import {
-    paintCode,
-    paintForeground
-} from './foreground';
+import { paintCode } from './foreground';
 import {
     BAR_GRADIENT_PRESETS,
     gradientPresetCodeAt,
@@ -252,23 +249,20 @@ export function getValueColorCode(item: WidgetItem, percent: number, scale: Valu
 export interface ValueFormatOptions {
     colorLevel: ColorLevelString;
     colorsDisabled: boolean;
-    // The color the renderer would have used for the whole widget; it still
-    // owns the label and values with nothing to compare them to
-    baseColor: string;
 }
 
-export function getValueFormatOptions(settings: Settings, baseColor: string): ValueFormatOptions {
+export function getValueFormatOptions(settings: Settings): ValueFormatOptions {
     return {
         colorLevel: getColorLevelString(settings.colorLevel),
-        colorsDisabled: settings.colorLevel === 0,
-        baseColor
+        colorsDisabled: settings.colorLevel === 0
     };
 }
 
 /**
  * The value colored by its percent, and the label with it when the whole widget
- * is colored; otherwise the label keeps the widget color. A null percent keeps
- * the widget color.
+ * is colored. Only that run is painted, ending with the default-foreground
+ * code; the renderer colors the rest, and a value with no percent (or no
+ * color at 16 colors), with the widget color (Widget.colorsOnlyItsRuns).
  */
 export function formatColoredValue(
     item: WidgetItem,
@@ -283,10 +277,9 @@ export function formatColoredValue(
         return `${shownLabel}${value}`;
     }
 
-    const valueCode = (percent === null ? null : getValueColorCode(item, percent, scale, options.colorLevel))
-        ?? getColorAnsiCode(options.baseColor, options.colorLevel);
+    const valueCode = (percent === null ? null : getValueColorCode(item, percent, scale, options.colorLevel)) ?? '';
     if (getValueColorScope(item) === 'widget') {
         return paintCode(`${shownLabel}${value}`, valueCode);
     }
-    return `${paintForeground(shownLabel, options.baseColor, options.colorLevel)}${paintCode(value, valueCode)}`;
+    return `${shownLabel}${paintCode(value, valueCode)}`;
 }

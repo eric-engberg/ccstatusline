@@ -22,7 +22,7 @@ import {
 } from '../../utils/input-guards';
 import {
     getWidget,
-    widgetPreservesColors
+    widgetColorsOnlyItsRuns
 } from '../../utils/widgets';
 
 import { ConfirmDialog } from './ConfirmDialog';
@@ -46,6 +46,15 @@ export interface ColorMenuProps {
     settings: Settings;
     onUpdate: (widgets: WidgetItem[]) => void;
     onBack: () => void;
+}
+
+// The keys for entering a color: hex at truecolor, and the 256-color grid from
+// 256 colors up
+function getColorEntryKeys(colorLevel: number): string {
+    if (colorLevel === 3) {
+        return ' (h)ex, (a)nsi256,';
+    }
+    return colorLevel === 2 ? ' (a)nsi256,' : '';
 }
 
 // The color the menu shows for a widget: its own setting, else the widget's default
@@ -97,7 +106,7 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
     const [editingBackground, setEditingBackground] = useState(false);
 
     const applyPaletteColor = (session: PaletteSession, index: number) => {
-        const color = paletteIndexToColor(index, editingBackground);
+        const color = paletteIndexToColor(index);
         // Landing back on the color the grid opened on leaves the settings as they were
         onUpdate(color === session.startColor ? session.widgets : setWidgetColor(session.widgets, session.widgetId, color, editingBackground));
     };
@@ -241,10 +250,10 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
             const selectedWidget = colorableWidgets.find(widget => widget.id === highlightedItemId);
             if (selectedWidget && settings.colorLevel >= 2) {
                 const startColor = getEffectiveColor(selectedWidget, editingBackground);
-                const session = { widgets, widgetId: selectedWidget.id, startColor, startIndex: colorToPaletteIndex(startColor) };
-                setPalette(session);
-                // The preview shows the highlighted color from the start, so Enter keeps what it shows
-                applyPaletteColor(session, session.startIndex);
+                const startIndex = colorToPaletteIndex(startColor, getColorLevelString(settings.colorLevel));
+                // The widget keeps its color until the cursor moves: a named or
+                // hex color may only be near the color the cursor starts on
+                setPalette({ widgets, widgetId: selectedWidget.id, startColor, startIndex });
             }
         } else if (shortcut === 'g' || shortcut === 'G') {
             // Enter gradient selection mode (foreground only, needs a real color palette)
@@ -386,9 +395,9 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
     const selectedWidget = highlightedItemId && highlightedItemId !== 'back'
         ? colorableWidgets.find(widget => widget.id === highlightedItemId)
         : null;
-    const currentColor = selectedWidget
-        ? getEffectiveColor(selectedWidget, editingBackground)
-        : (editingBackground ? '' : 'white');
+    // With no widget highlighted: no background, and the default foreground
+    const noWidgetColor = editingBackground ? '' : 'white';
+    const currentColor = selectedWidget ? getEffectiveColor(selectedWidget, editingBackground) : noWidgetColor;
 
     const colorList = editingBackground ? bgColors : colors;
     const colorIndex = colorList.indexOf(currentColor);
@@ -457,8 +466,8 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
                 onHighlight={(index) => {
                     applyPaletteColor(palette, index);
                 }}
-                onSelect={(index) => {
-                    applyPaletteColor(palette, index);
+                onSelect={() => {
+                    // Moving the cursor already applied its color
                     setPalette(null);
                 }}
                 onCancel={() => {
@@ -601,7 +610,7 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
                         {' '}
                         {editingBackground ? 'background' : 'foreground'}
                         , (f) to toggle bg/fg, (b)old, (d)im,
-                        {settings.colorLevel === 3 ? ' (h)ex, (a)nsi256,' : settings.colorLevel === 2 ? ' (a)nsi256,' : ''}
+                        {getColorEntryKeys(settings.colorLevel)}
                         {!editingBackground && settings.colorLevel >= 2 ? ' (g)radient,' : ''}
                         {' '}
                         (r)eset, (c)lear all, ESC to go back
@@ -627,8 +636,8 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
                                 {styleIndicators && ` ${styleIndicators}`}
                             </Text>
                             {/* Widgets that fully own their colors are filtered out
-                                above; one still listed here owns only part of it */}
-                            {!editingBackground && widgetPreservesColors(selectedWidget) && (
+                                above; this one colors only some runs itself */}
+                            {!editingBackground && widgetColorsOnlyItsRuns(selectedWidget) && (
                                 <Text dimColor>  This widget sets some of its own colors (see its options in Edit Lines); this foreground colors the rest.</Text>
                             )}
                         </Box>

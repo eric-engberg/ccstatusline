@@ -81,8 +81,8 @@ describe('context-length value colors', () => {
         expect(widget?.render(colored, { isPreview: true }, DEFAULT_SETTINGS)).toBe(`${LOW}18.6k${FG_RESET}`);
     });
 
-    it('keeps the label in the widget color and draws plainly with value colors off', () => {
-        expect(widget?.render({ ...colored, rawValue: false }, used(95), DEFAULT_SETTINGS)).toBe(`\x1b[38;2;17;34;51mCtx: ${FG_RESET}${HIGH}190.0k${FG_RESET}`);
+    it('paints only the length, and draws plainly with value colors off', () => {
+        expect(widget?.render({ ...colored, rawValue: false }, used(95), DEFAULT_SETTINGS)).toBe(`Ctx: ${HIGH}190.0k${FG_RESET}`);
         expect(widget?.render({ id: 'l', type: 'context-length' }, used(95), DEFAULT_SETTINGS)).toBe('Ctx: 190.0k');
     });
 

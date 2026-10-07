@@ -94,9 +94,6 @@ export interface EffortDisplay {
 export interface EffortFormatOptions {
     colorLevel: ColorLevelString;
     colorsDisabled: boolean;
-    // The color the renderer would have used for the whole widget; it still
-    // owns the label, unknown levels and widget-colored brackets
-    baseColor: string;
 }
 
 export function formatThinkingEffort(item: WidgetItem, effort: EffortDisplay, options: EffortFormatOptions): string {
@@ -109,9 +106,12 @@ export function formatThinkingEffort(item: WidgetItem, effort: EffortDisplay, op
         return `${open}${label}${effort.text}${close}`;
     }
 
-    const paint = (text: string, color: string): string => paintForeground(text, color, options.colorLevel);
-    const valueColor = effort.level ? getLevelColor(item, effort.level, options.colorLevel) : options.baseColor;
-    const bracketColor = getBracketColorMode(item) === 'effort' ? valueColor : options.baseColor;
+    // Only the level's runs are painted, each ending with the default-foreground
+    // code; the renderer colors the label, unknown levels and widget-colored
+    // brackets with the widget color (Widget.colorsOnlyItsRuns)
+    const paint = (text: string, color: string | null): string => (color ? paintForeground(text, color, options.colorLevel) : text);
+    const valueColor = effort.level ? getLevelColor(item, effort.level, options.colorLevel) : null;
+    const bracketColor = getBracketColorMode(item) === 'effort' ? valueColor : null;
 
-    return `${paint(open, bracketColor)}${paint(label, options.baseColor)}${paint(effort.text, valueColor)}${paint(close, bracketColor)}`;
+    return `${paint(open, bracketColor)}${label}${paint(effort.text, valueColor)}${paint(close, bracketColor)}`;
 }

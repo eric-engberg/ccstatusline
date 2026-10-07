@@ -154,7 +154,7 @@ function renderUsageDisplay(
     if (bar !== null) {
         return formatRawOrLabeledValue(item, label, bar);
     }
-    const formatOptions = getValueFormatOptions(settings, item.color ?? DEFAULT_COLOR);
+    const formatOptions = getValueFormatOptions(settings);
     return formatColoredValue(item, label, formatPercent(percent, format), usedPercent, LIMIT_SCALE, formatOptions);
 }
 

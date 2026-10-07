@@ -87,9 +87,9 @@ export abstract class ExtraUsageAmountWidget implements Widget {
         });
     }
 
-    // Value colors embed their own foreground codes, so the renderer must
-    // leave this widget's foreground alone while they're on
-    preservesRenderedColors(item: WidgetItem): boolean {
+    // Value colors paint only the value (or the whole text), so the renderer
+    // colors the rest with the theme or widget color
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
         return this.valueColors !== null && isValueColorsEnabled(item);
     }
 
@@ -134,7 +134,7 @@ export abstract class ExtraUsageAmountWidget implements Widget {
         if (!this.valueColors) {
             return formatRawOrLabeledValue(item, this.getLabelPrefix(), amount);
         }
-        const formatOptions = getValueFormatOptions(settings, item.color ?? DEFAULT_COLOR);
+        const formatOptions = getValueFormatOptions(settings);
         return formatColoredValue(item, this.getLabelPrefix(), amount, usedPercent, LIMIT_SCALE, formatOptions);
     }
 }

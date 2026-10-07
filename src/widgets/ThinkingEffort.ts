@@ -107,10 +107,7 @@ export class ThinkingEffortWidget implements Widget {
 
         return formatThinkingEffort(item, effort, {
             colorLevel: getColorLevelString(settings.colorLevel),
-            colorsDisabled: settings.colorLevel === 0,
-            // Same resolution as the renderer: '' is the color menu's "Default"
-            // (no color), only an unset color falls back to the widget default
-            baseColor: item.color ?? this.getDefaultColor()
+            colorsDisabled: settings.colorLevel === 0
         });
     }
 
@@ -129,9 +126,9 @@ export class ThinkingEffortWidget implements Widget {
         return React.createElement(EffortColorsEditor, props);
     }
 
-    // Level colors embed their own foreground codes, so the renderer must
-    // leave this widget's foreground alone, as it does for Claude Status
-    preservesRenderedColors(item: WidgetItem): boolean {
+    // Level colors paint only the level, so the renderer colors the label and
+    // the rest around it with the theme or widget color
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
         return isLevelColorsEnabled(item);
     }
 

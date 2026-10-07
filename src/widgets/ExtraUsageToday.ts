@@ -95,9 +95,9 @@ export class ExtraUsageTodayWidget implements Widget {
         return renderValueColorsEditor(props, VALUE_COLORS_EDITOR);
     }
 
-    // Value colors embed their own foreground codes, so the renderer must
-    // leave this widget's foreground alone while they're on
-    preservesRenderedColors(item: WidgetItem): boolean {
+    // Value colors paint only the value (or the whole text), so the renderer
+    // colors the rest with the theme or widget color
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
         return isValueColorsEnabled(item);
     }
 
@@ -107,7 +107,7 @@ export class ExtraUsageTodayWidget implements Widget {
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
         const format = resolveNumberFormat('cost', item, settings);
-        const formatOptions = getValueFormatOptions(settings, item.color ?? this.getDefaultColor());
+        const formatOptions = getValueFormatOptions(settings);
         if (context.isPreview) {
             return formatColoredValue(item, LABEL, formatUsageCurrency(46.1, undefined, format), PREVIEW_PERCENT, BUDGET_SCALE, formatOptions);
         }

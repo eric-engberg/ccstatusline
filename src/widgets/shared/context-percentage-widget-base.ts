@@ -108,7 +108,7 @@ export abstract class ContextPercentageWidgetBase implements Widget {
             return formatRawOrLabeledValue(item, this.getLabelPrefix(item), paintWidgetBar(slider, item, settings, isInverse));
         }
         // Value colors follow the used percent, even while the widget shows what's left
-        const formatOptions = getValueFormatOptions(settings, item.color ?? this.getDefaultColor());
+        const formatOptions = getValueFormatOptions(settings);
         return formatColoredValue(item, this.getLabelPrefix(item), formatPercent(displayPercentage, format), usedPercentage, LIMIT_SCALE, formatOptions);
     }
 

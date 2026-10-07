@@ -267,7 +267,6 @@ export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike>(conf
         const LOW = '\x1b[38;2;0;255;0m';
         const MID = '\x1b[38;2;255;255;0m';
         const HIGH = '\x1b[38;2;255;0;0m';
-        const BASE = '\x1b[38;2;17;34;51m';
         const FG_RESET = '\x1b[39m';
         // Custom colors, so the escape codes don't depend on the terminal's color support
         const colored: WidgetItem = {
@@ -292,15 +291,14 @@ export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike>(conf
             expect(config.render(widget, colored, used(90))).toBe(`${HIGH}90.0%${FG_RESET}`);
         });
 
-        it('colors by the used percent while showing what\'s left, and keeps the label in the widget color', () => {
+        it('colors by the used percent while showing what\'s left, and paints only the percent', () => {
             const widget = config.createWidget();
             const remaining = { ...colored, metadata: { ...colored.metadata, invert: 'true' } };
 
             expect(config.render(widget, remaining, used(95))).toBe(`${HIGH}5.0%${FG_RESET}`);
-            // The label is drawn in the widget's color, which resets before the value
             const labeled = config.render(widget, { ...colored, rawValue: false }, used(25)) ?? '';
-            const label = labeled.slice(BASE.length, labeled.indexOf(FG_RESET));
-            expect(labeled.startsWith(BASE)).toBe(true);
+            const label = labeled.slice(0, labeled.indexOf(LOW));
+            expect(labeled.endsWith(`${LOW}25.0%${FG_RESET}`)).toBe(true);
             expect(label.endsWith(': ')).toBe(true);
             expect(label).not.toContain('\x1b');
         });

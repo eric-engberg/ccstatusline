@@ -82,7 +82,7 @@ function formatUsedPercent(item: WidgetItem, label: string, usedPercent: number,
         return formatRawOrLabeledValue(item, label, bar);
     }
 
-    const formatOptions = getValueFormatOptions(settings, item.color ?? DEFAULT_COLOR);
+    const formatOptions = getValueFormatOptions(settings);
     return formatColoredValue(item, label, formatPercent(renderedPercent, format), usedPercent, LIMIT_SCALE, formatOptions);
 }
 
@@ -152,14 +152,16 @@ export class ExtraUsageUtilizationWidget implements Widget {
         return withValueColorsKeybind(keybinds, item === undefined || showsPlainUsageValue(item));
     }
 
-    // The level glyph's glyph and break point editors, or the value colors editor
+    // The level glyph's glyph and break point editors, or the value colors
+    // editor, whose sample shows what's left while the widget does
     renderEditor(props: WidgetEditorProps): React.ReactElement {
-        return renderLevelGlyphEditor(props) ?? renderValueColorsEditor(props, VALUE_COLORS_EDITOR);
+        const showsRemaining = isUsageInverted(props.widget);
+        return renderLevelGlyphEditor(props) ?? renderValueColorsEditor(props, { ...VALUE_COLORS_EDITOR, showsRemaining, sampleNote: showsRemaining ? 'left' : 'used' });
     }
 
-    // Value colors embed their own foreground codes, so the renderer must
-    // leave this widget's foreground alone while they show
-    preservesRenderedColors(item: WidgetItem): boolean {
+    // Value colors paint only the value (or the whole text), so the renderer
+    // colors the rest with the theme or widget color
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
         return showsValueColors(item);
     }
 

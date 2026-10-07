@@ -122,7 +122,7 @@ export class FreeMemoryWidget implements Widget {
     // Value colors measure the share of memory used
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
         const format = resolveNumberFormat('memory', item, settings);
-        const formatOptions = getValueFormatOptions(settings, item.color ?? DEFAULT_COLOR);
+        const formatOptions = getValueFormatOptions(settings);
         if (context.isPreview) {
             const value = `${formatBytes(12.4 * 1024 ** 3, format)}/${formatBytes(16 * 1024 ** 3, format)}`;
             return formatColoredValue(item, this.getLabelPrefix(), value, 12.4 / 16 * 100, LIMIT_SCALE, formatOptions);

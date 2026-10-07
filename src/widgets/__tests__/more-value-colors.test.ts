@@ -17,7 +17,6 @@ import { renderWidgetEditor } from '../shared/__tests__/helpers/widget-editor-ha
 const LOW = '\x1b[38;2;0;255;0m';
 const MID = '\x1b[38;2;255;255;0m';
 const HIGH = '\x1b[38;2;255;0;0m';
-const BASE = '\x1b[38;2;17;34;51m';
 const FG_RESET = '\x1b[39m';
 // Custom colors, so the escape codes don't depend on the terminal's color support
 const colored = (type: string): WidgetItem => ({
@@ -43,8 +42,10 @@ describe.each(['free-memory', 'extra-usage-remaining', 'cache-hit-rate'])('%s va
         expect(widget?.getCustomKeybinds?.(item).map(keybind => keybind.key)).toContain('v');
         expect(widget?.getEditorDisplay(item).modifierText).toContain('value colors');
         expect(widget?.renderEditor?.({ ...editorProps, action: 'edit-value-colors' })).toBeTruthy();
-        expect(widget?.preservesRenderedColors?.(item)).toBe(true);
-        expect(widget?.preservesRenderedColors?.({ id: 'w', type })).toBe(false);
+        // Extra Usage Remaining colors only its value's run, as Extra Usage Used does
+        const keepsColors = (target: WidgetItem) => (type === 'extra-usage-remaining' ? widget?.colorsOnlyItsRuns?.(target) : widget?.preservesRenderedColors?.(target));
+        expect(keepsColors(item)).toBe(true);
+        expect(keepsColors({ id: 'w', type })).toBe(false);
     });
 });
 
@@ -53,7 +54,7 @@ it('colors Memory Usage by how much memory is used', () => {
     const widget = getWidget('free-memory');
 
     expect(widget?.render(colored('free-memory'), { isPreview: true }, DEFAULT_SETTINGS)).toBe(`${MID}12.4G/16.0G${FG_RESET}`);
-    expect(widget?.render({ ...colored('free-memory'), rawValue: false }, { isPreview: true }, DEFAULT_SETTINGS)).toBe(`${BASE}Mem: ${FG_RESET}${MID}12.4G/16.0G${FG_RESET}`);
+    expect(widget?.render({ ...colored('free-memory'), rawValue: false }, { isPreview: true }, DEFAULT_SETTINGS)).toBe(`Mem: ${MID}12.4G/16.0G${FG_RESET}`);
 });
 
 // Measured as Extra Usage Used is: the share of the $500.00 limit spent
@@ -68,8 +69,8 @@ describe('extra-usage-remaining value colors', () => {
         expect(render(spent(45000))).toBe(`${HIGH}$50.00${FG_RESET}`);
     });
 
-    it('keeps the widget color with a zero limit', () => {
-        expect(render(spent(0, 0))).toBe(`${BASE}$0.00${FG_RESET}`);
+    it('leaves what\'s left to the renderer with a zero limit', () => {
+        expect(render(spent(0, 0))).toBe('$0.00');
     });
 });
 

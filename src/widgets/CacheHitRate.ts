@@ -75,7 +75,7 @@ export class CacheHitRateWidget implements Widget {
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
         const format = resolveNumberFormat('percent', item, settings);
-        const formatOptions = getValueFormatOptions(settings, item.color ?? DEFAULT_COLOR);
+        const formatOptions = getValueFormatOptions(settings);
         if (context.isPreview) {
             return formatColoredValue(item, this.getLabelPrefix(), formatPercent(87, format), 87, HIT_RATE_SCALE, formatOptions);
         }

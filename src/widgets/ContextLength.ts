@@ -70,7 +70,7 @@ export class ContextLengthWidget implements Widget {
     // Value colors measure the length against the context window, as Context % does
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
         const format = resolveNumberFormat('token', item, settings);
-        const formatOptions = getValueFormatOptions(settings, item.color ?? DEFAULT_COLOR);
+        const formatOptions = getValueFormatOptions(settings);
         if (context.isPreview) {
             return formatColoredValue(item, this.getLabelPrefix(), formatTokens(PREVIEW_TOKENS, format), PREVIEW_PERCENT, LIMIT_SCALE, formatOptions);
         }
