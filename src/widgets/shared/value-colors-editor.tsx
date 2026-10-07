@@ -61,6 +61,11 @@ export interface ValueColorsEditorOptions {
     maxPercent?: number;
     /** The widget's default label, for the sample while the whole widget is colored. */
     label?: string;
+    /**
+     * The widget shows what's left of 100%, while its colors follow the share
+     * used, so the sample shows what's left in the color of what's used.
+     */
+    showsRemaining?: boolean;
 }
 
 // Values on both sides of each break point, or along the gradient and past its end
@@ -158,8 +163,10 @@ export function makeValueColorsConfig(options: ValueColorsEditorOptions, setting
         renderSample: (item, _band, colors) => {
             // With the whole widget colored, each value is shown with its label
             const withLabel = getValueColorScope(item) === 'widget' && options.label !== undefined && !item.rawValue;
-            const values = getSamplePercents(item, options)
-                .map(percent => formatColoredValue({ ...item, rawValue: !withLabel }, options.label ?? '', `${percent}%`, percent, scale, colors));
+            const values = getSamplePercents(item, options).map((percent) => {
+                const shown = options.showsRemaining ? 100 - percent : percent;
+                return formatColoredValue({ ...item, rawValue: !withLabel }, options.label ?? '', `${shown}%`, percent, scale, colors);
+            });
             return values.join(withLabel ? '  ' : ' ');
         },
         sampleNote: options.sampleNote,

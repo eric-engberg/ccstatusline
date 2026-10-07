@@ -143,8 +143,10 @@ export class ExtraUsageUtilizationWidget implements Widget {
         return item && showsUsageBar(item) ? keybinds : [...keybinds, VALUE_COLORS_KEYBIND];
     }
 
+    // While the widget shows what's left, the sample does too
     renderEditor(props: WidgetEditorProps): React.ReactElement {
-        return renderValueColorsEditor(props, VALUE_COLORS_EDITOR);
+        const showsRemaining = isUsageInverted(props.widget);
+        return renderValueColorsEditor(props, { ...VALUE_COLORS_EDITOR, showsRemaining, sampleNote: showsRemaining ? 'left' : 'used' });
     }
 
     // Value colors paint only the value (or the whole text), so the renderer

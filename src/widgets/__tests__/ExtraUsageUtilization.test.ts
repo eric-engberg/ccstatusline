@@ -1,3 +1,4 @@
+import stripAnsi from 'strip-ansi';
 import {
     afterEach,
     beforeEach,
@@ -254,6 +255,30 @@ describe('ExtraUsageUtilizationWidget', () => {
             const item = { ...colored, rawValue: true, metadata: { ...colored.metadata, invert: 'true' } };
 
             expect(render(new ExtraUsageUtilizationWidget(), item, used(95))).toBe(`${HIGH}5.0%${FG_RESET}`);
+        });
+
+        // The sample shows what the widget shows, what's left, in the color of what's used
+        it('samples what\'s left in the color of what\'s used while showing what\'s left', async () => {
+            const widget = new ExtraUsageUtilizationWidget();
+            const remaining = { ...colored, metadata: { ...colored.metadata, invert: 'true' } };
+            const whole = { ...remaining, metadata: { ...remaining.metadata, valueColorScope: 'widget' } };
+
+            // 70% used shows as 30% left, yellow
+            expect(render(widget, whole, used(70))).toBe(`${MID}Overage: 30.0%${FG_RESET}`);
+            for (const [item, sample, coloredValue] of [
+                [remaining, 'Sample: 65% 30% 10% 0% left', `${MID}30%`],
+                [whole, 'Sample: Overage: 65%  Overage: 30%  Overage: 10%  Overage: 0% left', `${MID}Overage: 30%`]
+            ] as const) {
+                const editor = renderWidgetEditor(props => widget.renderEditor(props), item);
+                try {
+                    await editor.ready();
+                    const output = editor.takeColoredOutput();
+                    expect(stripAnsi(output)).toContain(sample);
+                    expect(output).toContain(coloredValue);
+                } finally {
+                    editor.cleanup();
+                }
+            }
         });
 
         it('places the percent along a gradient at 256 colors and up, and keeps the widget color at 16', () => {
