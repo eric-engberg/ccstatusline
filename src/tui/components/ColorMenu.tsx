@@ -22,7 +22,7 @@ import {
 } from '../../utils/input-guards';
 import {
     getWidget,
-    widgetPreservesColors
+    widgetColorsOnlyItsRuns
 } from '../../utils/widgets';
 
 import { ConfirmDialog } from './ConfirmDialog';
@@ -636,8 +636,8 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
                                 {styleIndicators && ` ${styleIndicators}`}
                             </Text>
                             {/* Widgets that fully own their colors are filtered out
-                                above; one still listed here owns only part of it */}
-                            {!editingBackground && widgetPreservesColors(selectedWidget) && (
+                                above; this one colors only some runs itself */}
+                            {!editingBackground && widgetColorsOnlyItsRuns(selectedWidget) && (
                                 <Text dimColor>  This widget sets some of its own colors (see its options in Edit Lines); this foreground colors the rest.</Text>
                             )}
                         </Box>
