@@ -48,6 +48,15 @@ export interface ColorMenuProps {
     onBack: () => void;
 }
 
+// The keys for entering a color: hex at truecolor, and the 256-color grid from
+// 256 colors up
+function getColorEntryKeys(colorLevel: number): string {
+    if (colorLevel === 3) {
+        return ' (h)ex, (a)nsi256,';
+    }
+    return colorLevel === 2 ? ' (a)nsi256,' : '';
+}
+
 // The color the menu shows for a widget: its own setting, else the widget's default
 function getEffectiveColor(widget: WidgetItem, editingBackground: boolean): string {
     if (editingBackground) {
@@ -386,9 +395,9 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
     const selectedWidget = highlightedItemId && highlightedItemId !== 'back'
         ? colorableWidgets.find(widget => widget.id === highlightedItemId)
         : null;
-    const currentColor = selectedWidget
-        ? getEffectiveColor(selectedWidget, editingBackground)
-        : (editingBackground ? '' : 'white');
+    // With no widget highlighted: no background, and the default foreground
+    const noWidgetColor = editingBackground ? '' : 'white';
+    const currentColor = selectedWidget ? getEffectiveColor(selectedWidget, editingBackground) : noWidgetColor;
 
     const colorList = editingBackground ? bgColors : colors;
     const colorIndex = colorList.indexOf(currentColor);
@@ -601,7 +610,7 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
                         {' '}
                         {editingBackground ? 'background' : 'foreground'}
                         , (f) to toggle bg/fg, (b)old, (d)im,
-                        {settings.colorLevel === 3 ? ' (h)ex, (a)nsi256,' : settings.colorLevel === 2 ? ' (a)nsi256,' : ''}
+                        {getColorEntryKeys(settings.colorLevel)}
                         {!editingBackground && settings.colorLevel >= 2 ? ' (g)radient,' : ''}
                         {' '}
                         (r)eset, (c)lear all, ESC to go back
