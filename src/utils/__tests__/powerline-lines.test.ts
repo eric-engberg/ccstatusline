@@ -10,9 +10,11 @@ import {
 } from '../../types/Settings';
 import type { WidgetItem } from '../../types/Widget';
 import {
+    drawsWidgetBackgrounds,
     getAutoAlignLines,
     getLineRenderItems,
     getLineSettings,
+    isAnyLinePowerline,
     isEveryLinePowerline,
     isPowerlineLine,
     removeLinePowerline,
@@ -47,6 +49,13 @@ describe('isPowerlineLine', () => {
         expect(isEveryLinePowerline(withPowerline(false, [true, true, true]))).toBe(true);
         expect(isEveryLinePowerline(withPowerline(false))).toBe(false);
     });
+
+    it('tells whether any line is Powerline', () => {
+        expect(isAnyLinePowerline(withPowerline(true, [false, false, false]))).toBe(false);
+        expect(isAnyLinePowerline(withPowerline(false))).toBe(false);
+        expect(isAnyLinePowerline(withPowerline(false, [null, true]))).toBe(true);
+        expect(isAnyLinePowerline(withPowerline(true, [false]))).toBe(true);
+    });
 });
 
 describe('getLineSettings', () => {
@@ -79,6 +88,15 @@ describe('getLineRenderItems', () => {
         expect(getLineRenderItems(withPowerline(true), 0, items)).toBe(items);
         expect(getLineRenderItems(withPowerline(false), 0, items)).toBe(items);
         expect(getLineRenderItems(withPowerline(false, [true]), 0, items)).toBe(items);
+    });
+});
+
+describe('drawsWidgetBackgrounds', () => {
+    it('is false only for a line set to plain while Powerline is on', () => {
+        expect(drawsWidgetBackgrounds(withPowerline(true, [null, false]), 0)).toBe(true);
+        expect(drawsWidgetBackgrounds(withPowerline(true, [null, false]), 1)).toBe(false);
+        expect(drawsWidgetBackgrounds(withPowerline(false), 1)).toBe(true);
+        expect(drawsWidgetBackgrounds(withPowerline(false, [true]), 0)).toBe(true);
     });
 });
 

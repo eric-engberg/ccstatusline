@@ -14,6 +14,10 @@ export function isEveryLinePowerline(settings: Settings): boolean {
     return settings.lines.every((_, index) => isPowerlineLine(settings, index));
 }
 
+export function isAnyLinePowerline(settings: Settings): boolean {
+    return settings.lines.some((_, index) => isPowerlineLine(settings, index));
+}
+
 /** The settings a line renders and is edited with: its own Powerline switch. */
 export function getLineSettings(settings: Settings, lineIndex: number): Settings {
     const enabled = isPowerlineLine(settings, lineIndex);
@@ -23,12 +27,17 @@ export function getLineSettings(settings: Settings, lineIndex: number): Settings
 }
 
 /**
- * The widgets a line renders. A line set to plain while Powerline is on drops
- * its widgets' backgrounds, which are Powerline colors; in plain mode they're
- * the user's own and stay.
+ * Whether a line draws its widgets' backgrounds. A line set to plain while
+ * Powerline is on doesn't: they're Powerline colors. In plain mode they're the
+ * user's own and show.
  */
+export function drawsWidgetBackgrounds(settings: Settings, lineIndex: number): boolean {
+    return !settings.powerline.enabled || isPowerlineLine(settings, lineIndex);
+}
+
+/** The widgets a line renders: without backgrounds on a line that doesn't draw them. */
 export function getLineRenderItems(settings: Settings, lineIndex: number, items: WidgetItem[]): WidgetItem[] {
-    if (!settings.powerline.enabled || isPowerlineLine(settings, lineIndex)) {
+    if (drawsWidgetBackgrounds(settings, lineIndex)) {
         return items;
     }
     return items.map(({ backgroundColor, ...item }) => item);

@@ -9,6 +9,7 @@ import React, { useState } from 'react';
 import type { PowerlineConfig } from '../../types/PowerlineConfig';
 import type { Settings } from '../../types/Settings';
 import { type PowerlineFontStatus } from '../../utils/powerline';
+import { isAnyLinePowerline } from '../../utils/powerline-lines';
 import { buildEnabledPowerlineSettings } from '../../utils/powerline-settings';
 
 import { ConfirmDialog } from './ConfirmDialog';
@@ -102,10 +103,13 @@ export function getThemeDisplay(powerlineConfig: PowerlineConfig): string {
     return theme.charAt(0).toUpperCase() + theme.slice(1);
 }
 
+// The options apply to Powerline lines, so they're offered while any line is
+// Powerline, including one switched on in Edit Lines with Powerline off
 export function buildPowerlineSetupMenuItems(
-    powerlineConfig: PowerlineConfig
+    powerlineConfig: PowerlineConfig,
+    powerlineInUse = powerlineConfig.enabled
 ): ListEntry<PowerlineMenuValue>[] {
-    const disabled = !powerlineConfig.enabled;
+    const disabled = !powerlineInUse;
 
     return [
         {
@@ -161,6 +165,7 @@ export const PowerlineSetup: React.FC<PowerlineSetupProps> = ({
     onClearMessage
 }) => {
     const powerlineConfig = settings.powerline;
+    const powerlineInUse = isAnyLinePowerline(settings);
     const [screen, setScreen] = useState<Screen>('menu');
     const [selectedMenuItem, setSelectedMenuItem] = useState(0);
     const [confirmingEnable, setConfirmingEnable] = useState(false);
@@ -206,7 +211,7 @@ export const PowerlineSetup: React.FC<PowerlineSetupProps> = ({
                 }
             } else if (input === 'i' || input === 'I') {
                 setConfirmingFontInstall(true);
-            } else if ((input === 'a' || input === 'A') && powerlineConfig.enabled) {
+            } else if ((input === 'a' || input === 'A') && powerlineInUse) {
                 onUpdate({
                     ...settings,
                     powerline: {
@@ -214,7 +219,7 @@ export const PowerlineSetup: React.FC<PowerlineSetupProps> = ({
                         autoAlign: !powerlineConfig.autoAlign
                     }
                 });
-            } else if ((input === 'c' || input === 'C') && powerlineConfig.enabled) {
+            } else if ((input === 'c' || input === 'C') && powerlineInUse) {
                 onUpdate({
                     ...settings,
                     powerline: {
@@ -414,7 +419,7 @@ export const PowerlineSetup: React.FC<PowerlineSetupProps> = ({
                         <Text dimColor> - Press (t) to toggle</Text>
                     </Box>
 
-                    {powerlineConfig.enabled && (
+                    {powerlineInUse && (
                         <>
                             <Box>
                                 <Text>  Align Widgets: </Text>
@@ -440,13 +445,15 @@ export const PowerlineSetup: React.FC<PowerlineSetupProps> = ({
                                     Continue Theme keeps the Powerline color sequence running across Powerline lines
                                 </Text>
                                 <Text dimColor>
-                                    Lines set to plain with (p) in Edit Lines stay plain
+                                    {powerlineConfig.enabled
+                                        ? 'Lines set to plain with (p) in Edit Lines stay plain'
+                                        : 'Lines set to Powerline with (p) in Edit Lines use these settings'}
                                 </Text>
                             </Box>
                         </>
                     )}
 
-                    {!powerlineConfig.enabled && (
+                    {!powerlineInUse && (
                         <Box marginTop={1}>
                             <Text dimColor>Enable Powerline mode to configure separators, caps, and themes.</Text>
                         </Box>
@@ -454,7 +461,7 @@ export const PowerlineSetup: React.FC<PowerlineSetupProps> = ({
 
                     <List
                         marginTop={1}
-                        items={buildPowerlineSetupMenuItems(powerlineConfig)}
+                        items={buildPowerlineSetupMenuItems(powerlineConfig, powerlineInUse)}
                         onSelect={(value) => {
                             if (value === 'back') {
                                 onBack();

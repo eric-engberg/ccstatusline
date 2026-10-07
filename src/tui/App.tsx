@@ -64,7 +64,10 @@ import {
     installPowerlineFonts,
     type PowerlineFontStatus
 } from '../utils/powerline';
-import { getLineSettings } from '../utils/powerline-lines';
+import {
+    drawsWidgetBackgrounds,
+    getLineSettings
+} from '../utils/powerline-lines';
 import { getPackageVersion } from '../utils/terminal';
 import {
     checkForUpdates,
@@ -1234,6 +1237,7 @@ export const App: React.FC = () => {
                         widgets={settings.lines[selectedLine] ?? []}
                         lineIndex={selectedLine}
                         settings={getLineSettings(settings, selectedLine)}
+                        showsBackgrounds={drawsWidgetBackgrounds(settings, selectedLine)}
                         onUpdate={(updatedWidgets) => {
                             // Update only the selected line
                             const newLines = [...settings.lines];

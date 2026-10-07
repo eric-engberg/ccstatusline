@@ -92,6 +92,14 @@ describe('PowerlineSetup helpers', () => {
 
         expect(disabledItems.every(item => item.disabled)).toBe(true);
 
+        // Powerline off by default, but a line switched to Powerline uses these settings
+        const lineItems = buildPowerlineSetupMenuItems({
+            ...DEFAULT_SETTINGS.powerline,
+            enabled: false
+        }, true);
+
+        expect(lineItems.some(item => item.disabled)).toBe(false);
+
         const enabledItems = buildPowerlineSetupMenuItems({
             ...DEFAULT_SETTINGS.powerline,
             enabled: true,
@@ -118,6 +126,60 @@ describe('PowerlineSetup helpers', () => {
             label: 'Themes     ',
             sublabel: '(Custom)'
         });
+    });
+
+    it('offers the Powerline options when only a line is Powerline', async () => {
+        const stdin = createMockStdin();
+        const stdout = createMockStdout();
+        const stderr = createMockStdout();
+        const onUpdate = vi.fn<PowerlineSetupProps['onUpdate']>();
+        const instance = render(
+            React.createElement(PowerlineSetup, {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                    powerline: {
+                        ...DEFAULT_SETTINGS.powerline,
+                        enabled: false,
+                        autoAlign: false,
+                        lineEnabled: [null, true]
+                    }
+                },
+                powerlineFontStatus: { installed: true },
+                onUpdate,
+                onBack: vi.fn(),
+                onInstallFonts: vi.fn(),
+                installingFonts: false,
+                fontInstallMessage: null,
+                onClearMessage: vi.fn()
+            }),
+            {
+                stdin,
+                stdout,
+                stderr,
+                debug: true,
+                exitOnCtrlC: false,
+                patchConsole: false
+            }
+        );
+
+        try {
+            await waitFor(() => {
+                expect(stdout.getOutput()).toContain('Align Widgets:');
+            });
+            expect(stdout.getOutput()).not.toContain('Enable Powerline mode to configure');
+
+            stdin.write('a');
+            await waitFor(() => {
+                expect(onUpdate).toHaveBeenCalled();
+            });
+            expect(onUpdate.mock.calls[0]?.[0].powerline.autoAlign).toBe(true);
+        } finally {
+            instance.unmount();
+            instance.cleanup();
+            stdin.destroy();
+            stdout.destroy();
+            stderr.destroy();
+        }
     });
 
     it('toggles continue theme across lines when (c) is pressed', async () => {

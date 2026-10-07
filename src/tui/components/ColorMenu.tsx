@@ -33,11 +33,14 @@ export interface ColorMenuProps {
     widgets: WidgetItem[];
     lineIndex?: number;
     settings: Settings;
+    // False on a line that doesn't draw its widgets' backgrounds (plain while
+    // Powerline is on), so they aren't shown or edited here
+    showsBackgrounds?: boolean;
     onUpdate: (widgets: WidgetItem[]) => void;
     onBack: () => void;
 }
 
-export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settings, onUpdate, onBack }) => {
+export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settings, showsBackgrounds = true, onUpdate, onBack }) => {
     const [showSeparators, setShowSeparators] = useState(false);
     const [hexInputMode, setHexInputMode] = useState(false);
     const [hexInput, setHexInput] = useState('');
@@ -257,7 +260,7 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
                 // the initial index when rendering the SelectInput
             }
         } else if (input === 'f' || input === 'F') {
-            if (colorableWidgets.length > 0) {
+            if (colorableWidgets.length > 0 && showsBackgrounds) {
                 setEditingBackground(!editingBackground);
             }
         } else if (input === 'b' || input === 'B') {
@@ -357,7 +360,7 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
                 defaultColor = widgetImpl.getDefaultColor();
             }
         }
-        const styledLabel = applyColors(label, widget.color ?? defaultColor, widget.backgroundColor, widget.bold, level, widget.dim);
+        const styledLabel = applyColors(label, widget.color ?? defaultColor, showsBackgrounds ? widget.backgroundColor : undefined, widget.bold, level, widget.dim);
         return {
             label: styledLabel,
             value: widget.id
@@ -588,12 +591,16 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
                         ↑↓ to select, ←→ to cycle
                         {' '}
                         {editingBackground ? 'background' : 'foreground'}
-                        , (f) to toggle bg/fg, (b)old, (d)im,
+                        {showsBackgrounds ? ', (f) to toggle bg/fg' : ''}
+                        , (b)old, (d)im,
                         {settings.colorLevel === 3 ? ' (h)ex,' : settings.colorLevel === 2 ? ' (a)nsi256,' : ''}
                         {!editingBackground && settings.colorLevel >= 2 ? ' (g)radient,' : ''}
                         {' '}
                         (r)eset, (c)lear all, ESC to go back
                     </Text>
+                    {!showsBackgrounds && (
+                        <Text dimColor>{'This line is plain, so its backgrounds don\'t show while Powerline is on.'}</Text>
+                    )}
                     {!settings.powerline.enabled && !settings.defaultSeparator && (
                         <Text dimColor>
                             (s)how separators:
