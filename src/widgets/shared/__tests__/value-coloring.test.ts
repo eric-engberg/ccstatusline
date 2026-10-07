@@ -19,12 +19,14 @@ import {
     getValueBand,
     getValueColorCode,
     getValueColorMode,
+    getValueColorScope,
     getValueColorsModifier,
     getValueGradient,
     isValueColorsEnabled,
     resetValueColors,
     setBandColor,
     setValueColorMode,
+    setValueColorScope,
     setValueColorsEnabled,
     stepBreakPoint,
     stepGradientEnd,
@@ -57,6 +59,7 @@ const colored: WidgetItem = {
     }
 };
 const gradient: WidgetItem = { ...colored, metadata: { ...colored.metadata, valueColorMode: 'gradient' } };
+const wholeWidget: WidgetItem = { ...colored, metadata: { ...colored.metadata, valueColorScope: 'widget' } };
 const options = { colorLevel: 'truecolor', colorsDisabled: false, baseColor: 'hex:112233' } as const;
 
 describe('getValueBand', () => {
@@ -182,8 +185,15 @@ describe('value color settings', () => {
         expect(getGradientEnd(stepGradientEnd(item, -1))).toBe(95);
     });
 
+    it('colors the value only unless set to the whole widget, and stores only the whole widget', () => {
+        expect(getValueColorScope(colored)).toBe('value');
+        expect(getValueColorScope(wholeWidget)).toBe('widget');
+        expect(setValueColorScope(colored, 'widget').metadata?.valueColorScope).toBe('widget');
+        expect(setValueColorScope(wholeWidget, 'value').metadata).not.toHaveProperty('valueColorScope');
+    });
+
     it('resets everything but the on/off switch', () => {
-        const item = { ...gradient, metadata: { ...gradient.metadata, valueGradient: 'thermal', valueGradientEnd: '60', valueMidFrom: '50', valueHighFrom: '75' } };
+        const item = { ...gradient, metadata: { ...gradient.metadata, valueGradient: 'thermal', valueGradientEnd: '60', valueMidFrom: '50', valueHighFrom: '75', valueColorScope: 'widget' } };
 
         expect(resetValueColors(item).metadata).toEqual({ valueColors: 'true' });
     });
@@ -233,6 +243,8 @@ describe('getValueColorsModifier', () => {
         expect(getValueColorsModifier(base)).toBeNull();
         expect(getValueColorsModifier(colored)).toBe('value colors');
         expect(getValueColorsModifier(gradient)).toBe('value colors: traffic gradient');
+        expect(getValueColorsModifier(wholeWidget)).toBe('value colors, whole widget');
+        expect(getValueColorsModifier({ ...gradient, metadata: { ...gradient.metadata, valueColorScope: 'widget' } })).toBe('value colors: traffic gradient, whole widget');
         expect(noteGradientNeedsTruecolor('(used, value colors: traffic gradient)', { ...DEFAULT_SETTINGS, colorLevel: 2 })).toBe('(used, value colors: traffic gradient)');
     });
 });
@@ -260,6 +272,22 @@ describe('formatColoredValue', () => {
 
     it('renders plain text when colors are off for the whole status line', () => {
         expect(formatColoredValue(colored, 'Spend Today: ', '$90.00', 90, BUDGET, { ...options, colorsDisabled: true })).toBe('Spend Today: $90.00');
+        expect(formatColoredValue(wholeWidget, 'Spend Today: ', '$90.00', 90, BUDGET, { ...options, colorsDisabled: true })).toBe('Spend Today: $90.00');
+    });
+
+    // The whole widget: the label takes the value's color too
+    it('colors the label with the value when set to the whole widget', () => {
+        expect(formatColoredValue(wholeWidget, 'Spend Today: ', '$90.00', 90, BUDGET, options)).toBe(`${MID}Spend Today: $90.00${FG_RESET}`);
+        expect(formatColoredValue({ ...wholeWidget, metadata: { ...wholeWidget.metadata, label: 'x ' } }, 'Spend Today: ', '$120.00', 120, BUDGET, options)).toBe(`${HIGH}x $120.00${FG_RESET}`);
+        expect(formatColoredValue({ ...wholeWidget, rawValue: true }, 'Spend Today: ', '$40.00', 40, BUDGET, options)).toBe(`${LOW}$40.00${FG_RESET}`);
+        expect(formatColoredValue(wholeWidget, 'Spend Today: ', '$90.00', null, BUDGET, options)).toBe(`${BASE}Spend Today: $90.00${FG_RESET}`);
+    });
+
+    it('colors the label at the value\'s point on the gradient', () => {
+        const item = { ...gradient, metadata: { ...gradient.metadata, valueColorScope: 'widget' } };
+        const code = gradientPresetCodeAt('traffic', 0.5, 'truecolor');
+
+        expect(formatColoredValue(item, 'Used: ', '50%', 50, UTILIZATION, options)).toBe(`${code}Used: 50%${FG_RESET}`);
     });
 });
 

@@ -305,6 +305,16 @@ export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike>(conf
             expect(label).not.toContain('\x1b');
         });
 
+        it('colors the label with the percent when set to the whole widget', () => {
+            const widget = config.createWidget();
+            const whole = { ...colored, rawValue: false, metadata: { ...colored.metadata, valueColorScope: 'widget' } };
+            const output = config.render(widget, whole, used(95)) ?? '';
+
+            expect(output.startsWith(HIGH)).toBe(true);
+            expect(output.endsWith(`95.0%${FG_RESET}`)).toBe(true);
+            expect(output.slice(HIGH.length, -FG_RESET.length)).not.toContain('\x1b');
+        });
+
         // Bars have gradients, and the level glyph has no number to color
         it('leaves the bar and level glyph modes as they were, without (v)', () => {
             const widget = config.createWidget();

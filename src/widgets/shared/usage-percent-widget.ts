@@ -282,7 +282,8 @@ export class UsagePercentWidget implements Widget {
             scale: LIMIT_SCALE,
             sampleNote: 'used',
             defaultColor: DEFAULT_COLOR,
-            maxPercent: 100
+            maxPercent: 100,
+            label: this.getLabelPrefix()
         });
     }
 
