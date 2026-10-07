@@ -424,9 +424,9 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
 
     // Only a widget the picker visibly highlights is previewed; browsing the
     // category list leaves the line as it is
-    const highlightedPickerType = widgetPicker?.level === 'widget'
-        ? selectedPickerEntry?.type
-        : (widgetPicker && widgetPicker.categoryQuery.trim().length > 0 ? selectedTopLevelSearchEntry?.type : undefined);
+    // In the widget list, its highlighted entry; among categories, the top search result
+    const searchResultType = widgetPicker && widgetPicker.categoryQuery.trim().length > 0 ? selectedTopLevelSearchEntry?.type : undefined;
+    const highlightedPickerType = widgetPicker?.level === 'widget' ? selectedPickerEntry?.type : searchResultType;
     const pickerAction = widgetPicker?.action;
     const pickerPreviewWidgets = useMemo(() => {
         if (!pickerAction || !highlightedPickerType || !pickerNewWidget) {
