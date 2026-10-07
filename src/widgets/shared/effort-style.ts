@@ -36,7 +36,7 @@ const DEFAULT_LEVEL_COLORS: Record<TranscriptThinkingEffort, string> = {
 const DEFAULT_LEVEL_COLORS_ANSI16: Partial<Record<TranscriptThinkingEffort, string>> = { xhigh: 'brightMagenta' };
 
 function isBracketStyle(value: string | undefined): value is BracketStyle {
-    return BRACKET_STYLES.some(style => style === value);
+    return value !== undefined && (BRACKET_STYLES as readonly string[]).includes(value);
 }
 
 export function getBracketStyle(item: WidgetItem): BracketStyle | null {
