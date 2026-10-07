@@ -116,9 +116,6 @@ export interface EffortDisplay {
 export interface EffortFormatOptions {
     colorLevel: ColorLevelString;
     colorsDisabled: boolean;
-    // The color the renderer would have used for the whole widget; it still
-    // owns the label, unknown levels and widget-colored brackets
-    baseColor: string;
 }
 
 export function formatThinkingEffort(item: WidgetItem, effort: EffortDisplay, options: EffortFormatOptions): string {
@@ -131,13 +128,15 @@ export function formatThinkingEffort(item: WidgetItem, effort: EffortDisplay, op
         return `${open}${label}${effort.text}${close}`;
     }
 
-    // Restore only the default foreground so powerline backgrounds survive
-    const paint = (text: string, color: string): string => {
-        const code = getColorAnsiCode(color, options.colorLevel);
+    // Only the level's runs are painted, each ending with the default-foreground
+    // code; the renderer colors the label, unknown levels and widget-colored
+    // brackets with the widget color (Widget.colorsOnlyItsRuns)
+    const paint = (text: string, color: string | null): string => {
+        const code = color ? getColorAnsiCode(color, options.colorLevel) : '';
         return text && code ? `${code}${text}\x1b[39m` : text;
     };
-    const valueColor = effort.level ? getLevelColor(item, effort.level, options.colorLevel) : options.baseColor;
-    const bracketColor = getBracketColorMode(item) === 'effort' ? valueColor : options.baseColor;
+    const valueColor = effort.level ? getLevelColor(item, effort.level, options.colorLevel) : null;
+    const bracketColor = getBracketColorMode(item) === 'effort' ? valueColor : null;
 
-    return `${paint(open, bracketColor)}${paint(label, options.baseColor)}${paint(effort.text, valueColor)}${paint(close, bracketColor)}`;
+    return `${paint(open, bracketColor)}${label}${paint(effort.text, valueColor)}${paint(close, bracketColor)}`;
 }

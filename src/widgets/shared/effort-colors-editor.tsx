@@ -11,6 +11,7 @@ import type {
     WidgetItem
 } from '../../types/Widget';
 import {
+    applyColors,
     getAvailableColorsForUI,
     getColorAnsiCode,
     getColorDisplayName
@@ -170,11 +171,16 @@ export const EffortColorsEditor: React.FC<WidgetEditorProps> = ({ widget, onComp
         }
     });
 
-    const sample = formatThinkingEffort(draft, { text: sampleLevel, level: sampleLevel }, {
-        colorLevel: EDITOR_COLOR_LEVEL,
-        colorsDisabled: false,
-        baseColor
-    });
+    // Colored as the status line colors it: the widget color around the level's runs
+    const sample = applyColors(
+        formatThinkingEffort(draft, { text: sampleLevel, level: sampleLevel }, { colorLevel: EDITOR_COLOR_LEVEL, colorsDisabled: false }),
+        baseColor,
+        undefined,
+        false,
+        EDITOR_COLOR_LEVEL,
+        undefined,
+        true
+    );
 
     return (
         <Box flexDirection='column'>
