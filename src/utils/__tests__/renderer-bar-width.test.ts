@@ -16,6 +16,15 @@ import {
     stripSgrCodes
 } from '../ansi';
 import {
+    START_LINE_COUNTERS,
+    advanceLineCounters
+} from '../line-counters';
+import {
+    getAutoAlignLines,
+    getLineRenderItems,
+    getLineSettings
+} from '../powerline-lines';
+import {
     calculateMaxWidthsFromPreRendered,
     preRenderAllWidgets,
     renderStatusLine
@@ -45,13 +54,27 @@ function createSettings(overrides: Partial<Settings> = {}): Settings {
     };
 }
 
-// Renders every line the way the CLI does and returns their visible text
+// Renders every line the way the CLI does, each in its own mode, and returns
+// their visible text
 function renderLines(lines: WidgetItem[][], terminalWidth: number, settingsOverrides: Partial<Settings> = {}): string[] {
     const settings = createSettings(settingsOverrides);
     const context: RenderContext = { isPreview: false, terminalWidth, data: contextData };
     const preRenderedLines = preRenderAllWidgets(lines, settings, context);
-    const maxWidths = calculateMaxWidthsFromPreRendered(preRenderedLines, settings);
-    return lines.map((widgets, index) => stripSgrCodes(renderStatusLine(widgets, settings, { ...context, lineIndex: index }, preRenderedLines[index] ?? [], maxWidths)));
+    const maxWidths = calculateMaxWidthsFromPreRendered(getAutoAlignLines(settings, preRenderedLines), settings);
+    let counters = START_LINE_COUNTERS;
+    return lines.map((widgets, index) => {
+        const preRenderedLine = preRenderedLines[index] ?? [];
+        const lineContext: RenderContext = {
+            ...context,
+            lineIndex: index,
+            globalSeparatorIndex: counters.separator,
+            globalPowerlineThemeIndex: counters.theme,
+            globalPowerlineStartCapIndex: counters.startCap
+        };
+        const line = renderStatusLine(getLineRenderItems(settings, index, widgets), getLineSettings(settings, index), lineContext, preRenderedLine, maxWidths);
+        counters = advanceLineCounters(counters, settings, index, widgets, preRenderedLine);
+        return stripSgrCodes(line);
+    });
 }
 
 function renderLine(widgets: WidgetItem[], terminalWidth: number, settingsOverrides: Partial<Settings> = {}): string {
@@ -64,6 +87,7 @@ const contextBar = (id: string, barWidth?: string, display = 'progress'): Widget
     metadata: { display, ...(barWidth ? { barWidth } : {}) }
 });
 const text = (id: string, customText: string): WidgetItem => ({ id, type: 'custom-text', customText });
+const separator = (id: string): WidgetItem => ({ id, type: 'separator' });
 const countCells = (line: string): number => line.match(/[█░▓│]/g)?.length ?? 0;
 
 // 'full' flex mode leaves 6 columns free, so a 100-column terminal gives 94
@@ -168,5 +192,55 @@ describe('bar width', () => {
         ], TERMINAL, AUTO_ALIGN);
         expect(getVisibleWidth(withBars)).toBe(LINE);
         expect(withBars).not.toContain('...');
+    });
+});
+
+describe('bar width on a line in its own mode', () => {
+    const separated = [text('a', 'model'), separator('s1'), text('b', 'branch'), separator('s2'), contextBar('bar', 'fill'), separator('s3'), text('c', 'tail')];
+    const powerline = (overrides: Partial<Settings['powerline']>): Partial<Settings> => ({ powerline: { ...DEFAULT_SETTINGS.powerline, ...overrides } });
+
+    it('fills a line set to plain while Powerline is on, with its plain separators', () => {
+        const line = renderLine(separated, TERMINAL, powerline({ enabled: true, lineEnabled: [false] }));
+        expect(line).toContain(' | ');
+        expect(getVisibleWidth(line)).toBe(LINE);
+        expect(line).not.toContain('...');
+    });
+
+    it('fills a line set to Powerline while Powerline is off', () => {
+        const line = renderLine(separated, TERMINAL, powerline({ enabled: false, lineEnabled: [true] }));
+        expect(line).not.toContain(' | ');
+        expect(getVisibleWidth(line)).toBe(LINE);
+    });
+
+    it('lines the bar\'s column up with Powerline lines only, not with a plain line\'s widths', () => {
+        const [withBar = '', plain = ''] = renderLines([
+            [text('a', 'a'), contextBar('bar', 'fill')],
+            [text('x', 'x'.repeat(50)), text('y', 'y')]
+        ], TERMINAL, powerline({ enabled: true, autoAlign: true, lineEnabled: [null, false] }));
+        expect(getVisibleWidth(withBar)).toBe(LINE);
+        expect(withBar).not.toContain('...');
+        expect(plain).not.toContain('\uE0B0');
+    });
+
+    it('measures with the separator and start cap the line draws, past a plain line', () => {
+        // The plain line takes no separator or cap, so the bar's line picks the
+        // cycles up where the first line left them: at the wide separator and cap
+        const [, , withBar = ''] = renderLines([
+            [text('p', 'p'), text('q', 'q')],
+            [text('r', 'plain')],
+            [text('a', 'a'), contextBar('bar', 'fill')]
+        ], TERMINAL, powerline({ enabled: true, lineEnabled: [null, false], separators: ['\uE0B0', '\u{1F525}'], separatorInvertBackground: [false, false], startCaps: ['\uE0B6', '\u{1F525}'] }));
+        expect(withBar.match(/\u{1F525}/gu)).toHaveLength(2);
+        expect(getVisibleWidth(withBar)).toBe(LINE);
+        expect(withBar).not.toContain('...');
+    });
+
+    it('sizes all-plain and all-Powerline lines as before', () => {
+        for (const enabled of [false, true]) {
+            const [first = '', second = ''] = renderLines([separated, separated], TERMINAL, powerline({ enabled, autoAlign: enabled }));
+            expect(getVisibleWidth(first)).toBe(LINE);
+            expect(getVisibleWidth(second)).toBe(LINE);
+            expect(first).not.toContain('...');
+        }
     });
 });
