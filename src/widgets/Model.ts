@@ -64,10 +64,7 @@ export class ModelWidget implements Widget {
 
         return formatModelName(item, name, getModelFamily(name, id), {
             colorLevel: getColorLevelString(settings.colorLevel),
-            colorsDisabled: settings.colorLevel === 0,
-            // Same resolution as the renderer: '' is the color menu's "Default"
-            // (no color), only an unset color falls back to the widget default
-            baseColor: item.color ?? this.getDefaultColor()
+            colorsDisabled: settings.colorLevel === 0
         });
     }
 
@@ -79,9 +76,9 @@ export class ModelWidget implements Widget {
         return React.createElement(ModelFamilyColorsEditor, props);
     }
 
-    // Family colors embed their own foreground codes, so the renderer must
-    // leave this widget's foreground alone, as it does for Thinking Effort
-    preservesRenderedColors(item: WidgetItem): boolean {
+    // Family colors paint only the name, so the renderer colors the label
+    // around it with the theme or widget color, as it does for Thinking Effort
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
         return isFamilyColorsEnabled(item);
     }
 

@@ -1,6 +1,8 @@
+import type { ColorLevelString } from '../../../types/ColorLevel';
 import {
     getAvailableBackgroundColorsForUI,
-    getAvailableColorsForUI
+    getAvailableColorsForUI,
+    getColorAnsiCode
 } from '../../../utils/colors';
 
 // The 256-color palette laid out as a grid: the 16 basic colors, the 6x6x6
@@ -92,7 +94,8 @@ function hexToRgb(hex: string): [number, number, number] {
 
 export function getPaletteLabel(index: number): string {
     const name = index < CUBE_START ? FOREGROUND_NAMES[index]?.name : undefined;
-    return `ANSI ${index}  ${name ?? `#${getPaletteHex(index)}`}`;
+    const hex = `#${getPaletteHex(index)}`;
+    return `ANSI ${index}  ${name ?? hex}`;
 }
 
 export function getPaletteMarkerColor(index: number): 'black' | 'white' {
@@ -100,21 +103,15 @@ export function getPaletteMarkerColor(index: number): 'black' | 'white' {
     return 0.299 * red + 0.587 * green + 0.114 * blue > 128 ? 'black' : 'white';
 }
 
-// Basic colors are saved by name, the same values the arrow keys cycle through
-export function paletteIndexToColor(index: number, background: boolean): string {
-    if (index < CUBE_START) {
-        const names = background ? BACKGROUND_NAMES : FOREGROUND_NAMES;
-        const named = names[index]?.value;
-        if (named) {
-            return named;
-        }
-    }
+// Every color is saved as ansi256:N, the basic colors too, so it renders as its
+// swatch; a named color like red is drawn with other colors (160 at 256 colors,
+// #CC0000 at truecolor)
+export function paletteIndexToColor(index: number): string {
     return `ansi256:${index}`;
 }
 
 // Basic colors aren't candidates: terminals theme them, so their real values are unknown
-function nearestPaletteIndex(hex: string): number {
-    const [red, green, blue] = hexToRgb(hex);
+function nearestPaletteIndex([red, green, blue]: [number, number, number]): number {
     let nearest = CUBE_START;
     let nearestDistance = Infinity;
     for (let index = CUBE_START; index < 256; index++) {
@@ -128,12 +125,27 @@ function nearestPaletteIndex(hex: string): number {
     return nearest;
 }
 
-export function colorToPaletteIndex(color: string): number {
+// The palette color a 256-color code draws, or the nearest one to an RGB code
+function drawnPaletteIndex(ansiCode: string): number | undefined {
+    const [, mode, ...values] = ansiCode.slice(2, -1).split(';').map(value => Number.parseInt(value, 10));
+    if (mode === 5 && values.length === 1) {
+        return values[0];
+    }
+    if (mode === 2 && values.length === 3) {
+        return nearestPaletteIndex(values as [number, number, number]);
+    }
+    return undefined;
+}
+
+export function colorToPaletteIndex(color: string, colorLevel: ColorLevelString): number {
+    // A named color starts on the palette color it's drawn with at this level:
+    // its own at 256 colors, the nearest to its hex value at truecolor. With
+    // colors off it's drawn with none, and starts on its basic color
     const named = [FOREGROUND_NAMES, BACKGROUND_NAMES]
         .map(names => names.findIndex(entry => entry.value === color))
         .find(index => index !== -1);
     if (named !== undefined) {
-        return named;
+        return drawnPaletteIndex(getColorAnsiCode(color, colorLevel)) ?? named;
     }
     if (color.startsWith('ansi256:')) {
         const code = Number.parseInt(color.substring(8), 10);
@@ -142,7 +154,7 @@ export function colorToPaletteIndex(color: string): number {
         }
     }
     if (/^hex:[0-9a-f]{6}$/i.test(color)) {
-        return nearestPaletteIndex(color.substring(4));
+        return nearestPaletteIndex(hexToRgb(color.substring(4)));
     }
     return 0;
 }

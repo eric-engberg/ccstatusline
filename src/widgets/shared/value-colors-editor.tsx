@@ -9,7 +9,6 @@ import type {
 
 import {
     ColorListEditor,
-    EDITOR_COLOR_LEVEL,
     type ColorListEditorConfig
 } from './color-list-editor';
 import {
@@ -21,7 +20,6 @@ import {
     getGradientEnd,
     getValueColorMode,
     getValueColorScope,
-    getValueFormatOptions,
     getValueGradient,
     isValueColorsEnabled,
     resetValueColors,
@@ -35,8 +33,7 @@ import {
     typeGradientEnd,
     type BreakPoint,
     type ValueBand,
-    type ValueColorScale,
-    type ValueFormatOptions
+    type ValueColorScale
 } from './value-coloring';
 
 export const EDIT_VALUE_COLORS_ACTION = 'edit-value-colors';
@@ -93,7 +90,7 @@ function getGradientNotice(settings: Settings | undefined): string | null {
     }
 }
 
-// Without settings (outside the line editor) the sample is drawn at the default 256 colors
+// Without settings (outside the line editor) there's no color level to warn about
 export function makeValueColorsConfig(options: ValueColorsEditorOptions, settings?: Settings): ColorListEditorConfig<ValueBand, ValueSetting> {
     const { scale } = options;
     const isGradient = (item: WidgetItem) => getValueColorMode(item) === 'gradient';
@@ -158,17 +155,16 @@ export function makeValueColorsConfig(options: ValueColorsEditorOptions, setting
             }
         },
         resetColors: resetValueColors,
-        renderSample: (item) => {
-            const baseColor = item.color ?? options.defaultColor;
-            const formatOptions: ValueFormatOptions = settings
-                ? getValueFormatOptions(settings, baseColor)
-                : { colorLevel: EDITOR_COLOR_LEVEL, colorsDisabled: false, baseColor };
+        renderSample: (item, _band, colors) => {
+            const formatOptions = { ...colors, baseColor: item.color ?? options.defaultColor };
             // With the whole widget colored, each value is shown with its label
             const withLabel = getValueColorScope(item) === 'widget' && options.label !== undefined && !item.rawValue;
             const values = getSamplePercents(item, options)
                 .map(percent => formatColoredValue({ ...item, rawValue: !withLabel }, options.label ?? '', `${percent}%`, percent, scale, formatOptions));
-            return `${values.join(withLabel ? '  ' : ' ')} ${options.sampleNote}`;
+            return values.join(withLabel ? '  ' : ' ');
         },
+        sampleNote: options.sampleNote,
+        defaultColor: options.defaultColor,
         extraHelp: 'Type a number on a percent row to set it exactly'
     };
 }

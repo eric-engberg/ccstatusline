@@ -1,10 +1,17 @@
+import chalk from 'chalk';
+import stripAnsi from 'strip-ansi';
 import {
     describe,
     expect,
     it
 } from 'vitest';
 
+import {
+    DEFAULT_SETTINGS,
+    type Settings
+} from '../../../types/Settings';
 import type { WidgetItem } from '../../../types/Widget';
+import { updateColorMap } from '../../../utils/colors';
 import { EffortColorsEditor } from '../effort-colors-editor';
 
 import {
@@ -16,8 +23,8 @@ import {
     renderWidgetEditor
 } from './helpers/widget-editor-harness';
 
-function renderEditor(widget: WidgetItem) {
-    return renderWidgetEditor(EffortColorsEditor, widget);
+function renderEditor(widget: WidgetItem, settings?: Settings) {
+    return renderWidgetEditor(EffortColorsEditor, widget, settings);
 }
 
 const rawWithParens: WidgetItem = { id: 'e', type: 'thinking-effort', rawValue: true, metadata: { brackets: '()' } };
@@ -46,6 +53,22 @@ describe('EffortColorsEditor', () => {
             const output = editor.takeOutput();
             expect(output).toContain('Sample: (max)');
             expect(output).toMatch(/▶\s+brackets/);
+        } finally {
+            editor.cleanup();
+        }
+    });
+
+    it('samples the label in the widget color around the level color, as the status line draws it', async () => {
+        const editor = renderEditor({
+            id: 'e',
+            type: 'thinking-effort',
+            color: 'hex:112233',
+            metadata: { 'brackets': '()', 'bracketColor': 'widget', 'levelColors': 'true', 'levelColor.low': 'hex:ff8800' }
+        });
+
+        try {
+            await editor.ready();
+            expect(editor.takeColoredOutput()).toContain('Sample: \x1b[38;2;17;34;51m(Thinking: \x1b[38;2;255;136;0mlow\x1b[38;2;17;34;51m)');
         } finally {
             editor.cleanup();
         }
@@ -119,6 +142,48 @@ describe('EffortColorsEditor', () => {
             const output = editor.takeOutput();
             expect(output).toMatch(/xhigh\s+Orange/);
             expect(output).not.toContain('ansi256:208');
+        } finally {
+            editor.cleanup();
+        }
+    });
+
+    it('shows the colors the status line draws at the Basic (16-color) level', async () => {
+        // Named colors resolve through chalk, which tests run with colors off
+        const originalLevel = chalk.level;
+        chalk.level = 1;
+        updateColorMap();
+        const editor = renderEditor(
+            { id: 'e', type: 'thinking-effort', rawValue: true, metadata: { levelColors: 'true' } },
+            { ...DEFAULT_SETTINGS, colorLevel: 1 }
+        );
+
+        try {
+            await editor.ready();
+            await editor.press(DOWN, DOWN, DOWN);
+            const output = editor.takeColoredOutput();
+            // The default orange has no 16-color equivalent; bright magenta stands in
+            expect(stripAnsi(output)).toMatch(/xhigh\s+Bright Magenta/);
+            expect(output).toMatch(/Sample: .*\x1b\[95mxhigh/);
+            expect(output).not.toContain('\x1b[38;5;');
+        } finally {
+            editor.cleanup();
+            chalk.level = originalLevel;
+            updateColorMap();
+        }
+    });
+
+    it('colors nothing at the No Color level, as on the status line', async () => {
+        const editor = renderEditor(
+            { id: 'e', type: 'thinking-effort', rawValue: true, metadata: { 'levelColors': 'true', 'levelColor.low': 'hex:ff0000' } },
+            { ...DEFAULT_SETTINGS, colorLevel: 0 }
+        );
+
+        try {
+            await editor.ready();
+            const output = editor.takeColoredOutput();
+            expect(stripAnsi(output)).toMatch(/low\s+#FF0000/);
+            expect(output).toContain('Sample: low');
+            expect(output).not.toContain('\x1b[38;2;255;0;0m');
         } finally {
             editor.cleanup();
         }
