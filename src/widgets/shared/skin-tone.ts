@@ -41,6 +41,11 @@ export function stripSkinTone(glyph: string): string {
     return glyph.replaceAll(ANY_MODIFIER, '');
 }
 
+/** The tone an emoji is in (medium-dark for 👍🏾), or undefined for one without a tone. */
+export function getSkinTone(glyph: string): SkinTone | undefined {
+    return SKIN_TONES.find(tone => glyph.includes(MODIFIERS[tone]));
+}
+
 /** "thumbs up: medium skin tone", or "kiss: woman, man, dark skin tone" when the name has a colon already, as Unicode names them. */
 export function formatSkinToneName(name: string, tone: SkinTone): string {
     return `${name}${name.includes(':') ? ',' : ':'} ${tone} skin tone`;
