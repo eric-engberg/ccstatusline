@@ -92,7 +92,8 @@ function hexToRgb(hex: string): [number, number, number] {
 
 export function getPaletteLabel(index: number): string {
     const name = index < CUBE_START ? FOREGROUND_NAMES[index]?.name : undefined;
-    return `ANSI ${index}  ${name ?? `#${getPaletteHex(index)}`}`;
+    const hex = `#${getPaletteHex(index)}`;
+    return `ANSI ${index}  ${name ?? hex}`;
 }
 
 export function getPaletteMarkerColor(index: number): 'black' | 'white' {
