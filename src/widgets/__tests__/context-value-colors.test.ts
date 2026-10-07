@@ -9,6 +9,8 @@ import { DEFAULT_SETTINGS } from '../../types/Settings';
 import type { WidgetItem } from '../../types/Widget';
 import { getWidget } from '../../utils/widgets';
 
+import { describeValueColorsOnTheLine } from './helpers/value-colors-line';
+
 const LOW = '\x1b[38;2;0;255;0m';
 const MID = '\x1b[38;2;255;255;0m';
 const HIGH = '\x1b[38;2;255;0;0m';
@@ -28,7 +30,10 @@ function used(percent: number): RenderContext {
     };
 }
 
-describe.each(['context-percentage', 'context-percentage-usable'])('%s value colors', (type) => {
+describe.each([
+    ['context-percentage', 'Ctx Used: '],
+    ['context-percentage-usable', 'Ctx(u) Used: ']
+])('%s value colors', (type, label) => {
     const widget = getWidget(type);
     const colored: WidgetItem = { id: 'c', type, rawValue: true, color: 'hex:112233', metadata: BAND_COLORS };
     const render = (item: WidgetItem, context: RenderContext) => widget?.render(item, context, DEFAULT_SETTINGS);
@@ -44,18 +49,28 @@ describe.each(['context-percentage', 'context-percentage-usable'])('%s value col
 
             expect(render(item, { isPreview: true })).not.toContain(HIGH);
             expect(widget?.getCustomKeybinds?.(item).map(keybind => keybind.key)).not.toContain('v');
-            expect(widget?.preservesRenderedColors?.(item)).toBe(false);
+            expect(widget?.colorsOnlyItsRuns?.(item)).toBe(false);
         }
     });
 
-    it('offers (v), names it on the editor row, opens its editor and keeps its colors', () => {
+    it('offers (v), names it on the editor row, opens its editor and colors around its value', () => {
         const editorProps = { widget: colored, onComplete: () => undefined, onCancel: () => undefined };
 
         expect(widget?.getCustomKeybinds?.(colored).map(keybind => keybind.key)).toContain('v');
         expect(widget?.getEditorDisplay(colored).modifierText).toContain('value colors');
         expect(widget?.renderEditor?.({ ...editorProps, action: 'edit-value-colors' })).toBeTruthy();
-        expect(widget?.preservesRenderedColors?.(colored)).toBe(true);
-        expect(widget?.preservesRenderedColors?.({ id: 'c', type })).toBe(false);
+        expect(widget?.colorsOnlyItsRuns?.(colored)).toBe(true);
+        expect(widget?.colorsOnlyItsRuns?.({ id: 'c', type })).toBe(false);
+    });
+
+    // The preview's 90% used
+    describeValueColorsOnTheLine({
+        item: { id: 'c', type, metadata: BAND_COLORS },
+        context: { isPreview: true },
+        label,
+        value: '90.0%',
+        valueCode: HIGH,
+        fallbacks: []
     });
 });
 
@@ -86,12 +101,21 @@ describe('context-length value colors', () => {
         expect(widget?.render({ id: 'l', type: 'context-length' }, used(95), DEFAULT_SETTINGS)).toBe('Ctx: 190.0k');
     });
 
-    it('offers (v), names it on the editor row, opens its editor and keeps its colors', () => {
+    it('offers (v), names it on the editor row, opens its editor and colors around its value', () => {
         const editorProps = { widget: colored, onComplete: () => undefined, onCancel: () => undefined };
 
         expect(widget?.getCustomKeybinds?.(colored)).toEqual([{ key: 'v', label: '(v)alue colors', action: 'edit-value-colors' }]);
         expect(widget?.getEditorDisplay(colored).modifierText).toBe('(value colors)');
         expect(widget?.renderEditor?.(editorProps)).toBeTruthy();
-        expect(widget?.preservesRenderedColors?.(colored)).toBe(true);
+        expect(widget?.colorsOnlyItsRuns?.(colored)).toBe(true);
+    });
+
+    describeValueColorsOnTheLine({
+        item: { id: 'l', type: 'context-length', metadata: BAND_COLORS },
+        context: used(50),
+        label: 'Ctx: ',
+        value: '100.0k',
+        valueCode: LOW,
+        fallbacks: []
     });
 });

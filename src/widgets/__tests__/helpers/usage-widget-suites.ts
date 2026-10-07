@@ -14,12 +14,14 @@ import type {
     WidgetItem
 } from '../../../types/Widget';
 
+import { describeValueColorsOnTheLine } from './value-colors-line';
+
 interface UsageWidgetLike {
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[];
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay;
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null;
     renderEditor?(props: WidgetEditorProps): unknown;
-    preservesRenderedColors?(item: WidgetItem): boolean;
+    colorsOnlyItsRuns?(item: WidgetItem): boolean;
     supportsRawValue(): boolean;
 }
 
@@ -99,7 +101,7 @@ function getExpectedUsageKeybinds(item: WidgetItem, includeCursor = false): Cust
     return keybinds;
 }
 
-export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike>(config: UsagePercentWidgetSuiteConfig<TWidget>): void {
+export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike & { getLabelPrefix(): string }>(config: UsagePercentWidgetSuiteConfig<TWidget>): void {
     beforeEach(() => {
         vi.clearAllMocks();
     });
@@ -323,18 +325,27 @@ export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike>(conf
             expect(config.render(widget, glyph, used(95))).toBe('🚨');
             for (const item of [bar, glyph]) {
                 expect(widget.getCustomKeybinds(item).map(keybind => keybind.key)).not.toContain('v');
-                expect(widget.preservesRenderedColors?.(item)).toBe(false);
+                expect(widget.colorsOnlyItsRuns?.(item)).toBe(false);
             }
         });
 
-        it('names the option on the editor row, opens its editor and keeps its colors', () => {
+        it('names the option on the editor row, opens its editor and colors around its value', () => {
             const widget = config.createWidget();
             const editorProps = { widget: colored, onComplete: () => undefined, onCancel: () => undefined };
 
             expect(widget.getEditorDisplay(colored).modifierText).toContain('value colors');
             expect(widget.renderEditor?.({ ...editorProps, action: 'edit-value-colors' })).toBeTruthy();
-            expect(widget.preservesRenderedColors?.(colored)).toBe(true);
-            expect(widget.preservesRenderedColors?.(config.baseItem)).toBe(false);
+            expect(widget.colorsOnlyItsRuns?.(colored)).toBe(true);
+            expect(widget.colorsOnlyItsRuns?.(config.baseItem)).toBe(false);
+        });
+
+        describeValueColorsOnTheLine({
+            item: { ...config.baseItem, metadata: colored.metadata },
+            context: used(25),
+            label: config.createWidget().getLabelPrefix(),
+            value: '25.0%',
+            valueCode: LOW,
+            fallbacks: [{ context: { usageData: { error: 'timeout' } }, text: '[Timeout]' }]
         });
     });
 
