@@ -41,7 +41,7 @@ function setMetadataValue(item: WidgetItem, key: string, value: string | null): 
 }
 
 function isBracketStyle(value: string | undefined): value is BracketStyle {
-    return BRACKET_STYLES.some(style => style === value);
+    return value !== undefined && (BRACKET_STYLES as readonly string[]).includes(value);
 }
 
 export function getBracketStyle(item: WidgetItem): BracketStyle | null {
