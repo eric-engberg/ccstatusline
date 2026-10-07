@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn as spawnProcess } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -105,8 +105,15 @@ export function readDevReloadSnapshot(stateFile: string): RestoredDevReloadSnaps
     };
 }
 
-export function removeDevReloadSnapshot(stateFile: string): void {
-    fs.rmSync(stateFile, { force: true });
+// Each supervisor run keeps its snapshot in a new private (0700) directory,
+// so its first TUI can't restore one an earlier run left behind (its PID
+// reused) or another user planted in a shared temp directory
+function createDevReloadStateDir(): string {
+    return fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-dev-reload-'));
+}
+
+function removeDevReloadStateDir(stateDir: string): void {
+    fs.rmSync(stateDir, { recursive: true, force: true });
 }
 
 // Set by the TUI when ctrl+r is pressed; read once Ink has unmounted so the
@@ -122,8 +129,8 @@ export function isDevReloadRequested(): boolean {
 }
 
 export interface DevReloadSupervisorDeps {
-    // Runs the TUI to completion and returns its exit code
-    launch: () => number;
+    // Runs the TUI and settles with its exit code
+    launch: () => Promise<number>;
     // Asked after a crash; true relaunches, false gives up
     promptRetry: (exitCode: number) => Promise<boolean>;
     cleanup: () => void;
@@ -131,7 +138,7 @@ export interface DevReloadSupervisorDeps {
 
 export async function runDevReloadSupervisor(deps: DevReloadSupervisorDeps): Promise<number> {
     for (;;) {
-        const exitCode = deps.launch();
+        const exitCode = await deps.launch();
         if (exitCode === DEV_RELOAD_EXIT_CODE) {
             continue;
         }
@@ -173,24 +180,95 @@ export function promptRetryOnTerminal(exitCode: number, terminal: DevReloadTermi
     });
 }
 
-// Runs a child process to completion and returns its exit code
-export type DevReloadSpawn = (command: string, args: string[], env: NodeJS.ProcessEnv) => number;
+// A running child process: settles with its exit code, and takes signals
+export interface DevReloadChild {
+    exited: Promise<number>;
+    kill: (signal: NodeJS.Signals) => void;
+}
 
-function spawnInTerminal(command: string, args: string[], env: NodeJS.ProcessEnv): number {
-    return spawnSync(command, args, { stdio: 'inherit', env }).status ?? 1;
+export type DevReloadSpawn = (command: string, args: string[], env: NodeJS.ProcessEnv) => DevReloadChild;
+
+// Not spawnSync: the supervisor has to handle signals while the TUI runs
+function spawnInTerminal(command: string, args: string[], env: NodeJS.ProcessEnv): DevReloadChild {
+    const child = spawnProcess(command, args, { stdio: 'inherit', env });
+    return {
+        exited: new Promise((resolve) => {
+            child.once('exit', (code) => {
+                resolve(code ?? 1);
+            });
+            // The runtime could not be started
+            child.once('error', () => {
+                resolve(1);
+            });
+        }),
+        kill: (signal) => {
+            child.kill(signal);
+        }
+    };
+}
+
+// The supervisor's own process: the terminal it prompts on, and the signals
+// and exit that stop it
+export interface DevReloadProcess extends DevReloadTerminal {
+    on: (signal: NodeJS.Signals, listener: (signal: NodeJS.Signals) => void) => unknown;
+    off: (signal: NodeJS.Signals, listener: (signal: NodeJS.Signals) => void) => unknown;
+    exit: (code: number) => void;
+}
+
+const STOP_SIGNALS: NodeJS.Signals[] = ['SIGTERM', 'SIGINT', 'SIGHUP'];
+
+function signalExitCode(signal: NodeJS.Signals): number {
+    return 128 + os.constants.signals[signal];
 }
 
 // Relaunches this same command (runtime, script and original arguments) as
 // a child that runs the TUI, for as long as the child asks to be reloaded
-export async function superviseDevReload(launchArgs: string[], spawn: DevReloadSpawn = spawnInTerminal): Promise<number> {
-    const stateFile = path.join(os.tmpdir(), `ccstatusline-dev-reload-${process.pid}.json`);
+export async function superviseDevReload(
+    launchArgs: string[],
+    spawn: DevReloadSpawn = spawnInTerminal,
+    host: DevReloadProcess = process
+): Promise<number> {
+    const stateDir = createDevReloadStateDir();
+    const stateFile = path.join(stateDir, 'snapshot.json');
     const script = process.argv[1];
     const command = [...process.execArgv, ...(script ? [script] : []), ...launchArgs];
     const env = { ...process.env, [DEV_RELOAD_STATE_ENV]: stateFile };
 
-    return runDevReloadSupervisor({
-        launch: () => spawn(process.execPath, command, env),
-        promptRetry: promptRetryOnTerminal,
-        cleanup: () => { removeDevReloadSnapshot(stateFile); }
-    });
+    // A signal sent to the supervisor alone (kill <pid>) would end it and
+    // orphan the TUI, leaving the snapshot behind. Instead the signal is
+    // passed on, and the supervisor cleans up and stops once the TUI has
+    // gone; at the retry prompt there is no TUI to wait for.
+    let child: DevReloadChild | null = null;
+    let stopSignal: NodeJS.Signals | null = null;
+    const stop = (signal: NodeJS.Signals) => {
+        stopSignal = signal;
+        if (child) {
+            child.kill(signal);
+            return;
+        }
+
+        removeDevReloadStateDir(stateDir);
+        host.exit(signalExitCode(signal));
+    };
+    for (const signal of STOP_SIGNALS) {
+        host.on(signal, stop);
+    }
+
+    try {
+        return await runDevReloadSupervisor({
+            launch: async () => {
+                child = spawn(process.execPath, command, env);
+                const exitCode = await child.exited;
+                child = null;
+                return stopSignal ? signalExitCode(stopSignal) : exitCode;
+            },
+            // A TUI that ended because the supervisor was stopped didn't crash
+            promptRetry: exitCode => (stopSignal ? Promise.resolve(false) : promptRetryOnTerminal(exitCode, host)),
+            cleanup: () => { removeDevReloadStateDir(stateDir); }
+        });
+    } finally {
+        for (const signal of STOP_SIGNALS) {
+            host.off(signal, stop);
+        }
+    }
 }

@@ -1,9 +1,13 @@
+import chalk from 'chalk';
 import {
+    afterEach,
+    beforeEach,
     describe,
     expect,
     it
 } from 'vitest';
 
+import { updateColorMap } from '../../../../utils/colors';
 import {
     PALETTE_ROW_COUNT,
     colorToPaletteIndex,
@@ -101,25 +105,53 @@ describe('palette colors', () => {
 });
 
 describe('palette colors in settings', () => {
-    it('saves basic colors by name and the rest as ansi256 values', () => {
-        expect(paletteIndexToColor(1, false)).toBe('red');
-        expect(paletteIndexToColor(1, true)).toBe('bgRed');
-        expect(paletteIndexToColor(15, true)).toBe('bgBrightWhite');
-        expect(paletteIndexToColor(208, false)).toBe('ansi256:208');
-        expect(paletteIndexToColor(208, true)).toBe('ansi256:208');
+    // Named colors resolve through chalk, which tests run with colors off
+    const originalLevel = chalk.level;
+
+    beforeEach(() => {
+        chalk.level = 3;
+        updateColorMap();
     });
 
-    it('finds the starting color for named, ansi256 and hex colors', () => {
-        expect(colorToPaletteIndex('red')).toBe(1);
-        expect(colorToPaletteIndex('bgBrightBlack')).toBe(8);
-        expect(colorToPaletteIndex('ansi256:208')).toBe(208);
-        // Hex colors start on the nearest cube or gray color
-        expect(colorToPaletteIndex('hex:FF8800')).toBe(208);
-        expect(colorToPaletteIndex('hex:7f7f7f')).toBe(244);
+    afterEach(() => {
+        chalk.level = originalLevel;
+        updateColorMap();
+    });
+
+    it('saves every color as its ansi256 value, the color its swatch shows', () => {
+        expect(paletteIndexToColor(1)).toBe('ansi256:1');
+        expect(paletteIndexToColor(15)).toBe('ansi256:15');
+        expect(paletteIndexToColor(208)).toBe('ansi256:208');
+    });
+
+    it('starts ansi256 colors on themselves and hex colors on the nearest cube or gray color', () => {
+        for (const level of ['ansi256', 'truecolor'] as const) {
+            expect(colorToPaletteIndex('ansi256:1', level)).toBe(1);
+            expect(colorToPaletteIndex('ansi256:208', level)).toBe(208);
+            expect(colorToPaletteIndex('hex:FF8800', level)).toBe(208);
+            expect(colorToPaletteIndex('hex:7f7f7f', level)).toBe(244);
+        }
+    });
+
+    it('starts named colors on the palette color they are drawn with at the level', () => {
+        // At 256 colors, the fixed palette color each name uses
+        expect(colorToPaletteIndex('red', 'ansi256')).toBe(160);
+        expect(colorToPaletteIndex('bgBrightBlack', 'ansi256')).toBe(59);
+        expect(colorToPaletteIndex('white', 'ansi256')).toBe(188);
+        // At truecolor, the nearest to each name's hex value (white is #D3D7CF)
+        expect(colorToPaletteIndex('red', 'truecolor')).toBe(160);
+        expect(colorToPaletteIndex('white', 'truecolor')).toBe(252);
+    });
+
+    it('starts named colors on their basic color when they are not drawn with a palette color', () => {
+        chalk.level = 0;
+        updateColorMap();
+        expect(colorToPaletteIndex('red', 'ansi256')).toBe(1);
+        expect(colorToPaletteIndex('bgBrightBlack', 'truecolor')).toBe(8);
     });
 
     it('starts at the first color when there is no palette color to start from', () => {
-        expect(colorToPaletteIndex('')).toBe(0);
-        expect(colorToPaletteIndex('gradient:rainbow')).toBe(0);
+        expect(colorToPaletteIndex('', 'ansi256')).toBe(0);
+        expect(colorToPaletteIndex('gradient:rainbow', 'truecolor')).toBe(0);
     });
 });

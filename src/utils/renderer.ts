@@ -49,6 +49,7 @@ import {
 import { getTerminalWidth } from './terminal';
 import {
     getWidget,
+    widgetColorsOnlyItsRuns,
     widgetPreservesColors
 } from './widgets';
 
@@ -82,6 +83,12 @@ function hasForegroundOverride(settings: Settings): boolean {
 // remains independent of foreground preservation.
 function preservesIntrinsicForeground(item: WidgetItem, settings: Settings): boolean {
     return widgetPreservesColors(item) && !hasForegroundOverride(settings);
+}
+
+// Whether the item's text carries foreground codes of its own, for all of it
+// or only some runs; a global foreground override strips them
+function embedsForegroundCodes(item: WidgetItem): boolean {
+    return widgetPreservesColors(item) || widgetColorsOnlyItsRuns(item);
 }
 
 // Split the default padding string into the leading/trailing pieces that
@@ -291,9 +298,9 @@ function renderPowerlineStatusLine(
             const padding = settings.defaultPadding ?? '';
             const { leading: sideLeadingPadding, trailing: sideTrailingPadding } = resolvePaddingSides(padding, settings.defaultPaddingSide);
 
-            // If override FG color is set and this widget preserves its own colors,
+            // If override FG color is set and this widget carries its own colors,
             // we need to strip the ANSI codes from the widget text
-            if (hasForegroundOverride(settings) && widgetPreservesColors(widget)) {
+            if (hasForegroundOverride(settings) && embedsForegroundCodes(widget)) {
                 // Strip ANSI color codes when override is active
                 widgetText = stripSgrCodes(widgetText);
             }
@@ -545,6 +552,8 @@ function renderPowerlineStatusLine(
             );
             widgetContent += gradientResult.text;
             powerlineGradientColumn = gradientResult.nextColumn;
+        } else if (fgCode && widgetColorsOnlyItsRuns(widget.widget)) {
+            widgetContent += restoreForegroundAfterRuns(styledContent, fgCode);
         } else {
             widgetContent += fgCode ? restoreForegroundAfterRuns(styledContent, fgCode) : styledContent;
         }
@@ -1150,7 +1159,7 @@ export function renderStatusLine(
         );
 
     // Helper to apply colors with optional background, bold, and dim
-    const applyColorsWithOverride = (text: string, foregroundColor?: string, backgroundColor?: string, bold?: boolean, dim?: boolean | 'parens'): string => {
+    const applyColorsWithOverride = (text: string, foregroundColor?: string, backgroundColor?: string, bold?: boolean, dim?: boolean | 'parens', keepColoredRuns?: boolean): string => {
         // Override foreground color takes precedence over EVERYTHING, including passed foreground
         // color — except a gradient: spec, which is not a solid color. The gradient is applied as a
         // whole-line pass after assembly, so when it will render (color levels above ansi16) we emit
@@ -1173,7 +1182,7 @@ export function renderStatusLine(
         }
 
         const shouldBold = (settings.globalBold) || bold;
-        return applyColors(text, fgColor, bgColor, shouldBold, colorLevel, dim);
+        return applyColors(text, fgColor, bgColor, shouldBold, colorLevel, dim, keepColoredRuns);
     };
 
     const detectedWidth = context.terminalWidth ?? getTerminalWidth();
@@ -1303,9 +1312,12 @@ export function renderStatusLine(
                         widget
                     });
                 } else {
-                    // Normal widget rendering with colors
+                    // Normal widget rendering with colors, around any runs the
+                    // widget colors itself unless a global override owns the foreground
+                    const colorsOwnRuns = widgetColorsOnlyItsRuns(widget);
+                    const text = colorsOwnRuns && hasForegroundOverride(settings) ? stripSgrCodes(widgetText) : widgetText;
                     elements.push({
-                        content: applyColorsWithOverride(widgetText, widget.color ?? defaultColor, widget.backgroundColor, widget.bold, widget.dim),
+                        content: applyColorsWithOverride(text, widget.color ?? defaultColor, widget.backgroundColor, widget.bold, widget.dim, colorsOwnRuns),
                         type: widget.type,
                         widget
                     });
