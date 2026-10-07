@@ -79,7 +79,7 @@ export const PalettePicker: React.FC<PalettePickerProps> = ({ title, initialInde
 
         // Digits jump to that color number; a digit that would go past 255
         // starts a new number
-        if (shouldInsertInput(input, key) && /^[0-9]$/.test(input)) {
+        if (shouldInsertInput(input, key) && /^\d$/.test(input)) {
             const appended = typed + input;
             const next = appended.length <= 3 && Number(appended) <= 255 ? appended : input;
             setTyped(next);
