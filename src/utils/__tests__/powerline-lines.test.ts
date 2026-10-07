@@ -17,8 +17,8 @@ import {
     isAnyLinePowerline,
     isEveryLinePowerline,
     isPowerlineLine,
+    moveLinePowerline,
     removeLinePowerline,
-    swapLinePowerline,
     toggleLinePowerline
 } from '../powerline-lines';
 
@@ -112,10 +112,12 @@ describe('toggleLinePowerline', () => {
 });
 
 describe('moving and deleting lines', () => {
-    it('swaps the settings of two lines that swap places', () => {
-        expect(swapLinePowerline([null, false], 1, 0)).toEqual([false]);
-        expect(swapLinePowerline([false], 0, 2)).toEqual([null, null, false]);
-        expect(swapLinePowerline(undefined, 0, 1)).toBeUndefined();
+    it('moves a line\'s setting with it, the others keeping their order', () => {
+        expect(moveLinePowerline([null, false], 1, 0)).toEqual([false]);
+        expect(moveLinePowerline([false], 0, 2)).toEqual([null, null, false]);
+        // Past the end to the start: the others shift down rather than swap
+        expect(moveLinePowerline([false, true, null], 2, 0)).toEqual([null, false, true]);
+        expect(moveLinePowerline(undefined, 0, 1)).toBeUndefined();
     });
 
     it('drops a deleted line\'s setting and shifts the rest up', () => {

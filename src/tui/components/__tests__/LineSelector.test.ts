@@ -460,7 +460,7 @@ describe('LineSelector', () => {
         }
     });
 
-    it('swaps the highlighted line with its neighbour in move mode, and with the far end past either edge', async () => {
+    it('moves the highlighted line past its neighbour in move mode, and to the far end past either edge', async () => {
         const view = renderLineSelector({ lines: [ONE_WIDGET, EMPTY, TWO_WIDGETS], allowEditing: true });
 
         try {
@@ -495,11 +495,12 @@ describe('LineSelector', () => {
             });
             expect(view.onLinesUpdate).toHaveBeenLastCalledWith([EMPTY, TWO_WIDGETS, ONE_WIDGET], undefined);
 
+            // Past the last line it goes to the top, and the others keep their order
             view.press(DOWN_ARROW);
             await waitFor(() => {
                 expect(view.rows()[0]).toBe('◆  ☰ Line 1 (1 widget)');
             });
-            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([ONE_WIDGET, TWO_WIDGETS, EMPTY], undefined);
+            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([ONE_WIDGET, EMPTY, TWO_WIDGETS], undefined);
 
             view.press(UP_ARROW);
             await waitFor(() => {
