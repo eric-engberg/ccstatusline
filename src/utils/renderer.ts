@@ -1060,22 +1060,19 @@ function getAlignmentColumns(preRenderedLine: PreRenderedWidget[], settings: Set
         }))
         .filter(entry => !isAlignmentBoundary(entry) && entry.content);
 
-    for (let i = 0; i < renderedWidgets.length; i++) {
-        const widget = renderedWidgets[i];
-        if (!widget)
-            continue;
-
+    let i = 0;
+    while (i < renderedWidgets.length) {
         // An excluded widget opts itself and the rest of the line out of the
         // shared column widths. This only applies to merge-group heads;
         // widgets merged into a previous widget keep the group's width.
-        if (widget.widget.excludeFromAutoAlign)
+        if (renderedWidgets[i]?.widget.excludeFromAutoAlign)
             break;
 
         const group = getMergeGroup(renderedWidgets, i, paddingPairLength);
         columns.push(group.column);
 
-        // Skip over merged widgets since we've already processed them
-        i = group.end;
+        // The next column starts after the widgets merged into this one
+        i = group.end + 1;
     }
 
     return columns;
