@@ -1024,6 +1024,27 @@ interface AlignmentColumn {
     indices: number[];  // Positions in the pre-rendered line
 }
 
+// Separators end a merge group and aren't columns themselves
+function isAlignmentBoundary(entry: PreRenderedWidget | undefined): boolean {
+    return entry?.widget.type === 'separator' || entry?.widget.type === 'flex-separator';
+}
+
+// Whether a widget after this one renders before the next separator, so a
+// merge from this one has something to merge into
+function hasRenderedWidgetBeforeSeparator(preRenderedLine: PreRenderedWidget[], originalIndex: number): boolean {
+    for (let j = originalIndex + 1; j < preRenderedLine.length; j++) {
+        const nextEntry = preRenderedLine[j];
+        if (!nextEntry)
+            continue;
+        if (isAlignmentBoundary(nextEntry))
+            return false;
+        if (nextEntry.content)
+            return true;
+    }
+
+    return false;
+}
+
 // A line's auto-align columns, in order
 function getAlignmentColumns(preRenderedLine: PreRenderedWidget[], settings: Settings): AlignmentColumn[] {
     const columns: AlignmentColumn[] = [];
@@ -1031,30 +1052,13 @@ function getAlignmentColumns(preRenderedLine: PreRenderedWidget[], settings: Set
     const { leading: sideLeadingPadding, trailing: sideTrailingPadding } = resolvePaddingSides(defaultPadding, settings.defaultPaddingSide);
     const paddingPairLength = sideLeadingPadding.length + sideTrailingPadding.length;
 
-    const isSeparatorBoundary = (entry: PreRenderedWidget | undefined): boolean => (
-        entry?.widget.type === 'separator' || entry?.widget.type === 'flex-separator'
-    );
-    const hasNextRenderedWidgetBeforeSeparator = (originalIndex: number): boolean => {
-        for (let j = originalIndex + 1; j < preRenderedLine.length; j++) {
-            const nextEntry = preRenderedLine[j];
-            if (!nextEntry)
-                continue;
-            if (isSeparatorBoundary(nextEntry))
-                return false;
-            if (nextEntry.content)
-                return true;
-        }
-
-        return false;
-    };
-
     const renderedWidgets = preRenderedLine
         .map((entry, originalIndex) => ({
             ...entry,
             originalIndex,
-            mergesWithNext: Boolean(entry.widget.merge && hasNextRenderedWidgetBeforeSeparator(originalIndex))
+            mergesWithNext: Boolean(entry.widget.merge && hasRenderedWidgetBeforeSeparator(preRenderedLine, originalIndex))
         }))
-        .filter(entry => !isSeparatorBoundary(entry) && entry.content);
+        .filter(entry => !isAlignmentBoundary(entry) && entry.content);
 
     for (let i = 0; i < renderedWidgets.length; i++) {
         const widget = renderedWidgets[i];
