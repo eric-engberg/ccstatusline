@@ -94,7 +94,16 @@ On Linux, width detection first uses `/proc` and the terminal device directly, a
 
 ## Powerline Auto-Alignment
 
-Powerline Setup can align widgets into shared columns across multiple status lines; press `a` there to toggle **Align Widgets**. When auto-alignment makes a naturally wide value stretch later columns, select that widget in the line editor and press `x` (**exclude align**). The selected widget and everything after it on that line keep their natural widths, while earlier columns remain aligned. This control is available only when Powerline auto-alignment is enabled and the selected widget is not merged into the previous widget.
+Powerline Setup can align widgets into shared columns across multiple status lines; press `a` there to toggle **Align Widgets**. Only Powerline lines take part (see Powerline Per Line). When auto-alignment makes a naturally wide value stretch later columns, select that widget in the line editor and press `x` (**exclude align**). The selected widget and everything after it on that line keep their natural widths, while earlier columns remain aligned. This control is available only when Powerline auto-alignment is enabled and the selected widget is not merged into the previous widget.
+
+## Powerline Per Line
+
+Each status line can be Powerline or plain. In **Edit Lines**, select a line and press `p` to switch it; once any line is Powerline, the list shows each line's mode, and a line keeps its mode when it's moved. Powerline Setup's switch is the default for lines you haven't switched.
+
+- A plain line keeps its manual separators and draws its widgets in their own text colors, without the Powerline backgrounds. In plain mode, backgrounds you set yourself still show.
+- Align Widgets, Continue Theme, and start/end caps run across the Powerline lines only, skipping plain lines.
+- Turning Powerline on removes manual separators only from the lines it applies to.
+- Under a Powerline theme, Edit Colors still edits the plain lines, and Global Overrides keeps the separator and background options for them.
 
 ## Global Options
 
@@ -177,6 +186,12 @@ The same menu controls these ccstatusline cache settings, saved with **Save & Ex
 | Terminal Width Cache TTL | `terminalWidthCacheTtlSeconds` | 5 seconds | 0–300 seconds | Re-probe on every render, even after no width was found |
 
 Git commands run on cache misses with a five-second timeout. A timed-out command follows the normal missing-data path for its widget.
+
+### Status line empty in one folder but fine elsewhere
+
+Claude Code only runs a custom `statusLine` command in a workspace whose trust dialog has been accepted (since Claude Code 2.1.51). Since 2.1.232, a git repository nested under an already-trusted parent folder no longer inherits that trust, and Claude Code does not always show the trust dialog again. In such a folder, ccstatusline is never invoked, so the status line renders as an empty row even though running `ccstatusline` by hand in the same folder works and other folders still show it.
+
+To confirm, look up the project path in `~/.claude.json` under `projects` and check its `hasTrustDialogAccepted` value. Setting it to `true` (or accepting the trust dialog when Claude Code shows it) and starting a new session restores the status line.
 
 ## Usage Credentials and Cache
 

@@ -17,6 +17,7 @@ import {
     getPowerlineThemes
 } from '../../utils/colors';
 import { getPlainInput } from '../../utils/input-guards';
+import { isPowerlineLine } from '../../utils/powerline-lines';
 
 import { ConfirmDialog } from './ConfirmDialog';
 import {
@@ -58,7 +59,12 @@ export function applyCustomPowerlineTheme(
         return null;
     }
 
-    const lines = settings.lines.map((line) => {
+    const lines = settings.lines.map((line, lineIndex) => {
+        // A plain line draws no theme colors, so it keeps its own
+        if (!isPowerlineLine(settings, lineIndex)) {
+            return line;
+        }
+
         let widgetColorIndex = 0;
 
         return line.map((widget) => {

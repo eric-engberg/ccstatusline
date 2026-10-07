@@ -92,6 +92,14 @@ describe('PowerlineSetup helpers', () => {
 
         expect(disabledItems.every(item => item.disabled)).toBe(true);
 
+        // Powerline off by default, but a line switched to Powerline uses these settings
+        const lineItems = buildPowerlineSetupMenuItems({
+            ...DEFAULT_SETTINGS.powerline,
+            enabled: false
+        }, true);
+
+        expect(lineItems.some(item => item.disabled)).toBe(false);
+
         const enabledItems = buildPowerlineSetupMenuItems({
             ...DEFAULT_SETTINGS.powerline,
             enabled: true,
@@ -118,6 +126,60 @@ describe('PowerlineSetup helpers', () => {
             label: 'Themes     ',
             sublabel: '(Custom)'
         });
+    });
+
+    it('offers the Powerline options when only a line is Powerline', async () => {
+        const stdin = createMockStdin();
+        const stdout = createMockStdout();
+        const stderr = createMockStdout();
+        const onUpdate = vi.fn<PowerlineSetupProps['onUpdate']>();
+        const instance = render(
+            React.createElement(PowerlineSetup, {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                    powerline: {
+                        ...DEFAULT_SETTINGS.powerline,
+                        enabled: false,
+                        autoAlign: false,
+                        lineEnabled: [null, true]
+                    }
+                },
+                powerlineFontStatus: { installed: true },
+                onUpdate,
+                onBack: vi.fn(),
+                onInstallFonts: vi.fn(),
+                installingFonts: false,
+                fontInstallMessage: null,
+                onClearMessage: vi.fn()
+            }),
+            {
+                stdin,
+                stdout,
+                stderr,
+                debug: true,
+                exitOnCtrlC: false,
+                patchConsole: false
+            }
+        );
+
+        try {
+            await waitFor(() => {
+                expect(stdout.getOutput()).toContain('Align Widgets:');
+            });
+            expect(stdout.getOutput()).not.toContain('Enable Powerline mode to configure');
+
+            stdin.write('a');
+            await waitFor(() => {
+                expect(onUpdate).toHaveBeenCalled();
+            });
+            expect(onUpdate.mock.calls[0]?.[0].powerline.autoAlign).toBe(true);
+        } finally {
+            instance.unmount();
+            instance.cleanup();
+            stdin.destroy();
+            stdout.destroy();
+            stderr.destroy();
+        }
     });
 
     it('toggles continue theme across lines when (c) is pressed', async () => {
@@ -219,6 +281,52 @@ describe('PowerlineSetup helpers', () => {
                 expect(stdout.getOutput()).toContain('Powerline Setup');
                 expect(stdout.getOutput()).toContain('⚠ Global override for FG active');
             });
+        } finally {
+            instance.unmount();
+            instance.cleanup();
+            stdin.destroy();
+            stdout.destroy();
+            stderr.destroy();
+        }
+    });
+
+    // Turning Powerline on removes manual separators only from the lines it
+    // turns Powerline, so separators on a plain line need no confirmation
+    it('turns Powerline on without asking when the only separators are on a plain line', async () => {
+        const stdin = createMockStdin();
+        const stdout = createMockStdout();
+        const stderr = createMockStdout();
+        const onUpdate = vi.fn<PowerlineSetupProps['onUpdate']>();
+        const plainLine = [{ id: '2', type: 'model' }, { id: '3', type: 'separator' }, { id: '4', type: 'git-branch' }] as const;
+        const instance = render(
+            React.createElement(PowerlineSetup, {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                    lines: [[{ id: '1', type: 'model' }], [...plainLine]],
+                    powerline: { ...DEFAULT_SETTINGS.powerline, enabled: false, lineEnabled: [null, false] }
+                },
+                powerlineFontStatus: { installed: true },
+                onUpdate,
+                onBack: vi.fn(),
+                onInstallFonts: vi.fn(),
+                installingFonts: false,
+                fontInstallMessage: null,
+                onClearMessage: vi.fn()
+            }),
+            { stdin, stdout, stderr, debug: true, exitOnCtrlC: false, patchConsole: false }
+        );
+
+        try {
+            await waitFor(() => {
+                expect(stdout.getOutput()).toContain('Powerline Setup');
+            });
+            stdin.write('t');
+            await waitFor(() => {
+                expect(onUpdate).toHaveBeenCalledTimes(1);
+            });
+            expect(stdout.getOutput()).not.toContain('remove');
+            expect(onUpdate.mock.calls[0]?.[0].lines[1]?.map(item => item.type)).toEqual(['model', 'separator', 'git-branch']);
+            expect(onUpdate.mock.calls[0]?.[0].powerline.enabled).toBe(true);
         } finally {
             instance.unmount();
             instance.cleanup();
