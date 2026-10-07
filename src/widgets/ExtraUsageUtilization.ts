@@ -73,7 +73,7 @@ function formatUsedPercent(item: WidgetItem, label: string, usedPercent: number,
         return formatRawOrLabeledValue(item, label, bar);
     }
 
-    const formatOptions = getValueFormatOptions(settings, item.color ?? DEFAULT_COLOR);
+    const formatOptions = getValueFormatOptions(settings);
     return formatColoredValue(item, label, formatPercent(renderedPercent, format), usedPercent, LIMIT_SCALE, formatOptions);
 }
 
@@ -143,13 +143,15 @@ export class ExtraUsageUtilizationWidget implements Widget {
         return item && showsUsageBar(item) ? keybinds : [...keybinds, VALUE_COLORS_KEYBIND];
     }
 
+    // While the widget shows what's left, the sample does too
     renderEditor(props: WidgetEditorProps): React.ReactElement {
-        return renderValueColorsEditor(props, VALUE_COLORS_EDITOR);
+        const showsRemaining = isUsageInverted(props.widget);
+        return renderValueColorsEditor(props, { ...VALUE_COLORS_EDITOR, showsRemaining, sampleNote: showsRemaining ? 'left' : 'used' });
     }
 
-    // Value colors embed their own foreground codes, so the renderer must
-    // leave this widget's foreground alone while they show
-    preservesRenderedColors(item: WidgetItem): boolean {
+    // Value colors paint only the value (or the whole text), so the renderer
+    // colors the rest with the theme or widget color
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
         return showsValueColors(item);
     }
 

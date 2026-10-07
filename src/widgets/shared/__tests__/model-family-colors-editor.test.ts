@@ -1,10 +1,17 @@
+import chalk from 'chalk';
+import stripAnsi from 'strip-ansi';
 import {
     describe,
     expect,
     it
 } from 'vitest';
 
+import {
+    DEFAULT_SETTINGS,
+    type Settings
+} from '../../../types/Settings';
 import type { WidgetItem } from '../../../types/Widget';
+import { updateColorMap } from '../../../utils/colors';
 import { ModelFamilyColorsEditor } from '../model-family-colors-editor';
 
 import {
@@ -17,8 +24,8 @@ import {
 
 const rawModel: WidgetItem = { id: 'm', type: 'model', rawValue: true };
 
-function renderEditor(widget: WidgetItem) {
-    return renderWidgetEditor(ModelFamilyColorsEditor, widget);
+function renderEditor(widget: WidgetItem, settings?: Settings) {
+    return renderWidgetEditor(ModelFamilyColorsEditor, widget, settings);
 }
 
 describe('ModelFamilyColorsEditor', () => {
@@ -38,6 +45,22 @@ describe('ModelFamilyColorsEditor', () => {
         }
     });
 
+    it('samples the label in the widget color around the family color, as the status line draws it', async () => {
+        const editor = renderEditor({
+            id: 'm',
+            type: 'model',
+            color: 'hex:112233',
+            metadata: { 'familyColors': 'true', 'familyColor.opus': 'hex:ff8800' }
+        });
+
+        try {
+            await editor.ready();
+            expect(editor.takeColoredOutput()).toContain('Sample: \x1b[38;2;17;34;51mModel: \x1b[38;2;255;136;0mOpus');
+        } finally {
+            editor.cleanup();
+        }
+    });
+
     it('lists every family with its color', async () => {
         const editor = renderEditor(rawModel);
 
@@ -48,6 +71,43 @@ describe('ModelFamilyColorsEditor', () => {
             expect(output).toMatch(/sonnet\s+Cyan/);
             expect(output).toMatch(/haiku\s+Green/);
             expect(output).toMatch(/fable\s+Red/);
+        } finally {
+            editor.cleanup();
+        }
+    });
+
+    it('shows the colors the status line draws at the Basic (16-color) level', async () => {
+        // Named colors resolve through chalk, which tests run with colors off
+        const originalLevel = chalk.level;
+        chalk.level = 1;
+        updateColorMap();
+        const editor = renderEditor({ ...rawModel, metadata: { familyColors: 'true' } }, { ...DEFAULT_SETTINGS, colorLevel: 1 });
+
+        try {
+            await editor.ready();
+            const output = editor.takeColoredOutput();
+            expect(stripAnsi(output)).toMatch(/opus\s+Magenta/);
+            expect(output).toContain('\x1b[35mMagenta');
+            expect(output).toMatch(/Sample: .*\x1b\[35mOpus/);
+        } finally {
+            editor.cleanup();
+            chalk.level = originalLevel;
+            updateColorMap();
+        }
+    });
+
+    it('colors nothing at the No Color level, as on the status line', async () => {
+        const editor = renderEditor(
+            { ...rawModel, metadata: { 'familyColors': 'true', 'familyColor.opus': 'hex:ff0000' } },
+            { ...DEFAULT_SETTINGS, colorLevel: 0 }
+        );
+
+        try {
+            await editor.ready();
+            const output = editor.takeColoredOutput();
+            expect(stripAnsi(output)).toMatch(/opus\s+#FF0000/);
+            expect(output).toContain('Sample: Opus');
+            expect(output).not.toContain('\x1b[38;2;255;0;0m');
         } finally {
             editor.cleanup();
         }
