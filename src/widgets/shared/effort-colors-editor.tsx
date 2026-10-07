@@ -6,6 +6,10 @@ import {
 } from 'ink';
 import React, { useState } from 'react';
 
+import {
+    getColorLevelString,
+    type ColorLevelString
+} from '../../types/ColorLevel';
 import type {
     WidgetEditorProps,
     WidgetItem
@@ -40,10 +44,6 @@ import {
 
 export const EDIT_LEVEL_COLORS_ACTION = 'edit-level-colors';
 
-// The editor has no access to the configured color level, so it previews at
-// the default (256 colors)
-const EDITOR_COLOR_LEVEL = 'ansi256';
-
 type Row = TranscriptThinkingEffort | 'brackets';
 const ROWS: Row[] = [...KNOWN_THINKING_EFFORTS, 'brackets'];
 const NAMED_COLORS = getAvailableColorsForUI().map(color => color.value).filter(value => value !== '');
@@ -73,21 +73,25 @@ function getColorLabel(color: string): string {
     return getColorDisplayName(color);
 }
 
-function paint(text: string, color: string): string {
-    const code = getColorAnsiCode(color, EDITOR_COLOR_LEVEL);
-    return code ? `${code}${text}\x1b[39m` : text;
+// The colors the status line draws at the configured color level; at No Color
+// (colorsDisabled) it draws none
+interface EditorColors {
+    colorLevel: ColorLevelString;
+    colorsDisabled: boolean;
 }
 
 // What a row shows: the brackets' color mode, or the level's color drawn in it
-function getRowValue(widget: WidgetItem, row: Row): string {
+function getRowValue(widget: WidgetItem, row: Row, colors: EditorColors): string {
     if (row === 'brackets') {
         return getBracketColorMode(widget) === 'effort' ? 'Match effort' : 'Widget color';
     }
-    const color = getLevelColor(widget, row, EDITOR_COLOR_LEVEL);
-    return paint(getColorLabel(color), color);
+    const color = getLevelColor(widget, row, colors.colorLevel);
+    const label = getColorLabel(color);
+    const code = colors.colorsDisabled ? '' : getColorAnsiCode(color, colors.colorLevel);
+    return code ? `${code}${label}\x1b[39m` : label;
 }
 
-export const EffortColorsEditor: React.FC<WidgetEditorProps> = ({ widget, onComplete, onCancel }) => {
+export const EffortColorsEditor: React.FC<WidgetEditorProps> = ({ widget, onComplete, onCancel, settings }) => {
     const [draft, setDraft] = useState(widget);
     const [selectedIndex, setSelectedIndex] = useState(0);
     // The sample shows the highlighted level, or the last one highlighted
@@ -99,6 +103,10 @@ export const EffortColorsEditor: React.FC<WidgetEditorProps> = ({ widget, onComp
     const selectedRow = ROWS[selectedIndex] ?? 'brackets';
     const enabled = isLevelColorsEnabled(draft);
     const baseColor = draft.color ?? THINKING_EFFORT_DEFAULT_COLOR;
+    const colors: EditorColors = {
+        colorLevel: getColorLevelString(settings?.colorLevel),
+        colorsDisabled: settings?.colorLevel === 0
+    };
 
     // Moves the cursor up (-1) or down (1), wrapping past either end
     const moveBy = (delta: 1 | -1) => {
@@ -116,7 +124,7 @@ export const EffortColorsEditor: React.FC<WidgetEditorProps> = ({ widget, onComp
             setDraft(setBracketColorMode(draft, getBracketColorMode(draft) === 'effort' ? 'widget' : 'effort'));
             return;
         }
-        const current = getLevelColor(draft, selectedRow, EDITOR_COLOR_LEVEL);
+        const current = getLevelColor(draft, selectedRow, colors.colorLevel);
         setDraft(setLevelColor(draft, selectedRow, cycleNamedColor(current, direction)));
     };
 
@@ -173,11 +181,11 @@ export const EffortColorsEditor: React.FC<WidgetEditorProps> = ({ widget, onComp
 
     // Colored as the status line colors it: the widget color around the level's runs
     const sample = applyColors(
-        formatThinkingEffort(draft, { text: sampleLevel, level: sampleLevel }, { colorLevel: EDITOR_COLOR_LEVEL, colorsDisabled: false }),
+        formatThinkingEffort(draft, { text: sampleLevel, level: sampleLevel }, colors),
         baseColor,
         undefined,
         false,
-        EDITOR_COLOR_LEVEL,
+        colors.colorLevel,
         undefined,
         true
     );
@@ -207,7 +215,7 @@ export const EffortColorsEditor: React.FC<WidgetEditorProps> = ({ widget, onComp
             <Box marginTop={1} flexDirection='column'>
                 {ROWS.map((row, index) => {
                     const isSelected = index === selectedIndex;
-                    const value = getRowValue(draft, row);
+                    const value = getRowValue(draft, row, colors);
                     return (
                         <Box key={row} flexDirection='row' flexWrap='nowrap'>
                             <Box width={3}>
