@@ -10,6 +10,7 @@ import {
 } from 'vitest';
 
 import { DEFAULT_SETTINGS } from '../../../types/Settings';
+import type { WidgetItem } from '../../../types/Widget';
 import { getPowerlineThemes } from '../../../utils/colors';
 import { waitFor } from '../../__tests__/helpers/wait-for-ink';
 import {
@@ -71,6 +72,7 @@ describe('PowerlineThemeSelector helpers', () => {
             colorLevel: 2 as const,
             powerline: {
                 ...DEFAULT_SETTINGS.powerline,
+                enabled: true,
                 theme: 'gruvbox'
             }
         };
@@ -87,6 +89,30 @@ describe('PowerlineThemeSelector helpers', () => {
         expect(updatedSettings?.lines[0]?.[2]).toMatchObject({
             color: 'ansi256:235',
             backgroundColor: 'ansi256:214'
+        });
+    });
+
+    // A plain line draws no theme colors, so it keeps its own
+    it('leaves plain lines as they are', () => {
+        const plainLine: WidgetItem[] = [{ id: 'p', type: 'model', color: 'red' }];
+        const settings = {
+            ...DEFAULT_SETTINGS,
+            colorLevel: 2 as const,
+            powerline: {
+                ...DEFAULT_SETTINGS.powerline,
+                enabled: true,
+                theme: 'gruvbox',
+                lineEnabled: [null, false]
+            },
+            lines: [DEFAULT_SETTINGS.lines[0] ?? [], plainLine]
+        };
+
+        const updatedSettings = applyCustomPowerlineTheme(settings, 'gruvbox');
+
+        expect(updatedSettings?.lines[1]).toEqual(plainLine);
+        expect(updatedSettings?.lines[0]?.[0]).toMatchObject({
+            color: 'ansi256:16',
+            backgroundColor: 'ansi256:167'
         });
     });
 
