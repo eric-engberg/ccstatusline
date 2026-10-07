@@ -297,7 +297,12 @@ export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike>(conf
             const remaining = { ...colored, metadata: { ...colored.metadata, invert: 'true' } };
 
             expect(config.render(widget, remaining, used(95))).toBe(`${HIGH}5.0%${FG_RESET}`);
-            expect(config.render(widget, { ...colored, rawValue: false }, used(25))).toMatch(new RegExp(`^${BASE.replace('[', '\\[')}[^\\x1b]+: ${FG_RESET.replace('[', '\\[')}`));
+            // The label is drawn in the widget's color, which resets before the value
+            const labeled = config.render(widget, { ...colored, rawValue: false }, used(25)) ?? '';
+            const label = labeled.slice(BASE.length, labeled.indexOf(FG_RESET));
+            expect(labeled.startsWith(BASE)).toBe(true);
+            expect(label.endsWith(': ')).toBe(true);
+            expect(label).not.toContain('\x1b');
         });
 
         // Bars have gradients, and the level glyph has no number to color
