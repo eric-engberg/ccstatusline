@@ -31,10 +31,13 @@ describe.each([
     });
 });
 
-// A line like "today: $12.34 of $50.00/day", without raw values
+// A line like "today: $12.34 of $50.00/day", without raw values. With value
+// colors on, the widget paints only the value and the renderer colors the
+// label (colorsOnlyItsRuns), so the label comes out unpainted here
 it('draws an edited label on Extra Usage Today with its value colors on', () => {
     const today = getWidget('extra-usage-today');
     const item: WidgetItem = { id: 't', type: 'extra-usage-today', color: 'hex:112233', metadata: { valueColors: 'true', label: 'today: ' } };
 
-    expect(today?.render(item, { isPreview: true }, DEFAULT_SETTINGS)).toMatch(/^\x1b\[38;2;17;34;51mtoday: \x1b\[39m/);
+    expect(today?.colorsOnlyItsRuns?.(item)).toBe(true);
+    expect(today?.render(item, { isPreview: true }, DEFAULT_SETTINGS)).toMatch(/^today: \$/);
 });
