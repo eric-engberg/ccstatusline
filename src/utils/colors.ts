@@ -135,6 +135,35 @@ export function applyParensDim(text: string, bold?: boolean): string {
     return text.replace(/\([^()]*\)/g, span => `\x1b[2m${span}${intensityReset}`);
 }
 
+// The parts of a style that wrap the text whatever its foreground: bold/dim
+// first, so they can be reset independently before color resets (a single
+// \x1b[22m clears both), then the background
+function getStyleWrap(
+    backgroundColor: string | undefined,
+    bold: boolean | undefined,
+    dim: boolean | 'parens' | undefined,
+    colorLevel: 'ansi16' | 'ansi256' | 'truecolor'
+): { prefix: string; suffix: string } {
+    let prefix = '';
+    let suffix = '';
+    if (bold) {
+        prefix += '\x1b[1m';
+    }
+    if (dim === true) {
+        prefix += '\x1b[2m';
+    }
+    if (bold || dim === true) {
+        suffix = '\x1b[22m';
+    }
+
+    const bgCode = backgroundColor ? getColorAnsiCode(backgroundColor, colorLevel, true) : '';
+    if (bgCode) {
+        prefix += bgCode;
+        suffix = '\x1b[49m' + suffix;
+    }
+    return { prefix, suffix };
+}
+
 export function applyColors(
     text: string,
     foregroundColor?: string,
@@ -154,29 +183,7 @@ export function applyColors(
 
     // Use raw ANSI codes for precise reset sequencing.
     // This avoids style leakage (for example, bold affecting later widgets).
-    let prefix = '';
-    let suffix = '';
-
-    // Apply bold/dim first so they can be reset independently before color
-    // resets. A single \x1b[22m clears both attributes.
-    if (bold) {
-        prefix += '\x1b[1m';
-    }
-    if (dim === true) {
-        prefix += '\x1b[2m';
-    }
-    if (bold || dim === true) {
-        suffix = '\x1b[22m' + suffix;
-    }
-
-    // Apply background color
-    if (backgroundColor) {
-        const bgCode = getColorAnsiCode(backgroundColor, colorLevel, true);
-        if (bgCode) {
-            prefix += bgCode;
-            suffix = '\x1b[49m' + suffix;
-        }
-    }
+    let { prefix, suffix } = getStyleWrap(backgroundColor, bold, dim, colorLevel);
 
     // Apply foreground color
     if (foregroundColor) {
