@@ -12,7 +12,6 @@ import {
     type ColorListEditorConfig
 } from './color-list-editor';
 import {
-    THINKING_EFFORT_DEFAULT_COLOR,
     formatThinkingEffort,
     getBracketColorMode,
     getLevelColor,
@@ -41,8 +40,7 @@ const LEVEL_COLORS_CONFIG: ColorListEditorConfig<TranscriptThinkingEffort, 'brac
     resetColors: resetLevelColors,
     renderSample: (item, level) => formatThinkingEffort(item, { text: level, level }, {
         colorLevel: EDITOR_COLOR_LEVEL,
-        colorsDisabled: false,
-        baseColor: item.color ?? THINKING_EFFORT_DEFAULT_COLOR
+        colorsDisabled: false
     })
 };
 
