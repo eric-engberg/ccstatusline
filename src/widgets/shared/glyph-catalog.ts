@@ -3,16 +3,16 @@ import {
     type GlyphEntry,
     type GlyphGroup
 } from './glyph-groups';
-import { NERD_FONT_SETS } from './nerd-font-glyphs';
+import { NERD_FONT_GLYPHS } from './nerd-font-glyphs';
 import {
     EMOJI_GLYPHS,
     SYMBOL_GLYPHS
 } from './unicode-glyphs';
 
-// Everything the glyph picker offers: the curated groups, then every Nerd Font
-// icon set as a group, and a search over all of them plus every Unicode emoji
-// and symbol. The picker loads this module only when it opens, so the status
-// line never loads the data.
+// Everything the glyph picker offers: the curated groups to browse, and a
+// search over them plus every Unicode emoji and symbol and every Nerd Font icon.
+// The picker loads this module only when it opens, so the status line never
+// loads the data.
 export interface GlyphCatalog {
     groups: readonly GlyphGroup[];
     /** Glyphs whose names hold every word of the query: curated ones first, then Unicode's, then Nerd Font's. */
@@ -26,34 +26,10 @@ function formatNerdFontName(names: string[]): string {
     return `${readable} (${aliases})`;
 }
 
-// The icon sets' names, by the prefix of their glyphs' names
-const SET_NAMES: Record<string, string> = {
-    cod: 'Codicons',
-    custom: 'Custom',
-    dev: 'Devicons',
-    extra: 'Extra',
-    fa: 'Font Awesome',
-    fae: 'Font Awesome Extension',
-    iec: 'IEC Power Symbols',
-    indent: 'Indentation',
-    linux: 'Font Logos',
-    md: 'Material Design',
-    oct: 'Octicons',
-    pl: 'Powerline',
-    ple: 'Powerline Extra',
-    pom: 'Pomicons',
-    seti: 'Seti UI',
-    weather: 'Weather Icons'
-};
-
-function parseNerdFontSets(): GlyphGroup[] {
-    return NERD_FONT_SETS.map(set => ({
-        name: `Nerd Font: ${SET_NAMES[set.id] ?? set.id}`,
-        needsNerdFont: true,
-        glyphs: set.glyphs.split(';').map((entry) => {
-            const [code = '', ...names] = entry.split(' ');
-            return { glyph: String.fromCodePoint(Number.parseInt(code, 16)), name: formatNerdFontName(names) };
-        })
+function parseNerdFontGlyphs(): GlyphEntry[] {
+    return NERD_FONT_GLYPHS.flatMap(set => set.split(';').map((entry) => {
+        const [code = '', ...names] = entry.split(' ');
+        return { glyph: String.fromCodePoint(Number.parseInt(code, 16)), name: formatNerdFontName(names) };
     }));
 }
 
@@ -91,19 +67,17 @@ function toSearchText(text: string): string {
 
 export function createGlyphCatalog(): GlyphCatalog {
     const emoji = parseUnicodeGlyphs(EMOJI_GLYPHS);
-    const curatedGroups = addSkinTones(GLYPH_GROUPS, emoji);
-    const nerdFontGroups = parseNerdFontSets();
-    const groups = [...curatedGroups, ...nerdFontGroups];
+    const groups = addSkinTones(GLYPH_GROUPS, emoji);
     // Search lists each glyph once, under its first name (curated, then the
     // emoji's, the character's, Nerd Font's), but finds it by any of them: ⚡
     // shows as "high voltage" and "high voltage sign" finds it too. An emoji's
     // text and emoji forms (❤ and ❤️) are different glyphs, so both show.
     const searchable = new Map<string, { entry: GlyphEntry; text: string }>();
     const everything = [
-        ...curatedGroups.flatMap(group => group.glyphs),
+        ...groups.flatMap(group => group.glyphs),
         ...emoji,
         ...parseUnicodeGlyphs(SYMBOL_GLYPHS),
-        ...nerdFontGroups.flatMap(group => group.glyphs)
+        ...parseNerdFontGlyphs()
     ];
     for (const entry of everything) {
         const found = searchable.get(entry.glyph);
