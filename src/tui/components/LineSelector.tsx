@@ -26,13 +26,13 @@ interface LineSelectorProps {
     lines: WidgetItem[][];
     onSelect: (line: number) => void;
     onBack: () => void;
-    // With settings, also the per-line Powerline modes (powerline.lineEnabled),
-    // which move and are deleted with their lines
-    onLinesUpdate: (lines: WidgetItem[][], lineEnabled?: (boolean | null)[]) => void;
+    // With the per-line Powerline modes (powerline.lineEnabled), which move and
+    // are deleted with their lines
+    onLinesUpdate: (lines: WidgetItem[][], lineEnabled: (boolean | null)[] | undefined) => void;
     initialSelection?: number;
     title?: string;
     blockIfPowerlineActive?: boolean;
-    settings?: Settings;
+    settings: Settings;
     allowEditing?: boolean;
 }
 
@@ -53,14 +53,14 @@ function getLineSublabel(line: WidgetItem[], mode: string | null): string {
     return mode ? `(${count}, ${mode})` : `(${count})`;
 }
 
-function getHelpText(allowEditing: boolean, lineCount: number, canSwitchModes: boolean): string {
+function getHelpText(allowEditing: boolean, lineCount: number): string {
     if (!allowEditing) {
         return 'ESC to go back';
     }
     const keys = lineCount > 1
         ? '(a) to append new line, (d) to delete line, (m) to move line, ESC to go back'
         : '(a) to append new line, ESC to go back';
-    return canSwitchModes ? `${keys}, (p) Powerline/plain` : keys;
+    return `${keys}, (p) Powerline/plain`;
 }
 
 const LineSelector: React.FC<LineSelectorProps> = ({
@@ -78,7 +78,7 @@ const LineSelector: React.FC<LineSelectorProps> = ({
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const [moveMode, setMoveMode] = useState(false);
     const [localLines, setLocalLines] = useState(lines);
-    const [localLineEnabled, setLocalLineEnabled] = useState(settings?.powerline.lineEnabled);
+    const [localLineEnabled, setLocalLineEnabled] = useState(settings.powerline.lineEnabled);
     const [showThemeWarning, setShowThemeWarning] = useState(false);
 
     useEffect(() => {
@@ -86,24 +86,20 @@ const LineSelector: React.FC<LineSelectorProps> = ({
     }, [lines]);
 
     useEffect(() => {
-        setLocalLineEnabled(settings?.powerline.lineEnabled);
-    }, [settings?.powerline.lineEnabled]);
+        setLocalLineEnabled(settings.powerline.lineEnabled);
+    }, [settings.powerline.lineEnabled]);
 
     // The settings as edited here, for each line's Powerline mode
     const localSettings = useMemo(
-        () => (settings ? { ...settings, lines: localLines, powerline: { ...settings.powerline, lineEnabled: localLineEnabled } } : undefined),
+        () => ({ ...settings, lines: localLines, powerline: { ...settings.powerline, lineEnabled: localLineEnabled } }),
         [settings, localLines, localLineEnabled]
     );
-    const isLinePowerline = (index: number) => (localSettings ? isPowerlineLine(localSettings, index) : false);
+    const isLinePowerline = (index: number) => isPowerlineLine(localSettings, index);
 
     const commitLines = (newLines: WidgetItem[][], newLineEnabled: (boolean | null)[] | undefined) => {
         setLocalLines(newLines);
-        if (settings) {
-            setLocalLineEnabled(newLineEnabled);
-            onLinesUpdate(newLines, newLineEnabled);
-        } else {
-            onLinesUpdate(newLines);
-        }
+        setLocalLineEnabled(newLineEnabled);
+        onLinesUpdate(newLines, newLineEnabled);
     };
 
     useEffect(() => {
@@ -142,10 +138,10 @@ const LineSelector: React.FC<LineSelectorProps> = ({
     // Check if a powerline theme is managing colors: it does on Powerline lines.
     // With every line Powerline there's nothing to pick; otherwise picking a
     // Powerline line shows the warning.
-    const powerlineTheme = settings?.powerline.theme ?? '';
+    const powerlineTheme = settings.powerline.theme ?? '';
     const themeManagesPowerlineLines = blockIfPowerlineActive && powerlineTheme !== '' && powerlineTheme !== 'custom';
     const isThemeManaged = themeManagesPowerlineLines && localLines.every((_, index) => isLinePowerline(index));
-    const showsLineModes = allowEditing && Boolean(localSettings) && localLines.some((_, index) => isLinePowerline(index));
+    const showsLineModes = allowEditing && localLines.some((_, index) => isLinePowerline(index));
 
     // Handle keyboard input
     useInput((input, key) => {
@@ -191,7 +187,7 @@ const LineSelector: React.FC<LineSelectorProps> = ({
                 }
                 return;
             case 'p':
-                if (allowEditing && localSettings && selectedIndex < localLines.length) {
+                if (allowEditing && selectedIndex < localLines.length) {
                     commitLines(localLines, toggleLinePowerline(localSettings, selectedIndex).powerline.lineEnabled);
                 }
                 return;
@@ -302,7 +298,7 @@ const LineSelector: React.FC<LineSelectorProps> = ({
                     <Text dimColor>↑↓ to move line, ESC or Enter to exit move mode</Text>
                 ) : (
                     <Text dimColor>
-                        {getHelpText(allowEditing, localLines.length, Boolean(localSettings))}
+                        {getHelpText(allowEditing, localLines.length)}
                     </Text>
                 )}
 

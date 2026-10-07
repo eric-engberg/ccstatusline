@@ -124,7 +124,8 @@ function powerlineSettings(enabled: boolean, theme: string | undefined): Setting
     };
 }
 
-type RenderProps = Omit<LineSelectorProps, 'onSelect' | 'onBack' | 'onLinesUpdate'>;
+// Settings default to DEFAULT_SETTINGS
+type RenderProps = Omit<LineSelectorProps, 'onSelect' | 'onBack' | 'onLinesUpdate' | 'settings'> & { settings?: Settings };
 
 function renderLineSelector(props: RenderProps) {
     const stdin = createMockStdin();
@@ -132,9 +133,10 @@ function renderLineSelector(props: RenderProps) {
     const stderr = createMockStdout();
     const onSelect = vi.fn<(line: number) => void>();
     const onBack = vi.fn<() => void>();
-    const onLinesUpdate = vi.fn<(lines: WidgetItem[][]) => void>();
+    const onLinesUpdate = vi.fn<LineSelectorProps['onLinesUpdate']>();
 
     const element = (overrides: Partial<RenderProps> = {}) => React.createElement(LineSelector, {
+        settings: DEFAULT_SETTINGS,
         ...props,
         ...overrides,
         onSelect,
@@ -324,7 +326,7 @@ describe('LineSelector', () => {
             });
             expect(view.frame()).toContain(FULL_EDITING_HELP);
             expect(view.onLinesUpdate).toHaveBeenCalledTimes(1);
-            expect(view.onLinesUpdate).toHaveBeenCalledWith([ONE_WIDGET, EMPTY]);
+            expect(view.onLinesUpdate).toHaveBeenCalledWith([ONE_WIDGET, EMPTY], undefined);
 
             view.press(ENTER);
             await waitFor(() => {
@@ -366,7 +368,7 @@ describe('LineSelector', () => {
                 ]);
             });
             expect(view.onLinesUpdate).toHaveBeenCalledTimes(1);
-            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([ONE_WIDGET, TWO_WIDGETS]);
+            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([ONE_WIDGET, TWO_WIDGETS], undefined);
 
             // Deleting the first line keeps the highlight on the first line
             view.press('d');
@@ -383,7 +385,7 @@ describe('LineSelector', () => {
             });
             expect(view.frame()).toContain(SINGLE_LINE_EDITING_HELP);
             expect(view.onLinesUpdate).toHaveBeenCalledTimes(2);
-            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([TWO_WIDGETS]);
+            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([TWO_WIDGETS], undefined);
             expect(view.onBack).not.toHaveBeenCalled();
             expect(view.onSelect).not.toHaveBeenCalled();
         } finally {
@@ -485,25 +487,25 @@ describe('LineSelector', () => {
                     '☰ Line 3 (2 widgets)'
                 ]);
             });
-            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([EMPTY, ONE_WIDGET, TWO_WIDGETS]);
+            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([EMPTY, ONE_WIDGET, TWO_WIDGETS], undefined);
 
             view.press(DOWN_ARROW);
             await waitFor(() => {
                 expect(view.rows()[2]).toBe('◆  ☰ Line 3 (1 widget)');
             });
-            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([EMPTY, TWO_WIDGETS, ONE_WIDGET]);
+            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([EMPTY, TWO_WIDGETS, ONE_WIDGET], undefined);
 
             view.press(DOWN_ARROW);
             await waitFor(() => {
                 expect(view.rows()[0]).toBe('◆  ☰ Line 1 (1 widget)');
             });
-            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([ONE_WIDGET, TWO_WIDGETS, EMPTY]);
+            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([ONE_WIDGET, TWO_WIDGETS, EMPTY], undefined);
 
             view.press(UP_ARROW);
             await waitFor(() => {
                 expect(view.rows()[2]).toBe('◆  ☰ Line 3 (1 widget)');
             });
-            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([EMPTY, TWO_WIDGETS, ONE_WIDGET]);
+            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([EMPTY, TWO_WIDGETS, ONE_WIDGET], undefined);
 
             view.press(UP_ARROW);
             await waitFor(() => {
@@ -513,7 +515,7 @@ describe('LineSelector', () => {
                     '☰ Line 3 (2 widgets)'
                 ]);
             });
-            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([EMPTY, ONE_WIDGET, TWO_WIDGETS]);
+            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([EMPTY, ONE_WIDGET, TWO_WIDGETS], undefined);
             expect(view.onLinesUpdate).toHaveBeenCalledTimes(5);
 
             // Move mode takes only the arrows, Enter and ESC
