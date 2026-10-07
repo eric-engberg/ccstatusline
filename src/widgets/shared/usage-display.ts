@@ -221,6 +221,9 @@ export function toggleUsageWeekday(item: WidgetItem): WidgetItem {
 interface UsageDisplayModifierOptions {
     includeCompact?: boolean;
     includeDate?: boolean;
+    // The percent widgets' level glyph. Without it, a glyph carried over from
+    // one of them by a type change renders as the text mode, so it reads as that.
+    includeGlyph?: boolean;
     showUsageDirection?: boolean;
 }
 
@@ -228,7 +231,7 @@ export function getUsageDisplayModifierText(
     item: WidgetItem,
     options: UsageDisplayModifierOptions = {}
 ): string | undefined {
-    if (isLevelGlyphMode(item)) {
+    if (options.includeGlyph && isLevelGlyphMode(item)) {
         return '(level glyph)';
     }
     const mode = getUsageDisplayMode(item);
@@ -281,10 +284,11 @@ export function showsUsageBar(item: WidgetItem): boolean {
 
 // (p) cycles the style, not the size, which is (b)'s: text, then a block bar
 // (long, the first time), then a slider, then text again
-// The percent widgets add the level glyph after the slider (includeGlyph).
+// The percent widgets add the level glyph after the slider (includeGlyph). The
+// others take a glyph carried over by a type change as the text it renders as.
 export function cycleUsageDisplayMode(item: WidgetItem, disabledInProgressKeys: string[] = [], includeSlider = false, preserveInvertInTime = false, includeGlyph = false): WidgetItem {
     const style = getBarStyle(item);
-    if (style === null && !isLevelGlyphMode(item)) {
+    if (style === null && !(includeGlyph && isLevelGlyphMode(item))) {
         return setBarStyle(removeMetadataKeys(item, disabledInProgressKeys), 'block', 'long');
     }
     if (style === 'block' && includeSlider) {

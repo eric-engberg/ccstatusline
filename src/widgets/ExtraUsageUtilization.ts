@@ -62,7 +62,7 @@ export class ExtraUsageUtilizationWidget implements Widget {
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         return {
             displayText: this.getDisplayName(),
-            modifierText: getUsageDisplayModifierText(item, { showUsageDirection: true })
+            modifierText: getUsageDisplayModifierText(item, { includeGlyph: true, showUsageDirection: true })
         };
     }
 
