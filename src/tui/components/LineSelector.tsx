@@ -15,8 +15,8 @@ import type { WidgetItem } from '../../types/Widget';
 import { getPlainInput } from '../../utils/input-guards';
 import {
     isPowerlineLine,
+    moveLinePowerline,
     removeLinePowerline,
-    swapLinePowerline,
     toggleLinePowerline
 } from '../../utils/powerline-lines';
 
@@ -37,15 +37,14 @@ interface LineSelectorProps {
     allowEditing?: boolean;
 }
 
-// The lines with lines `a` and `b` swapped
-function swapLines(lines: WidgetItem[][], a: number, b: number): WidgetItem[][] {
-    const swapped = [...lines];
-    const first = swapped[a];
-    const second = swapped[b];
-    if (first && second) {
-        [swapped[a], swapped[b]] = [second, first];
+// The lines with line `from` moved to `to`, the others keeping their order
+function moveLine(lines: WidgetItem[][], from: number, to: number): WidgetItem[][] {
+    const moved = [...lines];
+    const [line] = moved.splice(from, 1);
+    if (line) {
+        moved.splice(to, 0, line);
     }
-    return swapped;
+    return moved;
 }
 
 // "(2 widgets)", or "(2 widgets, plain)" with the line's mode
@@ -128,11 +127,12 @@ const LineSelector: React.FC<LineSelectorProps> = ({
         commitLines(newLines, removeLinePowerline(localLineEnabled, lineIndex));
     };
 
-    // Swaps the highlighted line with the one above (-1) or below (1), wrapping
-    // past either end; its Powerline mode moves with it
+    // Moves the highlighted line up (-1) or down (1) past its neighbour. Past
+    // either end it goes to the other end and the rest keep their order, rather
+    // than swapping places with the line there. Its Powerline mode moves with it
     const moveSelectedLine = (direction: 1 | -1) => {
         const targetIndex = (selectedIndex + direction + localLines.length) % localLines.length;
-        commitLines(swapLines(localLines, selectedIndex, targetIndex), swapLinePowerline(localLineEnabled, selectedIndex, targetIndex));
+        commitLines(moveLine(localLines, selectedIndex, targetIndex), moveLinePowerline(localLineEnabled, selectedIndex, targetIndex));
         setSelectedIndex(targetIndex);
     };
 

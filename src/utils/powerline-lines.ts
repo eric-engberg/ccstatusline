@@ -63,14 +63,15 @@ export function toggleLinePowerline(settings: Settings, lineIndex: number): Sett
     return { ...settings, powerline: { ...settings.powerline, lineEnabled: normalize(lineEnabled) } };
 }
 
-/** The settings after lines `a` and `b` swap places. */
-export function swapLinePowerline(lineEnabled: LineEnabled, a: number, b: number): LineEnabled {
+/** The settings after line `from` moves to `to`, the other lines keeping their order. */
+export function moveLinePowerline(lineEnabled: LineEnabled, from: number, to: number): LineEnabled {
     if (!lineEnabled) {
         return undefined;
     }
-    const swapped = Array.from({ length: Math.max(lineEnabled.length, a + 1, b + 1) }, (_, index) => lineEnabled[index] ?? null);
-    [swapped[a], swapped[b]] = [swapped[b] ?? null, swapped[a] ?? null];
-    return normalize(swapped);
+    const moved = Array.from({ length: Math.max(lineEnabled.length, from + 1, to + 1) }, (_, index) => lineEnabled[index] ?? null);
+    const [setting = null] = moved.splice(from, 1);
+    moved.splice(to, 0, setting);
+    return normalize(moved);
 }
 
 /** The settings after line `lineIndex` is deleted. */
