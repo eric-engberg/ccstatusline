@@ -1,3 +1,4 @@
+import chalk from 'chalk';
 import { render } from 'ink';
 import { PassThrough } from 'node:stream';
 import React from 'react';
@@ -9,7 +10,12 @@ import {
     vi
 } from 'vitest';
 
+import {
+    DEFAULT_SETTINGS,
+    type Settings
+} from '../../../types/Settings';
 import type { WidgetItem } from '../../../types/Widget';
+import { updateColorMap } from '../../../utils/colors';
 import { EffortColorsEditor } from '../effort-colors-editor';
 
 class MockTtyStream extends PassThrough {
@@ -92,7 +98,7 @@ const DOWN = '\x1b[B';
 const RIGHT = '\x1b[C';
 const LEFT = '\x1b[D';
 
-function renderEditor(widget: WidgetItem) {
+function renderEditor(widget: WidgetItem, settings?: Settings) {
     const stdin = new MockTtyStream() as unknown as NodeJS.ReadStream;
     const stdout = createMockStdout();
     const stderr = createMockStdout();
@@ -100,7 +106,7 @@ function renderEditor(widget: WidgetItem) {
     const onCancel = vi.fn<() => void>();
 
     const instance = render(
-        React.createElement(EffortColorsEditor, { widget, onComplete, onCancel }),
+        React.createElement(EffortColorsEditor, { widget, onComplete, onCancel, settings }),
         { stdin, stdout, stderr, debug: true, exitOnCtrlC: false, patchConsole: false }
     );
 
@@ -137,6 +143,12 @@ function renderEditor(widget: WidgetItem) {
         // Output written since the previous call, i.e. the latest frame(s)
         takeOutput: () => {
             const output = stripAnsi(stdout.getOutput());
+            stdout.clearOutput();
+            return output;
+        },
+        // The same, with the color codes left in
+        takeColoredOutput: () => {
+            const output = stdout.getOutput();
             stdout.clearOutput();
             return output;
         },
@@ -250,6 +262,48 @@ describe('EffortColorsEditor', () => {
             const output = editor.takeOutput();
             expect(output).toMatch(/xhigh\s+Orange/);
             expect(output).not.toContain('ansi256:208');
+        } finally {
+            editor.cleanup();
+        }
+    });
+
+    it('shows the colors the status line draws at the Basic (16-color) level', async () => {
+        // Named colors resolve through chalk, which tests run with colors off
+        const originalLevel = chalk.level;
+        chalk.level = 1;
+        updateColorMap();
+        const editor = renderEditor(
+            { id: 'e', type: 'thinking-effort', rawValue: true, metadata: { levelColors: 'true' } },
+            { ...DEFAULT_SETTINGS, colorLevel: 1 }
+        );
+
+        try {
+            await editor.ready();
+            await editor.press(DOWN, DOWN, DOWN);
+            const output = editor.takeColoredOutput();
+            // The default orange has no 16-color equivalent; bright magenta stands in
+            expect(stripAnsi(output)).toMatch(/xhigh\s+Bright Magenta/);
+            expect(output).toMatch(/Sample: .*\x1b\[95mxhigh/);
+            expect(output).not.toContain('\x1b[38;5;');
+        } finally {
+            editor.cleanup();
+            chalk.level = originalLevel;
+            updateColorMap();
+        }
+    });
+
+    it('colors nothing at the No Color level, as on the status line', async () => {
+        const editor = renderEditor(
+            { id: 'e', type: 'thinking-effort', rawValue: true, metadata: { 'levelColors': 'true', 'levelColor.low': 'hex:ff0000' } },
+            { ...DEFAULT_SETTINGS, colorLevel: 0 }
+        );
+
+        try {
+            await editor.ready();
+            const output = editor.takeColoredOutput();
+            expect(stripAnsi(output)).toMatch(/low\s+#FF0000/);
+            expect(output).toContain('Sample: low');
+            expect(output).not.toContain('\x1b[38;2;255;0;0m');
         } finally {
             editor.cleanup();
         }
