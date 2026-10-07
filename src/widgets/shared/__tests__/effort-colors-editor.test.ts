@@ -51,6 +51,22 @@ describe('EffortColorsEditor', () => {
         }
     });
 
+    it('samples the label in the widget color around the level color, as the status line draws it', async () => {
+        const editor = renderEditor({
+            id: 'e',
+            type: 'thinking-effort',
+            color: 'hex:112233',
+            metadata: { 'brackets': '()', 'bracketColor': 'widget', 'levelColors': 'true', 'levelColor.low': 'hex:ff8800' }
+        });
+
+        try {
+            await editor.ready();
+            expect(editor.takeColoredOutput()).toContain('Sample: \x1b[38;2;17;34;51m(Thinking: \x1b[38;2;255;136;0mlow\x1b[38;2;17;34;51m)');
+        } finally {
+            editor.cleanup();
+        }
+    });
+
     it('cycles the highlighted level through the named colors and saves on Enter', async () => {
         const editor = renderEditor(rawWithParens);
 

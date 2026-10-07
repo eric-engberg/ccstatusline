@@ -39,9 +39,9 @@ const FAMILY_COLORS_CONFIG: ColorListEditorConfig<ModelFamily> = {
     resetColors: resetFamilyColors,
     renderSample: (item, family) => formatModelName(item, SAMPLE_NAMES[family], family, {
         colorLevel: EDITOR_COLOR_LEVEL,
-        colorsDisabled: false,
-        baseColor: item.color ?? MODEL_DEFAULT_COLOR
-    })
+        colorsDisabled: false
+    }),
+    defaultColor: MODEL_DEFAULT_COLOR
 };
 
 export const ModelFamilyColorsEditor: React.FC<WidgetEditorProps> = props => (

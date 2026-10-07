@@ -139,6 +139,12 @@ export function renderWidgetEditor(editor: React.FC<WidgetEditorProps>, widget: 
             stdout.clearOutput();
             return output;
         },
+        // The same, with the color codes left in
+        takeColoredOutput: () => {
+            const output = stdout.getOutput();
+            stdout.clearOutput();
+            return output;
+        },
         savedMetadata: () => onComplete.mock.calls.at(-1)?.[0].metadata,
         cleanup: () => {
             instance.unmount();

@@ -11,6 +11,7 @@ import type {
     WidgetItem
 } from '../../types/Widget';
 import {
+    applyColors,
     getAvailableColorsForUI,
     getColorAnsiCode,
     getColorDisplayName
@@ -82,8 +83,13 @@ export interface ColorListEditorConfig<C extends string, X extends string = neve
     cycleChoice?: (item: WidgetItem, key: X) => WidgetItem;
     /** (d)efaults: back to the default colors and choices. */
     resetColors: (item: WidgetItem) => WidgetItem;
-    /** The sample shows the highlighted color row, or the last one highlighted. */
+    /**
+     * The sample shows the highlighted color row, or the last one highlighted:
+     * the widget's text with only its own runs colored (Widget.colorsOnlyItsRuns).
+     */
     renderSample: (item: WidgetItem, key: C) => string;
+    /** The widget's default color, for the rest of the sample while the item has none. */
+    defaultColor: string;
 }
 
 export interface ColorListEditorProps<C extends string, X extends string> extends WidgetEditorProps { config: ColorListEditorConfig<C, X> }
@@ -168,7 +174,17 @@ export function ColorListEditor<C extends string, X extends string = never>({ wi
         }
     });
 
-    const sample = sampleKey === undefined ? '' : config.renderSample(draft, sampleKey);
+    // Colored as the status line colors it: the widget color around the runs
+    // the widget colors itself
+    const sample = sampleKey === undefined ? '' : applyColors(
+        config.renderSample(draft, sampleKey),
+        draft.color ?? config.defaultColor,
+        undefined,
+        false,
+        EDITOR_COLOR_LEVEL,
+        undefined,
+        true
+    );
 
     return (
         <Box flexDirection='column'>

@@ -38,6 +38,22 @@ describe('ModelFamilyColorsEditor', () => {
         }
     });
 
+    it('samples the label in the widget color around the family color, as the status line draws it', async () => {
+        const editor = renderEditor({
+            id: 'm',
+            type: 'model',
+            color: 'hex:112233',
+            metadata: { 'familyColors': 'true', 'familyColor.opus': 'hex:ff8800' }
+        });
+
+        try {
+            await editor.ready();
+            expect(editor.takeColoredOutput()).toContain('Sample: \x1b[38;2;17;34;51mModel: \x1b[38;2;255;136;0mOpus');
+        } finally {
+            editor.cleanup();
+        }
+    });
+
     it('lists every family with its color', async () => {
         const editor = renderEditor(rawModel);
 

@@ -65,9 +65,6 @@ export function resetFamilyColors(item: WidgetItem): WidgetItem {
 export interface ModelFormatOptions {
     colorLevel: ColorLevelString;
     colorsDisabled: boolean;
-    // The color the renderer would have used for the whole widget; it still
-    // owns the label and models of no known family
-    baseColor: string;
 }
 
 export function formatModelName(item: WidgetItem, name: string, family: ModelFamily | null, options: ModelFormatOptions): string {
@@ -76,12 +73,9 @@ export function formatModelName(item: WidgetItem, name: string, family: ModelFam
         return `${label}${name}`;
     }
 
-    // Restore only the default foreground so powerline backgrounds survive
-    const paint = (text: string, color: string): string => {
-        const code = getColorAnsiCode(color, options.colorLevel);
-        return text && code ? `${code}${text}\x1b[39m` : text;
-    };
-    const nameColor = family ? getFamilyColor(item, family) : options.baseColor;
-
-    return `${paint(label, options.baseColor)}${paint(name, nameColor)}`;
+    // Only the name of a known family is painted, ending with the
+    // default-foreground code; the renderer colors the label and other models
+    // with the widget color (Widget.colorsOnlyItsRuns)
+    const code = family ? getColorAnsiCode(getFamilyColor(item, family), options.colorLevel) : '';
+    return name && code ? `${label}${code}${name}\x1b[39m` : `${label}${name}`;
 }
