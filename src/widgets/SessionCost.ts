@@ -68,9 +68,9 @@ export class SessionCostWidget implements Widget {
         return renderValueColorsEditor(props, VALUE_COLORS_EDITOR);
     }
 
-    // Value colors embed their own foreground codes, so the renderer must
-    // leave this widget's foreground alone while they're on
-    preservesRenderedColors(item: WidgetItem): boolean {
+    // Value colors paint only the value (or the whole text), so the renderer
+    // colors the rest with the theme or widget color
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
         return isValueColorsEnabled(item);
     }
 

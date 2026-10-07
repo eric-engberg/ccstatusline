@@ -15,9 +15,15 @@ import { ZERO_COMPACTION_STATS } from '../../utils/compaction';
 import { getWidget } from '../../utils/widgets';
 import { renderWidgetEditor } from '../shared/__tests__/helpers/widget-editor-harness';
 
+import {
+    describeValueColorsOnTheLine,
+    renderWidgetLine
+} from './helpers/value-colors-line';
+
 const LOW = '\x1b[38;2;0;255;0m';
 const MID = '\x1b[38;2;255;255;0m';
 const HIGH = '\x1b[38;2;255;0;0m';
+const BASE = '\x1b[38;2;17;34;51m';
 const FG_RESET = '\x1b[39m';
 // Custom colors, so the escape codes don't depend on the terminal's color support
 const colored = (type: string, metadata: Record<string, string> = {}): WidgetItem => ({
@@ -61,15 +67,15 @@ describe.each([
 ])('%s value colors', (type, key) => {
     const widget = getWidget(type);
 
-    it(`offers (${key}), names it on the editor row, opens its editor and keeps its colors`, () => {
+    it(`offers (${key}), names it on the editor row, opens its editor and colors around its value`, () => {
         const item = colored(type);
         const editorProps = { widget: item, onComplete: () => undefined, onCancel: () => undefined };
 
         expect(widget?.getCustomKeybinds?.(item).find(keybind => keybind.action === 'edit-value-colors')?.key).toBe(key);
         expect(widget?.getEditorDisplay(item).modifierText).toContain('value colors');
         expect(widget?.renderEditor?.({ ...editorProps, action: 'edit-value-colors' })).toBeTruthy();
-        expect(widget?.preservesRenderedColors?.(item)).toBe(true);
-        expect(widget?.preservesRenderedColors?.({ id: 'w', type })).toBe(false);
+        expect(widget?.colorsOnlyItsRuns?.(item)).toBe(true);
+        expect(widget?.colorsOnlyItsRuns?.({ id: 'w', type })).toBe(false);
     });
 
     it('draws exactly what it did with value colors off', () => {
@@ -77,6 +83,27 @@ describe.each([
         const withColorsOff = { ...colored(type), metadata: { ...colored(type).metadata, valueColors: 'false' } };
 
         expect(widget?.render(withColorsOff, { isPreview: true }, DEFAULT_SETTINGS)).toBe(widget?.render(item, { isPreview: true }, DEFAULT_SETTINGS));
+    });
+});
+
+// Each widget's preview, with value colors on
+describe.each<[string, string, string, string, Record<string, string>]>([
+    ['session-cost', 'Cost: ', '$2.45', LOW, {}],
+    ['session-cost-rate', 'Rate: ', '$4.90/hr', LOW, {}],
+    ['daily-cost-rate', 'Rate Today: ', '$6.20/hr', MID, {}],
+    ['tokens-input', 'In: ', '15.2k', MID, {}],
+    ['tokens-output', 'Out: ', '3.4k', LOW, {}],
+    ['tokens-cached', 'Cached: ', '12.0k', LOW, {}],
+    ['tokens-total', 'Total: ', '30.6k', LOW, {}],
+    ['compaction-counter', 'Compactions: ', '2', MID, { format: 'text-and-number' }]
+])('%s', (type, label, value, valueCode, metadata) => {
+    describeValueColorsOnTheLine({
+        item: { id: 'w', type, metadata: { ...colored(type).metadata, ...metadata } },
+        context: { isPreview: true },
+        label,
+        value,
+        valueCode,
+        fallbacks: []
     });
 });
 
@@ -191,6 +218,12 @@ describe('compaction-counter value colors', () => {
         expect(render(splitItem, compactions(2, 120000))).toBe(`${labeled('↻ ', MID, '2')} (2 auto) ↓120.0k`);
     });
 
+    it('draws the trigger split and reclaimed tokens in the item color around the count on the status line', () => {
+        const item = colored('compaction-counter', { showTriggers: 'true', showReclaimed: 'true' });
+
+        expect(renderWidgetLine(item, { colorLevel: 3 }, compactions(2, 120000))).toBe(`${BASE}↻ ${MID}2${BASE} (2 auto) ↓120.0k${FG_RESET}`);
+    });
+
     it('colors the label and the trigger split with the count when set to the whole widget', () => {
         const item = colored('compaction-counter', { showTriggers: 'true', showReclaimed: 'true', valueColorScope: 'widget' });
 
@@ -205,7 +238,7 @@ describe('compaction-counter value colors', () => {
         expect(widget?.getCustomKeybinds?.(auto).map(keybind => keybind.key)).toEqual(['v', 'l']);
         expect(widget?.getCustomKeybinds?.(reclaimed).map(keybind => keybind.key)).toEqual(['v']);
         expect(render(reclaimed, compactions(3, 120000))).toBe('120.0k');
-        expect(widget?.preservesRenderedColors?.(reclaimed)).toBe(false);
+        expect(widget?.colorsOnlyItsRuns?.(reclaimed)).toBe(false);
         expect(widget?.getEditorDisplay(reclaimed).modifierText).not.toContain('value colors');
     });
 
