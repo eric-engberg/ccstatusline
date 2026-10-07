@@ -43,11 +43,13 @@ import {
 // Green below 80% of the day's budget, yellow up to all of it, red above it
 const BUDGET_SCALE: ValueColorScale = { midFrom: 80, highFrom: 100, highEdge: 'above' };
 const DEFAULT_COLOR = 'green';
+const LABEL = 'Overage Today: ';
 const VALUE_COLORS_EDITOR: ValueColorsEditorOptions = {
     title: 'Extra Usage Today: value colors',
     scale: BUDGET_SCALE,
     sampleNote: 'of today\'s budget',
-    defaultColor: DEFAULT_COLOR
+    defaultColor: DEFAULT_COLOR,
+    label: LABEL
 };
 // The preview's $46.10 against Daily Budget's $194.70 sample
 const PREVIEW_PERCENT = 4610 / 19470 * 100;
@@ -67,8 +69,6 @@ function getBudgetPercent(data: UsageData, spentToday: number, weekdaysOnly: boo
     // spentToday / (leftAtDayStart / days), multiplied out so exact amounts stay exact
     return spentToday * countBudgetDaysLeft(Date.now(), weekdaysOnly) * 100 / leftAtDayStart;
 }
-
-const LABEL = 'Overage Today: ';
 
 export class ExtraUsageTodayWidget implements Widget {
     getDefaultColor(): string { return DEFAULT_COLOR; }

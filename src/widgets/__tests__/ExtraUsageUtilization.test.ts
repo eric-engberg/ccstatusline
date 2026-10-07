@@ -12,6 +12,7 @@ import { DEFAULT_SETTINGS } from '../../types/Settings';
 import type { WidgetItem } from '../../types/Widget';
 import * as usage from '../../utils/usage';
 import { ExtraUsageUtilizationWidget } from '../ExtraUsageUtilization';
+import { renderWidgetEditor } from '../shared/__tests__/helpers/widget-editor-harness';
 import { gradientPresetCodeAt } from '../shared/gradient-bar';
 
 let mockGetUsageErrorMessage: { mockReturnValue: (value: string) => void };
@@ -229,6 +230,23 @@ describe('ExtraUsageUtilizationWidget', () => {
 
         it('keeps the label in the widget color', () => {
             expect(render(new ExtraUsageUtilizationWidget(), colored, used(25))).toBe(`${BASE}Overage: ${FG_RESET}${LOW}25.0%${FG_RESET}`);
+        });
+
+        it('colors the label with the percent when set to the whole widget', async () => {
+            const widget = new ExtraUsageUtilizationWidget();
+            const whole = { ...colored, metadata: { ...colored.metadata, valueColorScope: 'widget' } };
+
+            expect(render(widget, whole, used(95))).toBe(`${HIGH}Overage: 95.0%${FG_RESET}`);
+            expect(widget.getEditorDisplay(whole).modifierText).toBe('(used, value colors, whole widget)');
+
+            // The editor's sample shows the widget's label with each value
+            const editor = renderWidgetEditor(props => widget.renderEditor(props), whole);
+            try {
+                await editor.ready();
+                expect(editor.takeOutput()).toContain('Sample: Overage: 35%  Overage: 70%');
+            } finally {
+                editor.cleanup();
+            }
         });
 
         it('colors by the used percent while showing what\'s left', () => {

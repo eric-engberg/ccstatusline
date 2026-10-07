@@ -20,12 +20,14 @@ import {
     getBreakPoints,
     getGradientEnd,
     getValueColorMode,
+    getValueColorScope,
     getValueFormatOptions,
     getValueGradient,
     isValueColorsEnabled,
     resetValueColors,
     setBandColor,
     setValueColorMode,
+    setValueColorScope,
     setValueColorsEnabled,
     stepBreakPoint,
     stepGradientEnd,
@@ -40,10 +42,12 @@ import {
 export const EDIT_VALUE_COLORS_ACTION = 'edit-value-colors';
 export const VALUE_COLORS_KEYBIND: CustomKeybind = { key: 'v', label: '(v)alue colors', action: EDIT_VALUE_COLORS_ACTION };
 
-type ValueSetting = 'mode' | BreakPoint | 'gradient' | 'gradientEnd';
+type ValueSetting = 'mode' | BreakPoint | 'gradient' | 'gradientEnd' | 'scope';
 const BREAK_POINTS: ReadonlySet<ValueSetting> = new Set<BreakPoint>(['midFrom', 'highFrom']);
 // Gradient mode's own rows; the band colors and break points are break points mode's
 const GRADIENT_ROWS: ReadonlySet<ValueBand | ValueSetting> = new Set(['gradient', 'gradientEnd']);
+// Rows both modes show
+const SHARED_ROWS: ReadonlySet<ValueBand | ValueSetting> = new Set(['mode', 'scope']);
 
 function isBreakPoint(setting: ValueSetting): setting is BreakPoint {
     return BREAK_POINTS.has(setting);
@@ -58,6 +62,8 @@ export interface ValueColorsEditorOptions {
     defaultColor: string;
     /** The highest percent the widget can show, e.g. 100 for a utilization. */
     maxPercent?: number;
+    /** The widget's default label, for the sample while the whole widget is colored. */
+    label?: string;
 }
 
 // Values on both sides of each break point, or along the gradient and past its end
@@ -101,10 +107,11 @@ export function makeValueColorsConfig(options: ValueColorsEditorOptions, setting
             { kind: 'setting', key: 'gradientEnd', label: 'ends at' },
             ...VALUE_BANDS.map(band => ({ kind: 'color' as const, key: band, label: band })),
             { kind: 'setting', key: 'midFrom', label: 'mid from' },
-            { kind: 'setting', key: 'highFrom', label: scale.highEdge === 'from' ? 'high from' : 'high above' }
+            { kind: 'setting', key: 'highFrom', label: scale.highEdge === 'from' ? 'high from' : 'high above' },
+            { kind: 'setting', key: 'scope', label: 'colors' }
         ],
-        // Each mode shows only its own rows
-        isRowShown: (item, row) => row.key === 'mode' || isGradient(item) === GRADIENT_ROWS.has(row.key),
+        // Each mode shows only its own rows, besides the ones they share
+        isRowShown: (item, row) => SHARED_ROWS.has(row.key) || isGradient(item) === GRADIENT_ROWS.has(row.key),
         getNotice: item => (isGradient(item) ? getGradientNotice(settings) : null),
         isEnabled: isValueColorsEnabled,
         setEnabled: setValueColorsEnabled,
@@ -113,6 +120,9 @@ export function makeValueColorsConfig(options: ValueColorsEditorOptions, setting
         getSettingLabel: (item, setting) => {
             if (setting === 'mode') {
                 return isGradient(item) ? 'Gradient' : 'Break points';
+            }
+            if (setting === 'scope') {
+                return getValueColorScope(item) === 'widget' ? 'Whole widget' : 'Value only';
             }
             if (setting === 'gradient') {
                 return getValueGradient(item);
@@ -125,6 +135,9 @@ export function makeValueColorsConfig(options: ValueColorsEditorOptions, setting
         cycleSetting: (item, setting, direction) => {
             if (setting === 'mode') {
                 return setValueColorMode(item, isGradient(item) ? 'breakpoints' : 'gradient');
+            }
+            if (setting === 'scope') {
+                return setValueColorScope(item, getValueColorScope(item) === 'widget' ? 'value' : 'widget');
             }
             if (setting === 'gradient') {
                 return cycleValueGradient(item, direction);
@@ -150,9 +163,11 @@ export function makeValueColorsConfig(options: ValueColorsEditorOptions, setting
             const formatOptions: ValueFormatOptions = settings
                 ? getValueFormatOptions(settings, baseColor)
                 : { colorLevel: EDITOR_COLOR_LEVEL, colorsDisabled: false, baseColor };
+            // With the whole widget colored, each value is shown with its label
+            const withLabel = getValueColorScope(item) === 'widget' && options.label !== undefined && !item.rawValue;
             const values = getSamplePercents(item, options)
-                .map(percent => formatColoredValue({ ...item, rawValue: true }, '', `${percent}%`, percent, scale, formatOptions));
-            return `${values.join(' ')} ${options.sampleNote}`;
+                .map(percent => formatColoredValue({ ...item, rawValue: !withLabel }, options.label ?? '', `${percent}%`, percent, scale, formatOptions));
+            return `${values.join(withLabel ? '  ' : ' ')} ${options.sampleNote}`;
         },
         extraHelp: 'Type a number on a percent row to set it exactly'
     };
