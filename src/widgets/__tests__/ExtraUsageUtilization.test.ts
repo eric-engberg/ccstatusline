@@ -278,7 +278,7 @@ describe('ExtraUsageUtilizationWidget', () => {
         it('shows the glyph for the used percent instead of the number', () => {
             const widget = new ExtraUsageUtilizationWidget();
 
-            expect(render(widget, glyphItem, used(42))).toBe('⚡');
+            expect(render(widget, glyphItem, used(42))).toBe('⚡️');
             expect(render(widget, { ...glyphItem, metadata: { display: 'glyph', invert: 'true' } }, used(95))).toBe('🚨');
             expect(render(widget, { ...glyphItem, rawValue: false }, used(10))).toBe('Overage: 🟢');
             expect(render(widget, glyphItem, { isPreview: true })).toBe('🔥');
