@@ -242,6 +242,8 @@ export const GLYPH_GROUPS: GlyphGroup[] = [
             { glyph: '💾', name: 'floppy disk' },
             { glyph: '💰', name: 'money bag' },
             { glyph: '💸', name: 'money with wings' },
+            { glyph: '📁', name: 'file folder' },
+            { glyph: '📂', name: 'open file folder' },
             { glyph: '🔒', name: 'locked' },
             { glyph: '🔓', name: 'unlocked' },
             { glyph: '🔐', name: 'locked with key' },
