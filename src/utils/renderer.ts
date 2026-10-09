@@ -227,7 +227,10 @@ function renderPowerlineStatusLine(
     }[] = [];
     let widgetColorIndex = continueThemeAcrossLines ? globalThemeColorOffset : 0;
 
-    const hasNextRenderedWidgetBeforeSeparator = (originalIndex: number): boolean => {
+    // A merge reaches the next widget that renders something. It carries past an
+    // empty widget only if that widget is merged onward too; otherwise the merge
+    // ends with it, as if the empty widget were the one it joined.
+    const mergeReachesNextRenderedWidget = (originalIndex: number): boolean => {
         for (let j = originalIndex + 1; j < widgets.length; j++) {
             const nextWidget = widgets[j];
             if (!nextWidget)
@@ -236,6 +239,8 @@ function renderPowerlineStatusLine(
                 return false;
             if (preRenderedWidgets[j]?.content)
                 return true;
+            if (!nextWidget.merge)
+                return false;
         }
 
         return false;
@@ -246,7 +251,7 @@ function renderPowerlineStatusLine(
             return false;
 
         const widget = widgets[originalIndex];
-        return Boolean(widget?.merge && hasNextRenderedWidgetBeforeSeparator(originalIndex));
+        return Boolean(widget?.merge && mergeReachesNextRenderedWidget(originalIndex));
     };
 
     const findPreviousRenderedWidgetIndexBeforeSeparator = (originalIndex: number): number | null => {
@@ -1043,7 +1048,8 @@ function isAlignmentBoundary(entry: PreRenderedWidget | undefined): boolean {
 }
 
 // Whether a widget after this one renders before the next separator, so a
-// merge from this one has something to merge into
+// merge from this one has something to merge into. As in the renderers, the
+// merge carries past an empty widget only if that widget is merged onward too.
 function hasRenderedWidgetBeforeSeparator(preRenderedLine: PreRenderedWidget[], originalIndex: number): boolean {
     for (let j = originalIndex + 1; j < preRenderedLine.length; j++) {
         const nextEntry = preRenderedLine[j];
@@ -1053,6 +1059,8 @@ function hasRenderedWidgetBeforeSeparator(preRenderedLine: PreRenderedWidget[], 
             return false;
         if (nextEntry.content)
             return true;
+        if (!nextEntry.widget.merge)
+            return false;
     }
 
     return false;
@@ -1208,8 +1216,24 @@ export function renderStatusLine(
     // Calculate terminal width based on flex mode settings
     const terminalWidth = resolveEffectiveTerminalWidth(detectedWidth, settings, context);
 
-    const elements: { content: string; type: string; widget?: WidgetItem }[] = [];
+    const elements: { content: string; type: string; widget?: WidgetItem; mergesWithNext?: boolean }[] = [];
     let hasFlexSeparator = false;
+
+    // A merge carries past a widget that renders nothing only if that widget is
+    // merged onward too; otherwise the merge ends with it.
+    const mergeEndsAtEmptyWidget = (index: number): boolean => {
+        for (let j = index + 1; j < widgets.length; j++) {
+            const next = widgets[j];
+            if (!next)
+                continue;
+            if (next.type === 'separator' || next.type === 'flex-separator' || preRenderedWidgets[j]?.content)
+                return false;
+            if (!next.merge)
+                return true;
+        }
+
+        return false;
+    };
 
     // Build elements based on configured widgets
     for (let i = 0; i < widgets.length; i++) {
@@ -1226,6 +1250,7 @@ export function renderStatusLine(
             let contentBeforeIndex: number | null = null;
             let replacesSpacingSeparator = false;
             let crossedEmptyWidget = false;
+            let crossedUnmergedEmptyWidget = false;
             for (let j = i - 1; j >= 0; j--) {
                 const prevWidget = widgets[j];
                 if (!prevWidget)
@@ -1239,12 +1264,15 @@ export function renderStatusLine(
                 if (prevWidget.type === 'flex-separator')
                     break;
                 if (preRenderedWidgets[j]?.content) {
-                    // Preserve merge ownership across widgets that render empty.
-                    if (!prevWidget.merge || !crossedEmptyWidget)
+                    // A merge owns the boundary across widgets that render empty,
+                    // but only while each of them is merged onward too.
+                    if (!prevWidget.merge || !crossedEmptyWidget || crossedUnmergedEmptyWidget)
                         contentBeforeIndex = j;
                     break;
                 }
                 crossedEmptyWidget = true;
+                if (!prevWidget.merge)
+                    crossedUnmergedEmptyWidget = true;
             }
             if (contentBeforeIndex === null)
                 continue;
@@ -1327,7 +1355,8 @@ export function renderStatusLine(
                     elements.push({
                         content: applyColorsWithOverride(finalOutput, undefined, widget.backgroundColor, widget.bold, widget.dim),
                         type: widget.type,
-                        widget
+                        widget,
+                        mergesWithNext: Boolean(widget.merge) && !mergeEndsAtEmptyWidget(i)
                     });
                 } else {
                     // Normal widget rendering with colors, around any runs the
@@ -1337,7 +1366,8 @@ export function renderStatusLine(
                     elements.push({
                         content: applyColorsWithOverride(text, widget.color ?? defaultColor, widget.backgroundColor, widget.bold, widget.dim, colorsOwnRuns),
                         type: widget.type,
-                        widget
+                        widget,
+                        mergesWithNext: Boolean(widget.merge) && !mergeEndsAtEmptyWidget(i)
                     });
                 }
             }
@@ -1385,7 +1415,7 @@ export function renderStatusLine(
         const shouldAddSeparator = defaultSep && index > 0
             && elem.type !== 'flex-separator'
             && prevElem?.type !== 'flex-separator'
-            && !prevElem?.widget?.merge; // Don't add separator if previous widget is merged with this one
+            && !prevElem?.mergesWithNext; // Don't add separator if previous widget is merged with this one
 
         if (shouldAddSeparator) {
             // Check if we should inherit colors from the previous element
@@ -1422,8 +1452,9 @@ export function renderStatusLine(
         } else {
             // Check if padding should be omitted due to no-padding merge
             const nextElem = index < elements.length - 1 ? elements[index + 1] : null;
-            const omitLeadingPadding = prevElem?.widget?.merge === 'no-padding';
+            const omitLeadingPadding = prevElem?.widget?.merge === 'no-padding' && Boolean(prevElem.mergesWithNext);
             const omitTrailingPadding = elem.widget?.merge === 'no-padding'
+                && Boolean(elem.mergesWithNext)
                 && nextElem
                 && nextElem.type !== 'separator'
                 && nextElem.type !== 'flex-separator';
