@@ -408,4 +408,36 @@ describe('ExtraUsageUtilizationWidget', () => {
             ]
         });
     });
+
+    describe('level glyph', () => {
+        const glyphItem: WidgetItem = { id: 'extra', type: 'extra-usage-utilization', rawValue: true, metadata: { display: 'glyph' } };
+        const used = (extraUsageUtilization: number): RenderContext => ({ usageData: { extraUsageEnabled: true, extraUsageUtilization } });
+
+        it('is the last style p cycles through', () => {
+            const widget = new ExtraUsageUtilizationWidget();
+            const slider = { id: 'extra', type: 'extra-usage-utilization', metadata: { display: 'slider' } };
+
+            expect(widget.handleEditorAction('toggle-progress', slider)?.metadata).toEqual({ display: 'glyph', barWidth: 'short' });
+            expect(widget.handleEditorAction('toggle-progress', glyphItem)?.metadata?.display).toBe('time');
+        });
+
+        // What's left would flip the levels, so the glyph always measures what's used
+        it('shows the glyph for the used percent instead of the number', () => {
+            const widget = new ExtraUsageUtilizationWidget();
+
+            expect(render(widget, glyphItem, used(42))).toBe('⚡️');
+            expect(render(widget, { ...glyphItem, metadata: { display: 'glyph', invert: 'true' } }, used(95))).toBe('🚨');
+            expect(render(widget, { ...glyphItem, rawValue: false }, used(10))).toBe('Overage: 🟢');
+            expect(render(widget, glyphItem, { isPreview: true })).toBe('🔥');
+        });
+
+        it('offers (g) and (l) and names the mode on the editor row', () => {
+            const widget = new ExtraUsageUtilizationWidget();
+            const editorProps = { widget: glyphItem, onComplete: () => undefined, onCancel: () => undefined };
+
+            expect(widget.getCustomKeybinds(glyphItem).map(keybind => keybind.key)).toEqual(['p', 'g', 'l']);
+            expect(widget.getEditorDisplay(glyphItem).modifierText).toBe('(level glyph)');
+            expect(widget.renderEditor({ ...editorProps, action: 'edit-glyph-levels' })).toBeTruthy();
+        });
+    });
 });
