@@ -15,6 +15,18 @@ import { ContextBarWidget } from '../ContextBar';
 import { ContextLengthWidget } from '../ContextLength';
 import { ContextWindowWidget } from '../ContextWindow';
 
+import { describeValueColorsOnTheLine } from './helpers/value-colors-line';
+
+const LOW = '\x1b[38;2;0;255;0m';
+const HIGH = '\x1b[38;2;255;0;0m';
+const FG_RESET = '\x1b[39m';
+const BAND_COLORS = {
+    'valueColors': 'true',
+    'valueColor.low': 'hex:00ff00',
+    'valueColor.mid': 'hex:ffff00',
+    'valueColor.high': 'hex:ff0000'
+};
+
 describe('ContextBarWidget', () => {
     beforeEach(() => {
         vi.restoreAllMocks();
@@ -207,5 +219,56 @@ describe('ContextBarWidget', () => {
             type: 'context-bar',
             numberFormat: { decimals: 2 }
         }, context, DEFAULT_SETTINGS)).toBe('Context: [bar:90.0:16] 180.00k/200.00k (90.00%)');
+    });
+
+    // The bar takes one color for how much of the context is used, its numbers too
+    describe('value colors', () => {
+        const colored: WidgetItem = { id: 'bar', type: 'context-bar', rawValue: true, color: 'hex:112233', metadata: BAND_COLORS };
+        const preview: RenderContext = { isPreview: true };
+
+        it('colors the whole bar and its numbers by how much of the context is used', () => {
+            const widget = new ContextBarWidget();
+            const quarter: RenderContext = { data: { context_window: { context_window_size: 200000, current_usage: { input_tokens: 50000, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } } };
+
+            expect(widget.render(colored, preview, DEFAULT_SETTINGS)).toBe(`${HIGH}[bar:90.0:16] 180k/200k (90%)${FG_RESET}`);
+            expect(widget.render(colored, quarter, DEFAULT_SETTINGS)).toBe(`${LOW}[bar:25.0:16] 50k/200k (25%)${FG_RESET}`);
+            expect(widget.render({ ...colored, rawValue: false }, preview, DEFAULT_SETTINGS)).toBe(`Context: ${HIGH}[bar:90.0:16] 180k/200k (90%)${FG_RESET}`);
+            expect(widget.render({ id: 'bar', type: 'context-bar', rawValue: true }, preview, DEFAULT_SETTINGS)).toBe('[bar:90.0:16] 180k/200k (90%)');
+        });
+
+        it('offers (v), names it on the editor row, opens its editor and colors around its value', () => {
+            const widget = new ContextBarWidget();
+            const editorProps = { widget: colored, onComplete: () => undefined, onCancel: () => undefined };
+
+            expect(widget.getCustomKeybinds(colored).map(keybind => keybind.key)).toContain('v');
+            expect(widget.getEditorDisplay(colored).modifierText).toBe('(block bar, medium, value colors)');
+            expect(widget.renderEditor({ ...editorProps, action: 'edit-value-colors' })).toBeTruthy();
+            expect(widget.colorsOnlyItsRuns(colored)).toBe(true);
+            expect(widget.colorsOnlyItsRuns({ id: 'bar', type: 'context-bar' })).toBe(false);
+        });
+
+        // A bar gradient colors each cell by where it sits, value colors the whole
+        // bar by its level, so only one of them is on at a time
+        it('sets a saved bar gradient aside, and (g) turns value colors off', () => {
+            const widget = new ContextBarWidget();
+            const slider = { ...colored, metadata: { ...BAND_COLORS, display: 'slider', barNumbers: 'none' } };
+            const both = { ...slider, metadata: { ...slider.metadata, gradient: 'thermal' } };
+
+            expect(widget.render(both, preview, { ...DEFAULT_SETTINGS, colorLevel: 3 })).toBe(`${HIGH}▓▓▓▓▓▓▓▓▓░${FG_RESET}`);
+            expect(widget.getEditorDisplay(both).modifierText).toBe('(slider bar, short, numbers off, value colors)');
+
+            const withGradient = widget.handleEditorAction('cycle-gradient', slider);
+            expect(withGradient?.metadata?.gradient).toBe('traffic');
+            expect(withGradient?.metadata?.valueColors).toBeUndefined();
+        });
+
+        describeValueColorsOnTheLine({
+            item: { id: 'bar', type: 'context-bar', metadata: BAND_COLORS },
+            context: preview,
+            label: 'Context: ',
+            value: '[bar:90.0:16] 180k/200k (90%)',
+            valueCode: HIGH,
+            fallbacks: []
+        });
     });
 });

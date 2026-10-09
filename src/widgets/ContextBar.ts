@@ -1,9 +1,12 @@
+import type React from 'react';
+
 import type { RenderContext } from '../types/RenderContext';
 import type { Settings } from '../types/Settings';
 import type {
     CustomKeybind,
     Widget,
     WidgetEditorDisplay,
+    WidgetEditorProps,
     WidgetItem
 } from '../types/Widget';
 import { getContextWindowMetrics } from '../utils/context-window';
@@ -37,10 +40,21 @@ import {
     getGradientModifier,
     paintWidgetBar
 } from './shared/gradient-bar';
-import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
 import { makeSliderBar } from './shared/usage-display';
+import {
+    LIMIT_SCALE,
+    formatColoredValue,
+    getValueColorsModifier,
+    getValueFormatOptions,
+    isValueColorsEnabled
+} from './shared/value-coloring';
+import {
+    VALUE_COLORS_KEYBIND,
+    renderValueColorsEditor
+} from './shared/value-colors-editor';
 
 const LABEL = 'Context: ';
+const DEFAULT_COLOR = 'blue';
 
 // Context Bar always shows a bar; with no display mode saved, it's a medium
 // block bar
@@ -54,14 +68,14 @@ const PREVIEW_WINDOW_TOKENS = 200000;
 const PREVIEW_PERCENT = 90;
 
 export class ContextBarWidget implements Widget {
-    getDefaultColor(): string { return 'blue'; }
+    getDefaultColor(): string { return DEFAULT_COLOR; }
     getDescription(): string { return 'Shows context usage as a progress bar'; }
     getDisplayName(): string { return 'Context Bar'; }
     getCategory(): string { return 'Context'; }
     getLabelPrefix(): string { return LABEL; }
 
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
-        const modifiers = [...getBarLayoutModifiers(withBarDisplay(item)), getGradientModifier(item)]
+        const modifiers = [...getBarLayoutModifiers(withBarDisplay(item)), getGradientModifier(item), getValueColorsModifier(item)]
             .filter((modifier): modifier is string => modifier !== null);
 
         return {
@@ -115,7 +129,8 @@ export class ContextBarWidget implements Widget {
     }
 
     // "[████░░░░] 50k/200k (25%)", "▓▓▓▓░░░░ 25%" and so on: the bar in its style
-    // and size, then the numbers that are on
+    // and size, then the numbers that are on. Value colors give the bar and its
+    // numbers the color of how much of the context is used.
     private formatBar(item: WidgetItem, percent: number, counts: string, percentText: string, settings: Settings, context: RenderContext): string {
         const barItem = withBarDisplay(item);
         const cells = context.barCells ?? getFixedBarCells(barItem);
@@ -128,7 +143,7 @@ export class ContextBarWidget implements Widget {
         }
         const painted = paintWidgetBar(bar, item, settings);
         const display = showsCounts || showsPercent ? `${painted} ${numbers}` : painted;
-        return formatRawOrLabeledValue(item, this.getLabelPrefix(), display);
+        return formatColoredValue(item, this.getLabelPrefix(), display, percent, LIMIT_SCALE, getValueFormatOptions(settings));
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
@@ -136,8 +151,26 @@ export class ContextBarWidget implements Widget {
             { key: 'p', label: '(p) bar style', action: 'toggle-progress' },
             ...getGradientKeybinds(true),
             ...getBarWidthKeybinds(true),
-            ...getBarNumbersKeybinds(item, true, true)
+            ...getBarNumbersKeybinds(item, true, true),
+            VALUE_COLORS_KEYBIND
         ];
+    }
+
+    renderEditor(props: WidgetEditorProps): React.ReactElement {
+        return renderValueColorsEditor(props, {
+            title: 'Context Bar: value colors',
+            scale: LIMIT_SCALE,
+            sampleNote: 'used',
+            defaultColor: DEFAULT_COLOR,
+            maxPercent: 100,
+            label: LABEL
+        });
+    }
+
+    // Value colors paint only the bar and its numbers (or the whole text), so
+    // the renderer colors the rest with the theme or widget color
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
+        return isValueColorsEnabled(item);
     }
 
     supportsRawValue(): boolean { return true; }
