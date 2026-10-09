@@ -177,6 +177,19 @@ describe('PowerlineThemeSelector helpers', () => {
         expect(updatedSettings && renderLines(updatedSettings)).toEqual(renderLines(settings));
     });
 
+    // The renderer skips plain lines when it carries the theme across lines
+    it('continues the theme colors past a plain line without counting it', () => {
+        const base = nordAuroraSettings([[text('a', 'AAA'), text('b', 'BBB')], [text('p', 'PPP')], [text('c', 'CCC')]], true);
+        const withPlainLine = { ...base, powerline: { ...base.powerline, lineEnabled: [null, false, null] } };
+        const withoutPlainLine = nordAuroraSettings([[text('a', 'AAA'), text('b', 'BBB')], [text('c', 'CCC')]], true);
+
+        const updatedSettings = applyCustomPowerlineTheme(withPlainLine, 'nord-aurora');
+        const reference = applyCustomPowerlineTheme(withoutPlainLine, 'nord-aurora');
+
+        expect(updatedSettings?.lines[1]).toEqual(withPlainLine.lines[1]);
+        expect(updatedSettings?.lines[2]?.[0]?.backgroundColor).toBe(reference?.lines[1]?.[0]?.backgroundColor);
+    });
+
     it('restarts the theme colors on each line when Continue Theme is off', () => {
         const settings = nordAuroraSettings([[text('a', 'AAA'), text('b', 'BBB')], [text('c', 'CCC'), text('d', 'DDD')]], false);
 
