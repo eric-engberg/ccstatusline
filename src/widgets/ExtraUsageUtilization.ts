@@ -88,7 +88,7 @@ export class ExtraUsageUtilizationWidget implements Widget {
             const previewPercent = 85;
             const renderedPercent = inverted ? 100 - previewPercent : previewPercent;
 
-            const bar = formatUsageBar(item, renderedPercent, format, settings);
+            const bar = formatUsageBar(item, renderedPercent, format, settings, context);
             if (bar !== null) {
                 return formatRawOrLabeledValue(item, this.getLabelPrefix(), bar);
             }
@@ -116,7 +116,7 @@ export class ExtraUsageUtilizationWidget implements Widget {
         const percent = Math.max(0, Math.min(100, utilization));
         const renderedPercent = inverted ? 100 - percent : percent;
 
-        const bar = formatUsageBar(item, renderedPercent, format, settings);
+        const bar = formatUsageBar(item, renderedPercent, format, settings, context);
         if (bar !== null) {
             return formatRawOrLabeledValue(item, this.getLabelPrefix(), bar);
         }

@@ -6,6 +6,17 @@ import type {
 import { formatPercent } from '../../utils/number-format';
 
 import {
+    getBarLayoutModifiers,
+    getBarNumbersKeybinds,
+    keepBarLayout,
+    setBarStyle,
+    showsBarPercent
+} from './bar-layout';
+import {
+    getBarWidthKeybinds,
+    getFixedBarCells
+} from './bar-width';
+import {
     CYCLE_GRADIENT_ACTION,
     cycleGradientPreset,
     getGradientKeybinds,
@@ -15,7 +26,7 @@ import { makeSliderBar } from './usage-display';
 
 export type ContextSliderMode = 'none' | 'slider' | 'slider-only';
 
-const SLIDER_TOGGLE_KEYBIND: CustomKeybind = { key: 'p', label: '(p)rogress toggle', action: 'toggle-slider' };
+const SLIDER_TOGGLE_KEYBIND: CustomKeybind = { key: 'p', label: '(p) bar style', action: 'toggle-slider' };
 
 export function getContextSliderMode(item: WidgetItem): ContextSliderMode {
     const mode = item.metadata?.display;
@@ -25,55 +36,40 @@ export function getContextSliderMode(item: WidgetItem): ContextSliderMode {
     return 'none';
 }
 
+// (p) switches between the percentage and a slider, which keeps the size it had
 export function cycleContextSliderMode(item: WidgetItem): WidgetItem {
-    const currentMode = getContextSliderMode(item);
-    const nextMode: ContextSliderMode = currentMode === 'none'
-        ? 'slider'
-        : currentMode === 'slider'
-            ? 'slider-only'
-            : 'none';
-
-    if (nextMode === 'none') {
-        const nextMetadata = { ...(item.metadata ?? {}) };
-        delete nextMetadata.display;
-        return {
-            ...item,
-            metadata: Object.keys(nextMetadata).length > 0 ? nextMetadata : undefined
-        };
+    if (getContextSliderMode(item) === 'none') {
+        return setBarStyle(item, 'slider', 'short');
     }
 
+    const nextMetadata = { ...keepBarLayout(item).metadata };
+    delete nextMetadata.display;
     return {
         ...item,
-        metadata: {
-            ...(item.metadata ?? {}),
-            display: nextMode
-        }
+        metadata: Object.keys(nextMetadata).length > 0 ? nextMetadata : undefined
     };
 }
 
-export function renderContextSlider(mode: ContextSliderMode, percent: number, format: NumberFormat = {}): string | null {
-    if (mode === 'none') {
+export function renderContextSlider(item: WidgetItem, percent: number, format: NumberFormat = {}, cells?: number): string | null {
+    if (getContextSliderMode(item) === 'none') {
         return null;
     }
-    const slider = makeSliderBar(percent);
-    if (mode === 'slider') {
-        return `${slider} ${formatPercent(percent, format)}`;
-    }
-    return slider;
+    const slider = makeSliderBar(percent, cells ?? getFixedBarCells(item));
+    return showsBarPercent(item) ? `${slider} ${formatPercent(percent, format)}` : slider;
 }
 
 export function getContextSliderModifierText(item: WidgetItem): string | undefined {
-    const mode = getContextSliderMode(item);
-    if (mode === 'none') {
+    if (getContextSliderMode(item) === 'none') {
         return undefined;
     }
-    const gradientModifier = getGradientModifier(item);
-    const barModifier = mode === 'slider' ? 'short bar' : 'short bar only';
-    return gradientModifier ? `(${barModifier}, ${gradientModifier})` : `(${barModifier})`;
+    const modifiers = [...getBarLayoutModifiers(item), getGradientModifier(item)]
+        .filter((modifier): modifier is string => modifier !== null);
+    return `(${modifiers.join(', ')})`;
 }
 
 export function getContextSliderKeybinds(item?: WidgetItem): CustomKeybind[] {
-    return [SLIDER_TOGGLE_KEYBIND, ...getGradientKeybinds(item ? getContextSliderMode(item) !== 'none' : false)];
+    const showsBar = item ? getContextSliderMode(item) !== 'none' : false;
+    return [SLIDER_TOGGLE_KEYBIND, ...getGradientKeybinds(showsBar), ...getBarWidthKeybinds(showsBar), ...getBarNumbersKeybinds(item, showsBar)];
 }
 
 // The slider and gradient actions; null for anything else

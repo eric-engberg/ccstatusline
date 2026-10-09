@@ -54,14 +54,16 @@ interface UsageTimerEditorSuiteConfig<TWidget extends UsageWidgetLike & { getDis
 }
 
 const EXPECTED_TIMER_TIME_KEYBINDS: CustomKeybind[] = [
-    { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
+    { key: 'p', label: '(p) bar style', action: 'toggle-progress' },
     { key: 's', label: '(s)hort time', action: 'toggle-compact' }
 ];
 
 const EXPECTED_TIMER_PROGRESS_KEYBINDS: CustomKeybind[] = [
-    { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
+    { key: 'p', label: '(p) bar style', action: 'toggle-progress' },
     { key: 'v', label: 'in(v)ert fill', action: 'toggle-invert' },
-    { key: 'g', label: '(g)radient', action: 'cycle-gradient' }
+    { key: 'g', label: '(g)radient', action: 'cycle-gradient' },
+    { key: 'b', label: '(b)ar size', action: 'edit-bar-width' },
+    { key: 'n', label: '(n) hide numbers', action: 'toggle-bar-numbers' }
 ];
 
 function getUsageContext(field: 'sessionUsage' | 'weeklyUsage' | 'weeklySonnetUsage' | 'weeklyOpusUsage' | 'fableUsage', value: number): RenderContext {
@@ -71,14 +73,19 @@ function getUsageContext(field: 'sessionUsage' | 'weeklyUsage' | 'weeklySonnetUs
 function getExpectedUsageKeybinds(item: WidgetItem, includeCursor = false): CustomKeybind[] {
     const nextDirection = item.metadata?.invert === 'true' ? 'used' : 'remaining';
     const keybinds: CustomKeybind[] = [
-        { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
+        { key: 'p', label: '(p) bar style', action: 'toggle-progress' },
         { key: 'u', label: `(u) show ${nextDirection}`, action: 'toggle-invert' }
     ];
 
-    // Bar modes add the time cursor and the bar gradient
+    // Bar modes add the time cursor, the bar gradient, the bar size and the numbers
     if (includeCursor) {
+        const numbersAction = item.metadata?.display === 'slider-only' ? 'show' : 'hide';
         keybinds.push({ key: 't', label: '(t)ime cursor', action: 'toggle-cursor' });
-        keybinds.push({ key: 'g', label: '(g)radient', action: 'cycle-gradient' });
+        keybinds.push(
+            { key: 'g', label: '(g)radient', action: 'cycle-gradient' },
+            { key: 'b', label: '(b)ar size', action: 'edit-bar-width' },
+            { key: 'n', label: `(n) ${numbersAction} numbers`, action: 'toggle-bar-numbers' }
+        );
     }
 
     return keybinds;
@@ -212,20 +219,17 @@ export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike>(conf
         expect(updated?.metadata?.cursor).toBeUndefined();
     });
 
-    it('cycles display modes in the expected order', () => {
+    // (p) cycles the style; the size, long the first time, stays with the bar
+    it('cycles the text, a block bar and a slider', () => {
         const widget = config.createWidget();
 
         const first = widget.handleEditorAction('toggle-progress', config.baseItem);
         const second = widget.handleEditorAction('toggle-progress', first ?? config.baseItem);
         const third = widget.handleEditorAction('toggle-progress', second ?? config.baseItem);
-        const fourth = widget.handleEditorAction('toggle-progress', third ?? config.baseItem);
-        const fifth = widget.handleEditorAction('toggle-progress', fourth ?? config.baseItem);
 
-        expect(first?.metadata?.display).toBe('progress');
-        expect(second?.metadata?.display).toBe('progress-short');
-        expect(third?.metadata?.display).toBe('slider');
-        expect(fourth?.metadata?.display).toBe('slider-only');
-        expect(fifth?.metadata?.display).toBe('time');
+        expect(first?.metadata).toEqual({ display: 'progress' });
+        expect(second?.metadata).toEqual({ display: 'slider', barWidth: 'long' });
+        expect(third?.metadata).toEqual({ display: 'time', barWidth: 'long' });
     });
 
     it('toggles invert metadata and shows used/remaining editor modifiers', () => {
@@ -249,14 +253,14 @@ export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike>(conf
                 cursor: 'true',
                 display: 'slider'
             }
-        }).modifierText).toBe('(short bar, used, time cursor)');
+        }).modifierText).toBe('(slider bar, short, used, time cursor)');
         expect(widget.getEditorDisplay({
             ...config.baseItem,
             metadata: {
                 cursor: 'true',
                 display: 'slider-only'
             }
-        }).modifierText).toBe('(short bar only, used, time cursor)');
+        }).modifierText).toBe('(slider bar, short, numbers off, used, time cursor)');
     });
 
     it('ignores stale compact metadata in editor modifiers', () => {
@@ -306,25 +310,23 @@ export function runUsageTimerEditorSuite<TWidget extends UsageWidgetLike & { get
         expect(updated?.metadata?.invert).toBeUndefined();
     });
 
-    it('cycles display modes in the expected order', () => {
+    // (p) cycles the style; the size, long the first time, stays with the bar
+    it('cycles the time, a block bar and a slider', () => {
         const widget = config.createWidget();
 
         const first = widget.handleEditorAction('toggle-progress', config.baseItem);
         const second = widget.handleEditorAction('toggle-progress', first ?? config.baseItem);
-        const third = widget.handleEditorAction('toggle-progress', second ?? config.baseItem);
 
         expect(first?.metadata?.display).toBe('progress');
-        expect(second?.metadata?.display).toBe('progress-short');
 
         if (config.supportsSliderMode) {
-            const fourth = widget.handleEditorAction('toggle-progress', third ?? config.baseItem);
-            const fifth = widget.handleEditorAction('toggle-progress', fourth ?? config.baseItem);
+            const third = widget.handleEditorAction('toggle-progress', second ?? config.baseItem);
 
-            expect(third?.metadata?.display).toBe('slider');
-            expect(fourth?.metadata?.display).toBe('slider-only');
-            expect(fifth?.metadata?.display).toBe('time');
-        } else {
+            expect(second?.metadata?.display).toBe('slider');
+            expect(second?.metadata?.barWidth).toBe('long');
             expect(third?.metadata?.display).toBe('time');
+        } else {
+            expect(second?.metadata?.display).toBe('time');
         }
     });
 

@@ -117,7 +117,7 @@ export class BlockResetTimerWidget implements Widget {
         if (context.isPreview) {
             const previewPercent = inverted ? 15.0 : 85.0;
 
-            const bar = formatUsageBar(item, previewPercent, format, settings);
+            const bar = formatUsageBar(item, previewPercent, format, settings, context);
             if (bar !== null) {
                 return formatRawOrLabeledValue(item, this.getLabelPrefix(item), bar);
             }
@@ -151,7 +151,7 @@ export class BlockResetTimerWidget implements Widget {
             return formatRawOrLabeledValue(item, this.getLabelPrefix(item), USAGE_TIMER_LOADING_MESSAGE);
         }
 
-        const bar = formatUsageBar(item, inverted ? window.remainingPercent : window.elapsedPercent, format, settings);
+        const bar = formatUsageBar(item, inverted ? window.remainingPercent : window.elapsedPercent, format, settings, context);
         if (bar !== null) {
             return formatRawOrLabeledValue(item, this.getLabelPrefix(item), bar);
         }

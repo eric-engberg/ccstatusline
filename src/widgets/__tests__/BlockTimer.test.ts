@@ -232,9 +232,11 @@ describe('BlockTimerWidget', () => {
             type: 'block-timer',
             metadata: { display: 'slider' }
         })).toEqual([
-            { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
+            { key: 'p', label: '(p) bar style', action: 'toggle-progress' },
             { key: 'v', label: 'in(v)ert fill', action: 'toggle-invert' },
-            { key: 'g', label: '(g)radient', action: 'cycle-gradient' }
+            { key: 'g', label: '(g)radient', action: 'cycle-gradient' },
+            { key: 'b', label: '(b)ar size', action: 'edit-bar-width' },
+            { key: 'n', label: '(n) hide numbers', action: 'toggle-bar-numbers' }
         ]);
     });
 
@@ -245,12 +247,12 @@ describe('BlockTimerWidget', () => {
             id: 'block',
             type: 'block-timer',
             metadata: { display: 'slider' }
-        }).modifierText).toBe('(short bar)');
+        }).modifierText).toBe('(slider bar, short)');
         expect(widget.getEditorDisplay({
             id: 'block',
             type: 'block-timer',
             metadata: { display: 'slider-only' }
-        }).modifierText).toBe('(short bar only)');
+        }).modifierText).toBe('(slider bar, short, numbers off)');
     });
 
     it('does not show a time cursor carried over from a usage widget', () => {
@@ -273,7 +275,7 @@ describe('BlockTimerWidget', () => {
         createWidget: () => new BlockTimerWidget(),
         expectedDisplayName: 'Block Timer',
         supportsSliderMode: true,
-        expectedModifierText: '(long bar, inverted)',
+        expectedModifierText: '(block bar, long, inverted)',
         modifierItem: {
             id: 'block',
             type: 'block-timer',

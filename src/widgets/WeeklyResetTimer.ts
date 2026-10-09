@@ -18,6 +18,7 @@ import {
     resolveWeeklyUsageWindow
 } from '../utils/usage';
 
+import { getBarLayoutModifiers } from './shared/bar-layout';
 import { makeModifierText } from './shared/editor-display';
 import {
     CYCLE_GRADIENT_ACTION,
@@ -81,17 +82,7 @@ function getWeeklyResetModifierText(item: WidgetItem): string | undefined {
     const displayMode = getUsageDisplayMode(item);
     const dateMode = isUsageDateMode(item);
     const isBarMode = isUsageProgressMode(displayMode) || isUsageSliderMode(displayMode);
-    const modifiers: string[] = [];
-
-    if (displayMode === 'progress') {
-        modifiers.push('long bar');
-    } else if (displayMode === 'progress-short') {
-        modifiers.push('medium bar');
-    } else if (displayMode === 'slider') {
-        modifiers.push('short bar');
-    } else if (displayMode === 'slider-only') {
-        modifiers.push('short bar only');
-    }
+    const modifiers = getBarLayoutModifiers(item);
 
     if (isUsageInverted(item)) {
         modifiers.push('inverted');
@@ -127,8 +118,8 @@ function getWeeklyResetModifierText(item: WidgetItem): string | undefined {
         modifiers.push(localeModifier);
     }
 
-    const gradientModifier = isBarMode ? getGradientModifier(item) : null;
-    if (gradientModifier) {
+    const gradientModifier = getGradientModifier(item);
+    if (isBarMode && gradientModifier) {
         modifiers.push(gradientModifier);
     }
 
@@ -203,7 +194,7 @@ export class WeeklyResetTimerWidget implements Widget {
             // Matches WEEKLY_PREVIEW_DURATION_MS: 36.5h of the 168h week left
             const previewPercent = inverted ? 21.7 : 78.3;
 
-            const bar = formatUsageBar(item, previewPercent, format, settings);
+            const bar = formatUsageBar(item, previewPercent, format, settings, context);
             if (bar !== null) {
                 return formatRawOrLabeledValue(item, this.getLabelPrefix(item), bar);
             }
@@ -242,7 +233,7 @@ export class WeeklyResetTimerWidget implements Widget {
             return formatRawOrLabeledValue(item, this.getLabelPrefix(item), USAGE_TIMER_LOADING_MESSAGE);
         }
 
-        const bar = formatUsageBar(item, inverted ? window.remainingPercent : window.elapsedPercent, format, settings);
+        const bar = formatUsageBar(item, inverted ? window.remainingPercent : window.elapsedPercent, format, settings, context);
         if (bar !== null) {
             return formatRawOrLabeledValue(item, this.getLabelPrefix(item), bar);
         }
