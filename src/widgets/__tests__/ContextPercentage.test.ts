@@ -136,8 +136,8 @@ describe('ContextPercentageWidget', () => {
         it('shows the glyph for the used percent instead of the number', () => {
             const widget = new ContextPercentageWidget();
 
-            expect(widget.render(glyphItem(), quarterUsed, DEFAULT_SETTINGS)).toBe('Ctx Used: ⚡');
-            expect(widget.render({ ...glyphItem(), rawValue: true }, quarterUsed, DEFAULT_SETTINGS)).toBe('⚡');
+            expect(widget.render(glyphItem(), quarterUsed, DEFAULT_SETTINGS)).toBe('Ctx Used: ⚡️');
+            expect(widget.render({ ...glyphItem(), rawValue: true }, quarterUsed, DEFAULT_SETTINGS)).toBe('⚡️');
             expect(widget.render({ ...glyphItem(), rawValue: true }, { isPreview: true }, DEFAULT_SETTINGS)).toBe('🚨');
         });
 
@@ -145,7 +145,7 @@ describe('ContextPercentageWidget', () => {
         it('follows the used percent while set to show what\'s left', () => {
             const widget = new ContextPercentageWidget();
 
-            expect(widget.render(glyphItem({ inverse: 'true' }), quarterUsed, DEFAULT_SETTINGS)).toBe('Ctx Used: ⚡');
+            expect(widget.render(glyphItem({ inverse: 'true' }), quarterUsed, DEFAULT_SETTINGS)).toBe('Ctx Used: ⚡️');
         });
 
         it('uses the widget\'s own glyphs and break points', () => {

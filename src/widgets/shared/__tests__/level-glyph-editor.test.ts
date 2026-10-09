@@ -36,7 +36,7 @@ describe('level break points editor', () => {
             await editor.ready();
             const output = editor.takeOutput();
             expect(output).toContain('Glyph levels');
-            expect(output).toContain('🟢 under 20%  ⚡ 20-69%  🔥 70-89%  🚨 90% and up');
+            expect(output).toContain('🟢 under 20%  ⚡️ 20-69%  🔥 70-89%  🚨 90% and up');
             expect(output).toMatch(/Medium from\s+20%/);
             expect(output).toMatch(/High from\s+70%/);
             expect(output).toMatch(/Critical from\s+90%/);
@@ -51,7 +51,7 @@ describe('level break points editor', () => {
         try {
             await editor.ready();
             await editor.press(DOWN, RIGHT);
-            expect(editor.takeOutput()).toContain('⚡ 20-74%  🔥 75-89%');
+            expect(editor.takeOutput()).toContain('⚡️ 20-74%  🔥 75-89%');
             await editor.press(ENTER);
             expect(editor.savedMetadata()).toEqual({ display: 'glyph', levelFromHigh: '75' });
         } finally {
@@ -65,7 +65,7 @@ describe('level break points editor', () => {
         try {
             await editor.ready();
             await editor.press(LEFT);
-            expect(editor.takeOutput()).toContain('🟢 under 15%  ⚡ 15-69%');
+            expect(editor.takeOutput()).toContain('🟢 under 15%  ⚡️ 15-69%');
             await editor.press(ENTER);
             expect(editor.savedMetadata()).toEqual({ display: 'glyph', levelFromMedium: '15' });
         } finally {
