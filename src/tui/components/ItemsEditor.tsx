@@ -59,6 +59,7 @@ import {
     type WidgetPickerState
 } from './items-editor/input-handlers';
 import {
+    getDescriptionRows,
     getListWindow,
     getPickerMaxVisible
 } from './items-editor/list-window';
@@ -88,6 +89,9 @@ function isMergedIntoPreviousWidget(widgets: WidgetItem[], index: number): boole
 
     return Boolean(widgets[index - 1]?.merge);
 }
+
+// The highlighted widget's description is indented under the picker list
+const DESCRIPTION_INDENT = 2;
 
 const HiddenEntriesMarker: React.FC<{ arrow: string; count: number }> = ({ arrow, count }) => (
     <Box paddingLeft={3}>
@@ -136,10 +140,6 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
     const [pickerNewWidget, setPickerNewWidget] = useState<Omit<WidgetItem, 'type'> | null>(null);
     const [showClearConfirm, setShowClearConfirm] = useState(false);
     const { stdout } = useStdout();
-    const pickerMaxVisible = getPickerMaxVisible(
-        stdout.rows,
-        settings.lines.filter(line => line.length > 0).length
-    );
     const separatorChars = ['|', '-', ',', ' '];
 
     const widgetCatalog = getWidgetCatalog(settings);
@@ -386,6 +386,15 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
     const selectedPickerEntry = widgetPicker
         ? (pickerEntries.find(entry => entry.type === widgetPicker.selectedType) ?? pickerEntries[0])
         : null;
+    // The list leaves room for the tallest description among its entries, so
+    // moving the highlight never makes the screen taller than the terminal
+    const browsedEntries = widgetPicker?.level === 'widget' ? pickerEntries : topLevelSearchEntries;
+    const descriptionWidth = stdout.columns ? stdout.columns - DESCRIPTION_INDENT : undefined;
+    const pickerMaxVisible = getPickerMaxVisible(
+        stdout.rows,
+        settings.lines.filter(line => line.length > 0).length,
+        Math.max(1, ...browsedEntries.map(entry => getDescriptionRows(entry.description, descriptionWidth)))
+    );
 
     // Only a widget the picker visibly highlights is previewed; browsing the
     // category list leaves the line as it is
@@ -612,7 +621,7 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
                                         );
                                     })}
                                     {selectedTopLevelSearchEntry && (
-                                        <Box marginTop={1} paddingLeft={2}>
+                                        <Box marginTop={1} paddingLeft={DESCRIPTION_INDENT}>
                                             <Text dimColor>{selectedTopLevelSearchEntry.description}</Text>
                                         </Box>
                                     )}
@@ -675,7 +684,7 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
                                     );
                                 })}
                                 {selectedPickerEntry && (
-                                    <Box marginTop={1} paddingLeft={2}>
+                                    <Box marginTop={1} paddingLeft={DESCRIPTION_INDENT}>
                                         <Text dimColor>{selectedPickerEntry.description}</Text>
                                     </Box>
                                 )}
