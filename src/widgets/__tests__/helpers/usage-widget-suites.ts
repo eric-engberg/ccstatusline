@@ -9,6 +9,10 @@ import {
 } from 'vitest';
 
 import type { RenderContext } from '../../../types/RenderContext';
+import {
+    DEFAULT_SETTINGS,
+    type Settings
+} from '../../../types/Settings';
 import type {
     CustomKeybind,
     WidgetEditorDisplay,
@@ -25,6 +29,7 @@ interface UsageWidgetLike {
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null;
     renderEditor?(props: WidgetEditorProps): unknown;
     colorsOnlyItsRuns?(item: WidgetItem): boolean;
+    render(item: WidgetItem, context: RenderContext, settings: Settings): string | null;
     supportsRawValue(): boolean;
 }
 
@@ -86,11 +91,8 @@ function getExpectedUsageKeybinds(item: WidgetItem, includeCursor = false): Cust
         { key: 'u', label: `(u) show ${nextDirection}`, action: 'toggle-invert' }
     ];
 
-    // The plain percent offers value colors; bar modes add the time cursor,
-    // the bar gradient, the bar size and the numbers
-    if (!includeCursor) {
-        keybinds.push({ key: 'v', label: '(v)alue colors', action: 'edit-value-colors' });
-    }
+    // Bar modes add the time cursor, the bar gradient, the bar size and the
+    // numbers; both offer value colors
     if (includeCursor) {
         const numbersAction = item.metadata?.display === 'slider-only' ? 'show' : 'hide';
         keybinds.push({ key: 't', label: '(t)ime cursor', action: 'toggle-cursor' });
@@ -100,6 +102,7 @@ function getExpectedUsageKeybinds(item: WidgetItem, includeCursor = false): Cust
             { key: 'n', label: `(n) ${numbersAction} numbers`, action: 'toggle-bar-numbers' }
         );
     }
+    keybinds.push({ key: 'v', label: '(v)alue colors', action: 'edit-value-colors' });
 
     return keybinds;
 }
@@ -341,18 +344,47 @@ export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike & { g
             expect(output.slice(HIGH.length, -FG_RESET.length)).not.toContain('\x1b');
         });
 
-        // Bars have gradients, and the level glyph has no number to color
-        it('leaves the bar and level glyph modes as they were, without (v)', () => {
+        // A bar takes one color for its level, the percent after it too
+        it.each(['progress', 'slider'])('colors the whole %s bar and its percent by the used percent', (display) => {
+            const widget = config.createWidget();
+            const bar = { ...colored, metadata: { ...colored.metadata, display } };
+            const high = config.render(widget, bar, used(95)) ?? '';
+
+            expect(high.startsWith(HIGH)).toBe(true);
+            expect(high.endsWith(` 95.0%${FG_RESET}`)).toBe(true);
+            expect(high.slice(HIGH.length, -FG_RESET.length)).not.toContain('\x1b');
+            expect(config.render(widget, bar, used(25))?.startsWith(LOW)).toBe(true);
+            expect(widget.getCustomKeybinds(bar).map(keybind => keybind.key)).toContain('v');
+            expect(widget.colorsOnlyItsRuns?.(bar)).toBe(true);
+            expect(widget.getEditorDisplay(bar).modifierText).toContain('value colors');
+        });
+
+        // A bar gradient colors each cell by where it sits, value colors the whole
+        // bar by its level, so only one of them is on at a time
+        it('sets a saved bar gradient aside, and (g) turns value colors off', () => {
             const widget = config.createWidget();
             const bar = { ...colored, metadata: { ...colored.metadata, display: 'progress' } };
+            const both = { ...bar, metadata: { ...bar.metadata, gradient: 'thermal' } };
+            const output = widget.render(both, used(95), { ...DEFAULT_SETTINGS, colorLevel: 3 }) ?? '';
+
+            expect(output.startsWith(HIGH)).toBe(true);
+            expect(output.slice(HIGH.length, -FG_RESET.length)).not.toContain('\x1b');
+            expect(widget.getEditorDisplay(both).modifierText).not.toContain('gradient:');
+
+            const withGradient = widget.handleEditorAction('cycle-gradient', bar);
+            expect(withGradient?.metadata?.gradient).toBe('traffic');
+            expect(withGradient?.metadata?.valueColors).toBeUndefined();
+            expect(widget.getEditorDisplay(withGradient ?? bar).modifierText).toContain('gradient: traffic');
+        });
+
+        // The level glyph has no number to color
+        it('leaves the level glyph mode as it was, without (v)', () => {
+            const widget = config.createWidget();
             const glyph = { ...colored, metadata: { ...colored.metadata, display: 'glyph' } };
 
-            expect(config.render(widget, bar, used(95))).not.toContain(HIGH);
             expect(config.render(widget, glyph, used(95))).toBe('🚨');
-            for (const item of [bar, glyph]) {
-                expect(widget.getCustomKeybinds(item).map(keybind => keybind.key)).not.toContain('v');
-                expect(widget.colorsOnlyItsRuns?.(item)).toBe(false);
-            }
+            expect(widget.getCustomKeybinds(glyph).map(keybind => keybind.key)).not.toContain('v');
+            expect(widget.colorsOnlyItsRuns?.(glyph)).toBe(false);
         });
 
         it('names the option on the editor row, opens its editor and colors around its value', () => {
