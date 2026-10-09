@@ -135,27 +135,17 @@ export function applyParensDim(text: string, bold?: boolean): string {
     return text.replace(/\([^()]*\)/g, span => `\x1b[2m${span}${intensityReset}`);
 }
 
-export function applyColors(
-    text: string,
-    foregroundColor?: string,
-    backgroundColor?: string,
-    bold?: boolean,
-    colorLevel: 'ansi16' | 'ansi256' | 'truecolor' = 'ansi16',
-    dim?: boolean | 'parens'
-): string {
-    const styledText = dim === 'parens' ? applyParensDim(text, bold) : text;
-
-    if (!foregroundColor && !backgroundColor && !bold && dim !== true) {
-        return styledText;
-    }
-
-    // Use raw ANSI codes for precise reset sequencing.
-    // This avoids style leakage (for example, bold affecting later widgets).
+// The parts of a style that wrap the text whatever its foreground: bold/dim
+// first, so they can be reset independently before color resets (a single
+// \x1b[22m clears both), then the background
+function getStyleWrap(
+    backgroundColor: string | undefined,
+    bold: boolean | undefined,
+    dim: boolean | 'parens' | undefined,
+    colorLevel: 'ansi16' | 'ansi256' | 'truecolor'
+): { prefix: string; suffix: string } {
     let prefix = '';
     let suffix = '';
-
-    // Apply bold/dim first so they can be reset independently before color
-    // resets. A single \x1b[22m clears both attributes.
     if (bold) {
         prefix += '\x1b[1m';
     }
@@ -163,17 +153,37 @@ export function applyColors(
         prefix += '\x1b[2m';
     }
     if (bold || dim === true) {
-        suffix = '\x1b[22m' + suffix;
+        suffix = '\x1b[22m';
     }
 
-    // Apply background color
-    if (backgroundColor) {
-        const bgCode = getColorAnsiCode(backgroundColor, colorLevel, true);
-        if (bgCode) {
-            prefix += bgCode;
-            suffix = '\x1b[49m' + suffix;
-        }
+    const bgCode = backgroundColor ? getColorAnsiCode(backgroundColor, colorLevel, true) : '';
+    if (bgCode) {
+        prefix += bgCode;
+        suffix = '\x1b[49m' + suffix;
     }
+    return { prefix, suffix };
+}
+
+export function applyColors(
+    text: string,
+    foregroundColor?: string,
+    backgroundColor?: string,
+    bold?: boolean,
+    colorLevel: 'ansi16' | 'ansi256' | 'truecolor' = 'ansi16',
+    dim?: boolean | 'parens',
+    // The text colors some runs itself (Widget.colorsOnlyItsRuns), so the
+    // foreground goes around those runs instead of over them
+    keepColoredRuns = false
+): string {
+    let styledText = dim === 'parens' ? applyParensDim(text, bold) : text;
+
+    if (!foregroundColor && !backgroundColor && !bold && dim !== true) {
+        return styledText;
+    }
+
+    // Use raw ANSI codes for precise reset sequencing.
+    // This avoids style leakage (for example, bold affecting later widgets).
+    let { prefix, suffix } = getStyleWrap(backgroundColor, bold, dim, colorLevel);
 
     // Apply foreground color
     if (foregroundColor) {
@@ -184,17 +194,28 @@ export function applyColors(
         // as the prefix guard.
         const gradientStops = parseGradientSpec(foregroundColor);
         if (gradientStops && colorLevel !== 'ansi16') {
-            return prefix + applyGradientToText(styledText, gradientStops, colorLevel) + '\x1b[39m' + suffix;
+            return prefix + applyGradientToText(styledText, gradientStops, colorLevel, keepColoredRuns) + '\x1b[39m' + suffix;
         }
 
         const fgCode = getColorAnsiCode(foregroundColor, colorLevel, false);
         if (fgCode) {
             prefix += fgCode;
             suffix = '\x1b[39m' + suffix;
+            if (keepColoredRuns) {
+                styledText = restoreForegroundAfterRuns(styledText, fgCode);
+            }
         }
     }
 
     return prefix + styledText + suffix;
+}
+
+// Widget text can color part of itself, ending each colored run with the
+// default-foreground code. Inside a colored widget that code would drop the rest
+// of the text to the terminal's default color, so it becomes the widget's own
+// foreground instead.
+export function restoreForegroundAfterRuns(text: string, foregroundCode: string): string {
+    return text.split('\x1b[39m').join(foregroundCode);
 }
 
 // Get raw ANSI codes for a color without the reset codes
