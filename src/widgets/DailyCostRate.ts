@@ -31,48 +31,76 @@ import {
     renderValueColorsEditor
 } from './shared/value-colors-editor';
 
-const LABEL = 'Rate: ';
+const LABEL = 'Rate Today: ';
 const DEFAULT_COLOR = 'green';
-// The Session Cost sample ($2.45) over 30 minutes
-const PREVIEW_RATE = 4.9;
+const PREVIEW_RATE = 6.2;
 const CLOCK_TIME_KEY = 'clockTime';
+const BILLED_SPEND_KEY = 'billedSpend';
 const TOGGLE_CLOCK_TIME_ACTION = 'toggle-clock-time';
+const TOGGLE_BILLED_SPEND_ACTION = 'toggle-billed-spend';
 const HOUR_MS = 60 * 60 * 1000;
-// Rates over the first seconds swing wildly ($0.50 in 30s is $60/hr), so the
-// widget waits for a full minute of the chosen time.
+// Rates over the first seconds swing wildly, so the widget waits for a full
+// minute of the chosen time.
 const MIN_DURATION_MS = 60 * 1000;
 
 function isClockTime(item: WidgetItem): boolean {
     return isMetadataFlagEnabled(item, CLOCK_TIME_KEY);
 }
 
-export class SessionCostRateWidget implements Widget {
+function isBilledSpend(item: WidgetItem): boolean {
+    return isMetadataFlagEnabled(item, BILLED_SPEND_KEY);
+}
+
+// Billed spend covers claude.ai and other machines too; the hours only ever
+// come from this machine's Claude Code sessions. Billed spend is unknown until
+// a usage fetch has run since the UTC day began.
+function getTodaysCost(item: WidgetItem, context: RenderContext, claudeCodeCost: number): number | undefined {
+    if (!isBilledSpend(item)) {
+        return claudeCodeCost;
+    }
+
+    const billedCents = context.usageData?.extraUsageUsedToday;
+    return billedCents === undefined ? undefined : billedCents / 100;
+}
+
+export class DailyCostRateWidget implements Widget {
     getDefaultColor(): string { return DEFAULT_COLOR; }
-    getDescription(): string { return 'Shows the session cost per hour, over the time Claude spent working or the whole session'; }
-    getDisplayName(): string { return 'Session Cost Rate'; }
+    getDescription(): string { return 'Shows today\'s cost per hour across all of today\'s Claude Code sessions, from Claude Code\'s costs or billed spend'; }
+    getDisplayName(): string { return 'Daily Cost Rate'; }
     getCategory(): string { return 'Session'; }
-    getLabelPrefix(): string { return LABEL; }
 
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
-        const valueColors = getValueColorsModifier(item);
         const time = isClockTime(item) ? 'clock time' : 'active time';
-        return { displayText: this.getDisplayName(), modifierText: makeModifierText(valueColors ? [time, valueColors] : [time]) };
+        const cost = isBilledSpend(item) ? 'billed spend' : 'Claude Code cost';
+        const valueColors = getValueColorsModifier(item);
+        return { displayText: this.getDisplayName(), modifierText: makeModifierText(valueColors ? [time, cost, valueColors] : [time, cost]) };
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
-        const label = item && isClockTime(item) ? '(t)ime: use active time' : '(t)ime: use clock time';
-        return [{ key: 't', label, action: TOGGLE_CLOCK_TIME_ACTION }, VALUE_COLORS_KEYBIND];
+        const timeLabel = item && isClockTime(item) ? '(t)ime: use active time' : '(t)ime: use clock time';
+        const costLabel = item && isBilledSpend(item) ? '(b) Claude Code cost' : '(b)illed spend';
+        return [
+            { key: 't', label: timeLabel, action: TOGGLE_CLOCK_TIME_ACTION },
+            { key: 'b', label: costLabel, action: TOGGLE_BILLED_SPEND_ACTION },
+            VALUE_COLORS_KEYBIND
+        ];
     }
 
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
-        return action === TOGGLE_CLOCK_TIME_ACTION ? toggleMetadataFlag(item, CLOCK_TIME_KEY) : null;
+        if (action === TOGGLE_CLOCK_TIME_ACTION) {
+            return toggleMetadataFlag(item, CLOCK_TIME_KEY);
+        }
+        if (action === TOGGLE_BILLED_SPEND_ACTION) {
+            return toggleMetadataFlag(item, BILLED_SPEND_KEY);
+        }
+        return null;
     }
 
     renderEditor(props: WidgetEditorProps): React.ReactElement {
         return renderValueColorsEditor(props, {
             title: `${this.getDisplayName()}: value colors`,
             scale: COST_RATE_SCALE,
-            sampleNote: 'over this session',
+            sampleNote: 'over today',
             defaultColor: DEFAULT_COLOR,
             label: LABEL
         });
@@ -91,16 +119,18 @@ export class SessionCostRateWidget implements Widget {
             return formatColoredValue(item, LABEL, `${formatCost(PREVIEW_RATE, format)}/hr`, PREVIEW_RATE, COST_RATE_SCALE, formatOptions);
         }
 
-        const cost = context.data?.cost;
-        const totalCost = cost?.total_cost_usd;
-        // Active time is how long Claude spent generating (API time); clock time
-        // is the whole session, including time spent waiting for the user.
-        const durationMs = isClockTime(item) ? cost?.total_duration_ms : cost?.total_api_duration_ms;
-        if (totalCost === undefined || durationMs === undefined || durationMs < MIN_DURATION_MS) {
+        const totals = context.dailyCost;
+        if (!totals) {
             return null;
         }
 
-        const perHour = totalCost / (durationMs / HOUR_MS);
+        const cost = getTodaysCost(item, context, totals.claudeCodeCost);
+        const durationMs = isClockTime(item) ? totals.clockMs : totals.activeMs;
+        if (cost === undefined || durationMs < MIN_DURATION_MS) {
+            return null;
+        }
+
+        const perHour = cost / (durationMs / HOUR_MS);
         return formatColoredValue(item, LABEL, `${formatCost(perHour, format)}/hr`, perHour, COST_RATE_SCALE, formatOptions);
     }
 

@@ -1,11 +1,15 @@
 import type { RenderContext } from '../types/RenderContext';
 import { getContextWindowInputTotalTokens } from '../utils/context-window';
 
-import { TokenCountWidget } from './shared/token-count-widget';
+import {
+    TokenCountWidget,
+    makeTokenScale
+} from './shared/token-count-widget';
 
 export class TokensInputWidget extends TokenCountWidget {
     protected readonly label = 'In: ';
     protected readonly previewTokens = 15200;
+    protected readonly valueColorScale = makeTokenScale(10_000, 50_000, 5_000);
 
     getDefaultColor(): string { return 'blue'; }
     getDescription(): string { return 'Shows input token count for the current session'; }
