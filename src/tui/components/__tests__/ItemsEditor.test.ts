@@ -14,6 +14,10 @@ import type { WidgetItem } from '../../../types/Widget';
 import { getWidgetCatalog } from '../../../utils/widgets';
 import { waitFor } from '../../__tests__/helpers/wait-for-ink';
 import { ItemsEditor } from '../ItemsEditor';
+import {
+    getDescriptionRows,
+    getPickerMaxVisible
+} from '../items-editor/list-window';
 
 class MockTtyStream extends PassThrough {
     isTTY = true;
@@ -688,6 +692,32 @@ describe('ItemsEditor', () => {
                 expect(shown).toBeLessThan(allWidgetCount);
                 expect(shown + hiddenBelow).toBe(allWidgetCount);
                 expect(output).not.toMatch(/↑ \d+ more/);
+            } finally {
+                editor.cleanup();
+            }
+        });
+
+        // The highlighted widget's description shows under the list, so the
+        // list gives up rows for the tallest one it holds (the mock terminal
+        // is 120 columns, less the description's indent of 2)
+        it('leaves room under the list for its tallest description', async () => {
+            const editor = renderEditor([{ id: '1', type: 'model' }]);
+            const tallest = Math.max(...getWidgetCatalog(DEFAULT_SETTINGS).map(entry => getDescriptionRows(entry.description, 118)));
+            const statusLines = DEFAULT_SETTINGS.lines.filter(line => line.length > 0).length;
+
+            try {
+                await editor.ready();
+                editor.press('a');
+                await waitFor(() => {
+                    expect(editor.screen()).toContain('ADD WIDGET');
+                });
+                editor.press(ENTER);
+                await waitFor(() => {
+                    expect(editor.latestPickerFrame()).toMatch(/↓ \d+ more/);
+                });
+
+                expect(tallest).toBeGreaterThan(1);
+                expect(getEntryRows(editor.latestPickerFrame())).toHaveLength(getPickerMaxVisible(40, statusLines, tallest));
             } finally {
                 editor.cleanup();
             }
