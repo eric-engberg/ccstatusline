@@ -2,6 +2,7 @@ import type {
     BlockMetrics,
     SkillsMetrics
 } from '../types';
+import type { DailyCostTotals } from '../utils/daily-cost';
 
 import type { SpeedMetrics } from './SpeedMetrics';
 import type { StatusJSON } from './StatusJSON';
@@ -23,6 +24,7 @@ export interface RenderUsageData {
     extraUsageUsed?: number;
     extraUsageUtilization?: number;
     extraUsageCurrency?: string;
+    extraUsageUsedToday?: number;
     error?: 'no-credentials' | 'timeout' | 'rate-limited' | 'api-error' | 'parse-error';
 }
 
@@ -48,6 +50,7 @@ export interface RenderContext {
     speedMetrics?: SpeedMetrics | null;
     windowedSpeedMetrics?: Record<string, SpeedMetrics> | null;
     usageData?: RenderUsageData | null;
+    dailyCost?: DailyCostTotals | null;
     claudeStatusData?: ClaudeStatusRenderData | null;
     sessionDuration?: string | null;
     transcriptSessionName?: string | null;
