@@ -373,6 +373,32 @@ describe('usage prefetch', () => {
         ]);
     });
 
+    it('fetches Fable\'s percent for Weekly Fable Limit Timer, using the all-models reset when Fable has none', async () => {
+        mockFetchUsageData.mockResolvedValue({ fableUsage: 8 });
+
+        const lines = makeLines([{ id: '1', type: 'fable-weekly-limit-timer' }]);
+
+        const usageData = await prefetchUsageDataIfNeeded(lines, { rate_limits: { seven_day: { used_percentage: 72, resets_at: 1776211200 } } });
+
+        expect(usageData).toEqual({ weeklyUsage: 72, weeklyResetAt: epochToIso(1776211200), fableUsage: 8 });
+        expect(mockFetchUsageData.mock.calls).toEqual([
+            [{ requiredFields: ['fableUsage'] }]
+        ]);
+    });
+
+    it('keeps quiet when the fetch made only for Weekly Fable Limit Timer fails', async () => {
+        mockFetchUsageData.mockResolvedValue({ error: 'rate-limited' });
+
+        const lines = makeLines([{ id: '1', type: 'fable-weekly-limit-timer' }]);
+
+        const usageData = await prefetchUsageDataIfNeeded(lines, { rate_limits: { seven_day: { used_percentage: 72, resets_at: 1776211200 } } });
+
+        expect(usageData).toEqual({ weeklyUsage: 72, weeklyResetAt: epochToIso(1776211200) });
+        expect(mockFetchUsageData.mock.calls).toEqual([
+            [{ requiredFields: ['fableUsage'] }]
+        ]);
+    });
+
     it('returns no usage data instead of a rate-limit error for reset-only startup fetches', async () => {
         mockFetchUsageData.mockResolvedValue({ error: 'rate-limited' });
 

@@ -43,6 +43,7 @@ describe('widget catalog', () => {
         const sessionForecast = catalog.find(entry => entry.type === 'session-forecast');
         const sessionLimitTimer = catalog.find(entry => entry.type === 'session-limit-timer');
         const weeklyLimitTimer = catalog.find(entry => entry.type === 'weekly-limit-timer');
+        const fableWeeklyLimitTimer = catalog.find(entry => entry.type === 'fable-weekly-limit-timer');
 
         expect(model?.displayName).toBe('Model');
         expect(model?.category).toBe('Core');
@@ -70,6 +71,8 @@ describe('widget catalog', () => {
         expect(sessionLimitTimer?.category).toBe('Usage');
         expect(weeklyLimitTimer?.displayName).toBe('Weekly Limit Timer');
         expect(weeklyLimitTimer?.category).toBe('Usage');
+        expect(fableWeeklyLimitTimer?.displayName).toBe('Weekly Fable Limit Timer');
+        expect(fableWeeklyLimitTimer?.category).toBe('Usage');
     });
 
     it('hides manual separator when default separator is configured', () => {
