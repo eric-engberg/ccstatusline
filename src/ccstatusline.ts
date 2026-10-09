@@ -45,7 +45,9 @@ import {
     getPackageVersion,
     getTerminalWidth
 } from './utils/terminal';
+import { sanitizeTerminalText } from './utils/terminal-sanitize';
 import { prefetchUsageDataIfNeeded } from './utils/usage-prefetch';
+import { ensureWindowsUtf8CodePage } from './utils/windows-code-page';
 
 // Captured before --config is parsed out of process.argv, so the dev reload
 // supervisor can relaunch with exactly the arguments it was started with
@@ -82,19 +84,6 @@ async function readStdin(): Promise<string | null> {
         return chunks.join('');
     } catch {
         return null;
-    }
-}
-
-async function ensureWindowsUtf8CodePage() {
-    if (process.platform !== 'win32') {
-        return;
-    }
-
-    try {
-        const { execFileSync } = await import('node:child_process');
-        execFileSync('chcp.com', ['65001'], { stdio: 'ignore', windowsHide: true });
-    } catch {
-        // Ignore failures to preserve statusline output even in restricted shells.
     }
 }
 
@@ -220,7 +209,9 @@ async function renderMultipleLines(data: StatusJSON) {
                 }
 
                 // Replace all spaces with non-breaking spaces to prevent VSCode trimming
-                let outputLine = line.replace(/ /g, '\u00A0');
+                // The renderer's own output is colors and links; this is the last
+                // stop before the terminal for anything else (separators, settings)
+                let outputLine = sanitizeTerminalText(line).replace(/ /g, '\u00A0');
 
                 // Add reset code at the beginning to override Claude Code's dim setting
                 outputLine = '\x1b[0m' + outputLine;
@@ -242,7 +233,7 @@ async function renderMultipleLines(data: StatusJSON) {
         && settings.updatemessage.remaining
         && settings.updatemessage.remaining > 0) {
         // Display the message
-        console.log(settings.updatemessage.message);
+        console.log(sanitizeTerminalText(settings.updatemessage.message));
 
         // Decrement the remaining count
         const newRemaining = settings.updatemessage.remaining - 1;
@@ -324,7 +315,7 @@ async function main() {
 
     // Check if we're in a piped/non-TTY environment first
     if (!process.stdin.isTTY) {
-        await ensureWindowsUtf8CodePage();
+        ensureWindowsUtf8CodePage();
 
         // We're receiving piped input
         const input = await readStdin();

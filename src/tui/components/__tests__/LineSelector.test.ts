@@ -500,11 +500,20 @@ describe('LineSelector', () => {
             await waitFor(() => {
                 expect(view.rows()[0]).toBe('◆  ☰ Line 1 (1 widget)');
             });
+            expect(view.rows()).toEqual([
+                '◆  ☰ Line 1 (1 widget)',
+                '☰ Line 2 (empty)',
+                '☰ Line 3 (2 widgets)'
+            ]);
             expect(view.onLinesUpdate).toHaveBeenLastCalledWith([ONE_WIDGET, EMPTY, TWO_WIDGETS], undefined);
 
             view.press(UP_ARROW);
             await waitFor(() => {
-                expect(view.rows()[2]).toBe('◆  ☰ Line 3 (1 widget)');
+                expect(view.rows()).toEqual([
+                    '☰ Line 1 (empty)',
+                    '☰ Line 2 (2 widgets)',
+                    '◆  ☰ Line 3 (1 widget)'
+                ]);
             });
             expect(view.onLinesUpdate).toHaveBeenLastCalledWith([EMPTY, TWO_WIDGETS, ONE_WIDGET], undefined);
 

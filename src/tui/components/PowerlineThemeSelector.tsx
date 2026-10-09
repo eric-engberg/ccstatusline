@@ -18,6 +18,7 @@ import {
 } from '../../utils/colors';
 import { getPlainInput } from '../../utils/input-guards';
 import { isPowerlineLine } from '../../utils/powerline-lines';
+import { assignPowerlineThemeSlots } from '../../utils/powerline-theme-index';
 
 import { ConfirmDialog } from './ConfirmDialog';
 import {
@@ -59,22 +60,30 @@ export function applyCustomPowerlineTheme(
         return null;
     }
 
+    // Number the widgets the way the renderer picks theme colors, so the copy
+    // matches what the theme showed: a merged group shares one color, and with
+    // Continue Theme on, each line picks up where the previous one stopped. A
+    // plain line draws no theme colors, so it keeps its own and takes no slots.
+    let nextLineSlot = 0;
     const lines = settings.lines.map((line, lineIndex) => {
-        // A plain line draws no theme colors, so it keeps its own
         if (!isPowerlineLine(settings, lineIndex)) {
             return line;
         }
 
-        let widgetColorIndex = 0;
+        const { slots, nextSlot } = assignPowerlineThemeSlots(
+            line,
+            settings.powerline.continueThemeAcrossLines ? nextLineSlot : 0
+        );
+        nextLineSlot = nextSlot;
 
-        return line.map((widget) => {
-            if (widget.type === 'separator' || widget.type === 'flex-separator') {
+        return line.map((widget, index) => {
+            const slot = slots[index];
+            if (typeof slot !== 'number') {
                 return widget;
             }
 
-            const fgColor = themeColors.fg[widgetColorIndex % themeColors.fg.length];
-            const bgColor = themeColors.bg[widgetColorIndex % themeColors.bg.length];
-            widgetColorIndex++;
+            const fgColor = themeColors.fg[slot % themeColors.fg.length];
+            const bgColor = themeColors.bg[slot % themeColors.bg.length];
 
             return {
                 ...widget,

@@ -13,6 +13,7 @@ import React, {
 import type { Settings } from '../../types/Settings';
 import type { WidgetItem } from '../../types/Widget';
 import { getPlainInput } from '../../utils/input-guards';
+import { moveItem } from '../../utils/move-item';
 import {
     isPowerlineLine,
     moveLinePowerline,
@@ -35,16 +36,6 @@ interface LineSelectorProps {
     blockIfPowerlineActive?: boolean;
     settings: Settings;
     allowEditing?: boolean;
-}
-
-// The lines with line `from` moved to `to`, the others keeping their order
-function moveLine(lines: WidgetItem[][], from: number, to: number): WidgetItem[][] {
-    const moved = [...lines];
-    const [line] = moved.splice(from, 1);
-    if (line) {
-        moved.splice(to, 0, line);
-    }
-    return moved;
 }
 
 // "(2 widgets)", or "(2 widgets, plain)" with the line's mode
@@ -132,7 +123,7 @@ const LineSelector: React.FC<LineSelectorProps> = ({
     // than swapping places with the line there. Its Powerline mode moves with it
     const moveSelectedLine = (direction: 1 | -1) => {
         const targetIndex = (selectedIndex + direction + localLines.length) % localLines.length;
-        commitLines(moveLine(localLines, selectedIndex, targetIndex), moveLinePowerline(localLineEnabled, selectedIndex, targetIndex));
+        commitLines(moveItem(localLines, selectedIndex, targetIndex), moveLinePowerline(localLineEnabled, selectedIndex, targetIndex));
         setSelectedIndex(targetIndex);
     };
 
