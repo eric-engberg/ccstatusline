@@ -124,7 +124,8 @@ function powerlineSettings(enabled: boolean, theme: string | undefined): Setting
     };
 }
 
-type RenderProps = Omit<LineSelectorProps, 'onSelect' | 'onBack' | 'onLinesUpdate'>;
+// Settings default to DEFAULT_SETTINGS
+type RenderProps = Omit<LineSelectorProps, 'onSelect' | 'onBack' | 'onLinesUpdate' | 'settings'> & { settings?: Settings };
 
 function renderLineSelector(props: RenderProps) {
     const stdin = createMockStdin();
@@ -132,9 +133,10 @@ function renderLineSelector(props: RenderProps) {
     const stderr = createMockStdout();
     const onSelect = vi.fn<(line: number) => void>();
     const onBack = vi.fn<() => void>();
-    const onLinesUpdate = vi.fn<(lines: WidgetItem[][]) => void>();
+    const onLinesUpdate = vi.fn<LineSelectorProps['onLinesUpdate']>();
 
     const element = (overrides: Partial<RenderProps> = {}) => React.createElement(LineSelector, {
+        settings: DEFAULT_SETTINGS,
         ...props,
         ...overrides,
         onSelect,
@@ -324,7 +326,7 @@ describe('LineSelector', () => {
             });
             expect(view.frame()).toContain(FULL_EDITING_HELP);
             expect(view.onLinesUpdate).toHaveBeenCalledTimes(1);
-            expect(view.onLinesUpdate).toHaveBeenCalledWith([ONE_WIDGET, EMPTY]);
+            expect(view.onLinesUpdate).toHaveBeenCalledWith([ONE_WIDGET, EMPTY], undefined);
 
             view.press(ENTER);
             await waitFor(() => {
@@ -366,7 +368,7 @@ describe('LineSelector', () => {
                 ]);
             });
             expect(view.onLinesUpdate).toHaveBeenCalledTimes(1);
-            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([ONE_WIDGET, TWO_WIDGETS]);
+            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([ONE_WIDGET, TWO_WIDGETS], undefined);
 
             // Deleting the first line keeps the highlight on the first line
             view.press('d');
@@ -383,7 +385,7 @@ describe('LineSelector', () => {
             });
             expect(view.frame()).toContain(SINGLE_LINE_EDITING_HELP);
             expect(view.onLinesUpdate).toHaveBeenCalledTimes(2);
-            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([TWO_WIDGETS]);
+            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([TWO_WIDGETS], undefined);
             expect(view.onBack).not.toHaveBeenCalled();
             expect(view.onSelect).not.toHaveBeenCalled();
         } finally {
@@ -458,7 +460,7 @@ describe('LineSelector', () => {
         }
     });
 
-    it('swaps the highlighted line with its neighbour in move mode, and moves it to the other end past either edge', async () => {
+    it('moves the highlighted line past its neighbour in move mode, and to the far end past either edge', async () => {
         const view = renderLineSelector({ lines: [ONE_WIDGET, EMPTY, TWO_WIDGETS], allowEditing: true });
 
         try {
@@ -485,15 +487,15 @@ describe('LineSelector', () => {
                     '☰ Line 3 (2 widgets)'
                 ]);
             });
-            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([EMPTY, ONE_WIDGET, TWO_WIDGETS]);
+            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([EMPTY, ONE_WIDGET, TWO_WIDGETS], undefined);
 
             view.press(DOWN_ARROW);
             await waitFor(() => {
                 expect(view.rows()[2]).toBe('◆  ☰ Line 3 (1 widget)');
             });
-            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([EMPTY, TWO_WIDGETS, ONE_WIDGET]);
+            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([EMPTY, TWO_WIDGETS, ONE_WIDGET], undefined);
 
-            // Past the bottom edge it goes to the top, and the other lines keep their order
+            // Past the last line it goes to the top, and the others keep their order
             view.press(DOWN_ARROW);
             await waitFor(() => {
                 expect(view.rows()[0]).toBe('◆  ☰ Line 1 (1 widget)');
@@ -503,7 +505,7 @@ describe('LineSelector', () => {
                 '☰ Line 2 (empty)',
                 '☰ Line 3 (2 widgets)'
             ]);
-            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([ONE_WIDGET, EMPTY, TWO_WIDGETS]);
+            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([ONE_WIDGET, EMPTY, TWO_WIDGETS], undefined);
 
             view.press(UP_ARROW);
             await waitFor(() => {
@@ -513,7 +515,7 @@ describe('LineSelector', () => {
                     '◆  ☰ Line 3 (1 widget)'
                 ]);
             });
-            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([EMPTY, TWO_WIDGETS, ONE_WIDGET]);
+            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([EMPTY, TWO_WIDGETS, ONE_WIDGET], undefined);
 
             view.press(UP_ARROW);
             await waitFor(() => {
@@ -523,7 +525,7 @@ describe('LineSelector', () => {
                     '☰ Line 3 (2 widgets)'
                 ]);
             });
-            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([EMPTY, ONE_WIDGET, TWO_WIDGETS]);
+            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([EMPTY, ONE_WIDGET, TWO_WIDGETS], undefined);
             expect(view.onLinesUpdate).toHaveBeenCalledTimes(5);
 
             // Move mode takes only the arrows, Enter and ESC
@@ -658,6 +660,142 @@ describe('LineSelector', () => {
             view.press(ENTER);
             await waitFor(() => {
                 expect(view.onSelect).toHaveBeenCalledWith(2);
+            });
+        } finally {
+            view.cleanup();
+        }
+    });
+});
+
+// Each line can be Powerline or plain; `p` switches the highlighted one
+describe('LineSelector Powerline per line', () => {
+    function lineModes(enabled: boolean, lineEnabled?: (boolean | null)[], theme: string | undefined = 'custom'): Settings {
+        return { ...DEFAULT_SETTINGS, powerline: { ...DEFAULT_SETTINGS.powerline, enabled, theme, lineEnabled } };
+    }
+
+    it('shows each line\'s mode and switches the highlighted one with p', async () => {
+        const view = renderLineSelector({ lines: [ONE_WIDGET, TWO_WIDGETS], allowEditing: true, settings: lineModes(true) });
+
+        try {
+            await waitFor(() => {
+                expect(view.rows()).toEqual([
+                    '▶  ☰ Line 1 (1 widget, Powerline)',
+                    '☰ Line 2 (2 widgets, Powerline)',
+                    '← Back'
+                ]);
+            });
+            expect(view.frame()).toContain('(p) Powerline/plain');
+
+            view.press('p');
+            await waitFor(() => {
+                expect(view.rows()[0]).toBe('▶  ☰ Line 1 (1 widget, plain)');
+            });
+            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([ONE_WIDGET, TWO_WIDGETS], [false]);
+
+            view.press('p');
+            await waitFor(() => {
+                expect(view.rows()[0]).toBe('▶  ☰ Line 1 (1 widget, Powerline)');
+            });
+            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([ONE_WIDGET, TWO_WIDGETS], undefined);
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it('shows no modes while every line is plain, and p makes one Powerline', async () => {
+        const view = renderLineSelector({ lines: [ONE_WIDGET, TWO_WIDGETS], allowEditing: true, settings: lineModes(false) });
+
+        try {
+            await waitFor(() => {
+                expect(view.rows()[0]).toBe('▶  ☰ Line 1 (1 widget)');
+            });
+
+            view.press('p');
+            await waitFor(() => {
+                expect(view.rows()).toEqual([
+                    '▶  ☰ Line 1 (1 widget, Powerline)',
+                    '☰ Line 2 (2 widgets, plain)',
+                    '← Back'
+                ]);
+            });
+            expect(view.onLinesUpdate).toHaveBeenLastCalledWith([ONE_WIDGET, TWO_WIDGETS], [true]);
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it('keeps a line\'s mode with it when lines move or are deleted', async () => {
+        const view = renderLineSelector({ lines: [ONE_WIDGET, TWO_WIDGETS, EMPTY], allowEditing: true, settings: lineModes(true, [false]) });
+
+        try {
+            await waitFor(() => {
+                expect(view.rows()[0]).toBe('▶  ☰ Line 1 (1 widget, plain)');
+            });
+
+            view.press('m');
+            await waitFor(() => {
+                expect(view.frame()).toContain('[MOVE MODE]');
+            });
+            view.press(DOWN_ARROW);
+            await waitFor(() => {
+                expect(view.onLinesUpdate).toHaveBeenLastCalledWith([TWO_WIDGETS, ONE_WIDGET, EMPTY], [null, false]);
+            });
+            view.press(ENTER);
+            await waitFor(() => {
+                expect(view.frame()).not.toContain('[MOVE MODE]');
+            });
+
+            // Line 2 is now the plain one; delete line 1 and it moves up
+            view.press('\u001B[A');
+            await waitFor(() => {
+                expect(view.rows()[0]).toBe('▶  ☰ Line 1 (2 widgets, Powerline)');
+            });
+            view.press('d');
+            await waitFor(() => {
+                expect(view.frame()).toContain('Yes');
+            });
+            view.press(ENTER);
+            await waitFor(() => {
+                expect(view.onLinesUpdate).toHaveBeenLastCalledWith([ONE_WIDGET, EMPTY], [false]);
+            });
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    // A Powerline theme colors Powerline lines only
+    it('lets plain lines\' colors be edited under a Powerline theme', async () => {
+        const view = renderLineSelector({
+            lines: [ONE_WIDGET, TWO_WIDGETS],
+            blockIfPowerlineActive: true,
+            settings: lineModes(true, [null, false], 'nord'),
+            title: 'Select Line to Edit Colors'
+        });
+
+        try {
+            await waitFor(() => {
+                expect(view.rows()).toHaveLength(3);
+            });
+
+            view.press(ENTER);
+            await waitFor(() => {
+                expect(view.frame()).toContain('⚠ Colors are currently managed by the Powerline theme: Nord');
+            });
+            expect(view.onSelect).not.toHaveBeenCalled();
+
+            view.press('x');
+            await waitFor(() => {
+                expect(view.rows()).toHaveLength(3);
+            });
+            expect(view.onBack).not.toHaveBeenCalled();
+
+            view.press(DOWN_ARROW);
+            await waitFor(() => {
+                expect(view.rows()[1]?.startsWith('▶')).toBe(true);
+            });
+            view.press(ENTER);
+            await waitFor(() => {
+                expect(view.onSelect).toHaveBeenCalledWith(1);
             });
         } finally {
             view.cleanup();

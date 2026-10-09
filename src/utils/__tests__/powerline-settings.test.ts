@@ -4,7 +4,10 @@ import {
     it
 } from 'vitest';
 
-import { DEFAULT_SETTINGS } from '../../types/Settings';
+import {
+    DEFAULT_SETTINGS,
+    type Settings
+} from '../../types/Settings';
 import type { WidgetItem } from '../../types/Widget';
 import { buildEnabledPowerlineSettings } from '../powerline-settings';
 
@@ -69,5 +72,22 @@ describe('powerline settings helpers', () => {
 
         const updated = buildEnabledPowerlineSettings(settings, false);
         expect(updated.lines[0]?.map(item => item.type)).toEqual(['model', 'separator', 'context-length']);
+    });
+
+    // A line set to plain keeps its separators when Powerline is turned on
+    it('removes manual separators only from the lines that turn Powerline', () => {
+        const settings: Settings = {
+            ...DEFAULT_SETTINGS,
+            lines: [
+                [{ id: '1', type: 'model' }, { id: '2', type: 'separator' }, { id: '3', type: 'git-branch' }],
+                [{ id: '4', type: 'model' }, { id: '5', type: 'separator' }, { id: '6', type: 'git-branch' }]
+            ],
+            powerline: { ...DEFAULT_SETTINGS.powerline, enabled: false, lineEnabled: [null, false] }
+        };
+
+        const updated = buildEnabledPowerlineSettings(settings, true);
+
+        expect(updated.lines[0]?.map(item => item.type)).toEqual(['model', 'git-branch']);
+        expect(updated.lines[1]?.map(item => item.type)).toEqual(['model', 'separator', 'git-branch']);
     });
 });
