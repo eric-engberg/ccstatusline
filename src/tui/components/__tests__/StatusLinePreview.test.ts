@@ -151,3 +151,61 @@ describe('StatusLinePreview helpers', () => {
         }
     });
 });
+
+describe('StatusLinePreview with a plain line among Powerline lines', () => {
+    it('draws each line in its own mode, without Powerline backgrounds on the plain one', async () => {
+        const stdin = createMockStdin();
+        const stdout = createMockStdout();
+        const stderr = createMockStdout();
+        const settings: Settings = {
+            ...DEFAULT_SETTINGS,
+            colorLevel: 3,
+            defaultPadding: ' ',
+            powerline: {
+                ...DEFAULT_SETTINGS.powerline,
+                enabled: true,
+                theme: 'custom',
+                separators: [''],
+                separatorInvertBackground: [false],
+                lineEnabled: [null, false]
+            }
+        };
+        const lines: WidgetItem[][] = [
+            [
+                { id: 'a', type: 'custom-text', customText: 'one', color: 'hex:FFFFFF', backgroundColor: 'hex:0000AA' },
+                { id: 'b', type: 'custom-text', customText: 'two', color: 'hex:FFFFFF', backgroundColor: 'hex:AA0000' }
+            ],
+            [
+                { id: 'c', type: 'custom-text', customText: 'three', color: 'hex:FFFFFF', backgroundColor: 'hex:0000AA' },
+                { id: 'd', type: 'separator' },
+                { id: 'e', type: 'custom-text', customText: 'four', color: 'hex:FFFFFF', backgroundColor: 'hex:AA0000' }
+            ]
+        ];
+
+        const instance = render(
+            React.createElement(StatusLinePreview, { lines, terminalWidth: 160, settings }),
+            { stdin, stdout, stderr, debug: true, exitOnCtrlC: false, patchConsole: false }
+        );
+
+        try {
+            await waitFor(() => {
+                expect(stdout.getOutput()).toContain('four');
+            });
+            const outputLines = stdout.getOutput().split('\n');
+            const powerlineLine = outputLines.find(line => line.includes('one')) ?? '';
+            const plainLine = outputLines.find(line => line.includes('three')) ?? '';
+
+            expect(powerlineLine).toContain('');
+            expect(powerlineLine).toContain('48;2;0;0;170');
+            expect(plainLine).toContain('|');
+            expect(plainLine).not.toContain('');
+            expect(plainLine).not.toContain('48;2;');
+        } finally {
+            instance.unmount();
+            instance.cleanup();
+            stdin.destroy();
+            stdout.destroy();
+            stderr.destroy();
+        }
+    });
+});

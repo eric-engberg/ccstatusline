@@ -331,7 +331,16 @@ export function applyImport(
             installation: current.installation
         });
     }
-    return { ...current, ...importedClean };
+    // The per-line Powerline modes belong to the lines they were set on: kept
+    // lines keep theirs, and imported lines bring their own or follow the default
+    const lineEnabled = importedClean.lines
+        ? importedClean.powerline?.lineEnabled
+        : current.powerline.lineEnabled;
+    return {
+        ...current,
+        ...importedClean,
+        powerline: { ...(importedClean.powerline ?? current.powerline), lineEnabled }
+    };
 }
 
 export async function saveInstallationMetadata(metadata: InstallationMetadata | undefined): Promise<void> {
