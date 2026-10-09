@@ -207,7 +207,8 @@ export const GLYPH_GROUPS: GlyphGroup[] = [
             { glyph: '🌚', name: 'new moon face' },
             { glyph: '⭐', name: 'star' },
             { glyph: '🌈', name: 'rainbow' },
-            { glyph: '⚡', name: 'high voltage' },
+            // Nerd Fonts draw their zap icon on U+26A1, so ask for the emoji form
+            { glyph: '⚡\uFE0F', name: 'high voltage' },
             { glyph: '❄️', name: 'snowflake' },
             { glyph: '🔥', name: 'fire' },
             { glyph: '💧', name: 'droplet' }

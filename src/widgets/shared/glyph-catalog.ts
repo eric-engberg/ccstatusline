@@ -1,3 +1,5 @@
+import { isEmojiByDefault } from '../../utils/ansi';
+
 import {
     GLYPH_GROUPS,
     type GlyphEntry,
@@ -65,11 +67,19 @@ function toSearchText(text: string): string {
     return text.toLowerCase().replace(/[_-]/g, ' ');
 }
 
+// The emoji selector (U+FE0F) makes ❤ the emoji ❤️, a different glyph, but on
+// a character that's an emoji by default (⚡) it changes nothing, so ⚡ and ⚡️
+// are one entry
+function getSearchKey(glyph: string): string {
+    const base = glyph.replaceAll('\uFE0F', '');
+    return Array.from(base).length === 1 && isEmojiByDefault(base) ? base : glyph;
+}
+
 export function createGlyphCatalog(): GlyphCatalog {
     const emoji = parseUnicodeGlyphs(EMOJI_GLYPHS);
     const groups = addSkinTones(GLYPH_GROUPS, emoji);
     // Search lists each glyph once, under its first name (curated, then the
-    // emoji's, the character's, Nerd Font's), but finds it by any of them: ⚡
+    // emoji's, the character's, Nerd Font's), but finds it by any of them: ⚡️
     // shows as "high voltage" and "high voltage sign" finds it too. An emoji's
     // text and emoji forms (❤ and ❤️) are different glyphs, so both show.
     const searchable = new Map<string, { entry: GlyphEntry; text: string }>();
@@ -80,11 +90,12 @@ export function createGlyphCatalog(): GlyphCatalog {
         ...parseNerdFontGlyphs()
     ];
     for (const entry of everything) {
-        const found = searchable.get(entry.glyph);
+        const key = getSearchKey(entry.glyph);
+        const found = searchable.get(key);
         if (found) {
             found.text += ` ${toSearchText(entry.name)}`;
         } else {
-            searchable.set(entry.glyph, { entry, text: toSearchText(entry.name) });
+            searchable.set(key, { entry, text: toSearchText(entry.name) });
         }
     }
     const entries = [...searchable.values()];
