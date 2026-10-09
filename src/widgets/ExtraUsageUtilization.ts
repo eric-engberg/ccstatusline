@@ -1,6 +1,9 @@
 import type React from 'react';
 
-import type { RenderContext } from '../types/RenderContext';
+import type {
+    RenderContext,
+    RenderUsageData
+} from '../types/RenderContext';
 import type { Settings } from '../types/Settings';
 import type {
     CustomKeybind,
@@ -38,6 +41,17 @@ import {
     toggleUsageInverted
 } from './shared/usage-display';
 
+// The usage API reports `utilization: null` until the first charge of the month,
+// while still reporting the amount spent and the monthly limit (both in cents).
+function getExtraUsageUtilization(data: RenderUsageData): number | undefined {
+    if (data.extraUsageUtilization !== undefined) {
+        return data.extraUsageUtilization;
+    }
+    if (data.extraUsageUsed === undefined || data.extraUsageLimit === undefined || data.extraUsageLimit <= 0) {
+        return undefined;
+    }
+    return data.extraUsageUsed / data.extraUsageLimit * 100;
+}
 const LABEL = 'Overage: ';
 
 // The bar, the level glyph or the percent. The glyph measures what's used,
@@ -54,7 +68,7 @@ function formatUsedPercent(item: WidgetItem, usedPercent: number, settings: Sett
 
 export class ExtraUsageUtilizationWidget implements Widget {
     getDefaultColor(): string { return 'green'; }
-    getDescription(): string { return 'Shows extra usage (pay-as-you-go) utilization percentage'; }
+    getDescription(): string { return 'Shows extra usage as a percentage of your monthly limit (Pro/Max overage or Enterprise spend)'; }
     getDisplayName(): string { return 'Extra Usage Utilization'; }
     getCategory(): string { return 'Usage'; }
     getLabelPrefix(): string { return LABEL; }
@@ -97,7 +111,8 @@ export class ExtraUsageUtilizationWidget implements Widget {
                 ? null
                 : formatRawOrLabeledValue(item, LABEL, 'n/a');
         }
-        if (data.extraUsageEnabled !== true || data.extraUsageUtilization === undefined) {
+        const utilization = getExtraUsageUtilization(data);
+        if (data.extraUsageEnabled !== true || utilization === undefined) {
             if (data.error) {
                 return isHidden(item, USAGE_NO_DATA_HIDEABLE_STATE.key)
                     ? null
@@ -106,8 +121,8 @@ export class ExtraUsageUtilizationWidget implements Widget {
             return null;
         }
 
-        // extraUsageUtilization is already a percentage (0-100), not a fraction
-        return formatUsedPercent(item, Math.max(0, Math.min(100, data.extraUsageUtilization)), settings, context);
+        // utilization is a percentage (0-100), not a fraction
+        return formatUsedPercent(item, Math.max(0, Math.min(100, utilization)), settings, context);
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {

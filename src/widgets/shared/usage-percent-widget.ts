@@ -153,7 +153,7 @@ export function getUsagePercentWidgetDescription(kind: UsagePercentWidgetKind): 
 export function getUsagePercentWidgetEditorDisplay(kind: UsagePercentWidgetKind, item: WidgetItem): WidgetEditorDisplay {
     return {
         displayText: getUsagePercentWidgetDisplayName(kind),
-        modifierText: getUsageDisplayModifierText(item, { includeGlyph: true, showUsageDirection: true })
+        modifierText: getUsageDisplayModifierText(item, { includeGlyph: true, showUsageDirection: true, includeCursor: true })
     };
 }
 
