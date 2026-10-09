@@ -966,7 +966,8 @@ function sizeBarsToLines(
             if (!entry) {
                 return;
             }
-            const content = bar.widgetImpl.render(bar.item, { ...context, barCells: cells[position] }, settings) ?? '';
+            // Sanitized like the first render: only colors and safe links reach the terminal
+            const content = sanitizeTerminalText(bar.widgetImpl.render(bar.item, { ...context, barCells: cells[position] }, settings) ?? '');
             entry.alignmentWidth = entry.plainLength;
             entry.content = content;
             entry.plainLength = getVisibleWidth(content);

@@ -20,4 +20,25 @@ describe('preRenderAllWidgets', () => {
         expect(line[0]?.content).toBe('safe text');
         expect(line[0]?.plainLength).toBe('safe text'.length);
     });
+
+    // A bar sized to its line renders a second time, at its final width
+    it('drops control sequences from a sized bar\'s final render too', () => {
+        const widget: WidgetItem = {
+            id: 'bar',
+            type: 'context-bar',
+            metadata: { display: 'progress', barWidth: 'fill', label: 'ctx\x1b]52;c;ZWNobyBwd25lZA==\x07 ' }
+        };
+        const data: RenderContext['data'] = {
+            context_window: {
+                context_window_size: 200000,
+                current_usage: { input_tokens: 90000, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
+            }
+        };
+
+        const [line = []] = preRenderAllWidgets([[widget]], DEFAULT_SETTINGS, { ...context, data });
+
+        expect(line[0]?.content).toContain('ctx ');
+        expect(line[0]?.content).not.toContain('\x1b]52');
+        expect(line[0]?.content).not.toContain('\x07');
+    });
 });
