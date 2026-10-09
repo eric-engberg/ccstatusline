@@ -25,6 +25,10 @@ import {
 } from '../../utils/usage';
 import type { UsageWindowMetrics } from '../../utils/usage-types';
 
+import {
+    CYCLE_GRADIENT_ACTION,
+    cycleGradientPreset
+} from './gradient-bar';
 import { isHidden } from './hideable';
 import { formatRawOrLabeledValue } from './raw-or-labeled';
 import {
@@ -58,35 +62,35 @@ const USAGE_PERCENT_WIDGET_CONFIG: Record<UsagePercentWidgetKind, UsagePercentWi
         label: 'Session: ',
         displayName: 'Session Usage',
         description: 'Shows daily/session API usage percentage',
-        previewPercent: 20,
+        previewPercent: 90,
         usageField: 'sessionUsage'
     },
     'weekly': {
         label: 'Weekly: ',
         displayName: 'Weekly Usage',
         description: 'Shows weekly API usage percentage',
-        previewPercent: 12,
+        previewPercent: 80,
         usageField: 'weeklyUsage'
     },
     'weekly-sonnet': {
         label: 'Weekly Sonnet: ',
         displayName: 'Weekly Sonnet Usage',
         description: 'Shows weekly Sonnet API usage percentage',
-        previewPercent: 8,
+        previewPercent: 70,
         usageField: 'weeklySonnetUsage'
     },
     'weekly-opus': {
         label: 'Weekly Opus: ',
         displayName: 'Weekly Opus Usage',
         description: 'Shows weekly Opus API usage percentage',
-        previewPercent: 4,
+        previewPercent: 60,
         usageField: 'weeklyOpusUsage'
     },
     'fable-weekly': {
         label: 'Weekly Fable: ',
         displayName: 'Weekly Fable Usage',
         description: 'Shows Fable-only weekly usage percentage',
-        previewPercent: 4,
+        previewPercent: 60,
         usageField: 'fableUsage'
     }
 };
@@ -114,9 +118,10 @@ function renderUsageDisplay(
     label: string,
     percent: number,
     format: NumberFormat,
-    getCursorOptions: () => UsageCursorOptions | undefined
+    getCursorOptions: () => UsageCursorOptions | undefined,
+    settings: Settings
 ): string {
-    const bar = formatUsageBar(item, percent, format, getCursorOptions);
+    const bar = formatUsageBar(item, percent, format, settings, getCursorOptions);
     return formatRawOrLabeledValue(item, label, bar ?? formatPercent(percent, format));
 }
 
@@ -152,6 +157,10 @@ export function handleUsagePercentWidgetEditorAction(action: string, item: Widge
         return toggleUsageCursor(item);
     }
 
+    if (action === CYCLE_GRADIENT_ACTION) {
+        return cycleGradientPreset(item);
+    }
+
     return null;
 }
 
@@ -168,7 +177,7 @@ export function renderUsagePercentWidgetValue(
 
     if (context.isPreview) {
         const renderedPercent = inverted ? 100 - config.previewPercent : config.previewPercent;
-        return renderUsageDisplay(item, config.label, renderedPercent, format, () => showCursor ? { cursorPercent: 50 } : undefined);
+        return renderUsageDisplay(item, config.label, renderedPercent, format, () => showCursor ? { cursorPercent: 50 } : undefined, settings);
     }
 
     const data: RenderUsageData = context.usageData ?? {};
@@ -192,7 +201,7 @@ export function renderUsagePercentWidgetValue(
 
         const window = resolveUsageWindow(kind, data, context);
         return window ? { cursorPercent: window.elapsedPercent } : undefined;
-    });
+    }, settings);
 }
 
 // Session, Weekly, Weekly Sonnet, Weekly Opus and Fable Weekly Usage differ only

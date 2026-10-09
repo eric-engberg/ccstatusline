@@ -18,6 +18,13 @@ import {
 import { formatTokens } from '../utils/renderer';
 import { makeUsageProgressBar } from '../utils/usage';
 
+import {
+    CYCLE_GRADIENT_ACTION,
+    cycleGradientPreset,
+    getGradientKeybinds,
+    getGradientModifier,
+    paintWidgetBar
+} from './shared/gradient-bar';
 import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
 import { makeSliderBar } from './shared/usage-display';
 
@@ -37,6 +44,11 @@ function isBarSliderMode(mode: DisplayMode): boolean {
     return mode === 'slider' || mode === 'slider-only';
 }
 
+// Nearly full, so the TUI preview shows most of a gradient preset's range
+const PREVIEW_USED_TOKENS = 180000;
+const PREVIEW_WINDOW_TOKENS = 200000;
+const PREVIEW_PERCENT = 90;
+
 export class ContextBarWidget implements Widget {
     getDefaultColor(): string { return 'blue'; }
     getDescription(): string { return 'Shows context usage as a progress bar'; }
@@ -55,6 +67,10 @@ export class ContextBarWidget implements Widget {
         } else if (mode === 'slider-only') {
             modifiers.push('short bar only');
         }
+        const gradient = getGradientModifier(item);
+        if (gradient) {
+            modifiers.push(gradient);
+        }
 
         return {
             displayText: this.getDisplayName(),
@@ -63,6 +79,9 @@ export class ContextBarWidget implements Widget {
     }
 
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
+        if (action === CYCLE_GRADIENT_ACTION) {
+            return cycleGradientPreset(item);
+        }
         if (action !== 'toggle-progress') {
             return null;
         }
@@ -91,16 +110,16 @@ export class ContextBarWidget implements Widget {
         const percentFormat = resolveNumberFormat('percent', item, settings);
 
         if (context.isPreview) {
-            const usedDisplay = formatTokens(50000, tokenFormat, 0);
-            const totalDisplay = formatTokens(200000, tokenFormat, 0);
-            const percentDisplay = formatPercent(25, percentFormat, 0);
+            const usedDisplay = formatTokens(PREVIEW_USED_TOKENS, tokenFormat, 0);
+            const totalDisplay = formatTokens(PREVIEW_WINDOW_TOKENS, tokenFormat, 0);
+            const percentDisplay = formatPercent(PREVIEW_PERCENT, percentFormat, 0);
             if (isBarSliderMode(displayMode)) {
-                const slider = makeSliderBar(25);
+                const slider = paintWidgetBar(makeSliderBar(PREVIEW_PERCENT), item, settings);
                 const sliderDisplay = displayMode === 'slider' ? `${slider} ${usedDisplay}/${totalDisplay} (${percentDisplay})` : slider;
                 return formatRawOrLabeledValue(item, this.getLabelPrefix(), sliderDisplay);
             }
             const barWidth = displayMode === 'progress' ? 32 : 16;
-            const previewDisplay = `${makeUsageProgressBar(25, barWidth)} ${usedDisplay}/${totalDisplay} (${percentDisplay})`;
+            const previewDisplay = `${paintWidgetBar(makeUsageProgressBar(PREVIEW_PERCENT, barWidth), item, settings)} ${usedDisplay}/${totalDisplay} (${percentDisplay})`;
             return formatRawOrLabeledValue(item, this.getLabelPrefix(), previewDisplay);
         }
 
@@ -129,20 +148,21 @@ export class ContextBarWidget implements Widget {
         const percentDisplay = formatPercent(clampedPercent, percentFormat, 0);
 
         if (isBarSliderMode(displayMode)) {
-            const slider = makeSliderBar(clampedPercent);
+            const slider = paintWidgetBar(makeSliderBar(clampedPercent), item, settings);
             const sliderDisplay = displayMode === 'slider' ? `${slider} ${usedDisplay}/${totalDisplay} (${percentDisplay})` : slider;
             return formatRawOrLabeledValue(item, this.getLabelPrefix(), sliderDisplay);
         }
 
         const barWidth = displayMode === 'progress' ? 32 : 16;
-        const display = `${makeUsageProgressBar(clampedPercent, barWidth)} ${usedDisplay}/${totalDisplay} (${percentDisplay})`;
+        const display = `${paintWidgetBar(makeUsageProgressBar(clampedPercent, barWidth), item, settings)} ${usedDisplay}/${totalDisplay} (${percentDisplay})`;
 
         return formatRawOrLabeledValue(item, this.getLabelPrefix(), display);
     }
 
     getCustomKeybinds(): CustomKeybind[] {
         return [
-            { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' }
+            { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
+            ...getGradientKeybinds(true)
         ];
     }
 

@@ -19,6 +19,11 @@ import {
 } from '../utils/usage';
 
 import { makeModifierText } from './shared/editor-display';
+import {
+    CYCLE_GRADIENT_ACTION,
+    cycleGradientPreset,
+    getGradientModifier
+} from './shared/gradient-bar';
 import { isHidden } from './shared/hideable';
 import {
     LOCALE_EDITOR_ACTION,
@@ -122,6 +127,11 @@ function getWeeklyResetModifierText(item: WidgetItem): string | undefined {
         modifiers.push(localeModifier);
     }
 
+    const gradientModifier = isBarMode ? getGradientModifier(item) : null;
+    if (gradientModifier) {
+        modifiers.push(gradientModifier);
+    }
+
     return makeModifierText(modifiers);
 }
 
@@ -147,6 +157,10 @@ export class WeeklyResetTimerWidget implements Widget {
     }
 
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
+        if (action === CYCLE_GRADIENT_ACTION) {
+            return cycleGradientPreset(item);
+        }
+
         if (action === 'toggle-progress') {
             return cycleUsageDisplayMode(item, ['compact', 'hours', 'absolute'], true);
         }
@@ -186,9 +200,10 @@ export class WeeklyResetTimerWidget implements Widget {
         const format = resolveNumberFormat('percent', item, settings);
 
         if (context.isPreview) {
-            const previewPercent = inverted ? 90.0 : 10.0;
+            // Matches WEEKLY_PREVIEW_DURATION_MS: 36.5h of the 168h week left
+            const previewPercent = inverted ? 21.7 : 78.3;
 
-            const bar = formatUsageBar(item, previewPercent, format);
+            const bar = formatUsageBar(item, previewPercent, format, settings);
             if (bar !== null) {
                 return formatRawOrLabeledValue(item, this.getLabelPrefix(item), bar);
             }
@@ -227,7 +242,7 @@ export class WeeklyResetTimerWidget implements Widget {
             return formatRawOrLabeledValue(item, this.getLabelPrefix(item), USAGE_TIMER_LOADING_MESSAGE);
         }
 
-        const bar = formatUsageBar(item, inverted ? window.remainingPercent : window.elapsedPercent, format);
+        const bar = formatUsageBar(item, inverted ? window.remainingPercent : window.elapsedPercent, format, settings);
         if (bar !== null) {
             return formatRawOrLabeledValue(item, this.getLabelPrefix(item), bar);
         }

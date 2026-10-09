@@ -17,6 +17,10 @@ import {
 import { getUsageErrorMessage } from '../utils/usage';
 
 import { EXTRA_USAGE_DISABLED_HIDEABLE_STATE } from './shared/extra-usage-disabled';
+import {
+    CYCLE_GRADIENT_ACTION,
+    cycleGradientPreset
+} from './shared/gradient-bar';
 import { isHidden } from './shared/hideable';
 import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
 import {
@@ -61,6 +65,10 @@ export class ExtraUsageUtilizationWidget implements Widget {
     }
 
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
+        if (action === CYCLE_GRADIENT_ACTION) {
+            return cycleGradientPreset(item);
+        }
+
         if (action === 'toggle-progress') {
             return cycleUsageDisplayMode(item, [], true, true);
         }
@@ -77,10 +85,10 @@ export class ExtraUsageUtilizationWidget implements Widget {
         const format = resolveNumberFormat('percent', item, settings);
 
         if (context.isPreview) {
-            const previewPercent = 2.6;
+            const previewPercent = 85;
             const renderedPercent = inverted ? 100 - previewPercent : previewPercent;
 
-            const bar = formatUsageBar(item, renderedPercent, format);
+            const bar = formatUsageBar(item, renderedPercent, format, settings);
             if (bar !== null) {
                 return formatRawOrLabeledValue(item, this.getLabelPrefix(), bar);
             }
@@ -108,7 +116,7 @@ export class ExtraUsageUtilizationWidget implements Widget {
         const percent = Math.max(0, Math.min(100, utilization));
         const renderedPercent = inverted ? 100 - percent : percent;
 
-        const bar = formatUsageBar(item, renderedPercent, format);
+        const bar = formatUsageBar(item, renderedPercent, format, settings);
         if (bar !== null) {
             return formatRawOrLabeledValue(item, this.getLabelPrefix(), bar);
         }
