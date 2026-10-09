@@ -8,6 +8,7 @@ import {
 } from 'vitest';
 
 import type { WidgetItem } from '../../types/Widget';
+import * as dailySpend from '../daily-spend';
 import * as usage from '../usage';
 import {
     extractUsageDataFromRateLimits,
@@ -597,6 +598,76 @@ describe('usage prefetch', () => {
             weeklyResetAt: epochToIso(1774540000)
         });
         expect(mockFetchUsageData.mock.calls.length).toBe(1);
+    });
+});
+
+describe('today\'s extra usage spend', () => {
+    // When the usage API returned the data, as fetchUsageData reports it.
+    const FETCHED_AT = Date.parse('2026-10-05T14:58:00Z');
+    let mockFetchUsageData: {
+        mock: { calls: unknown[][] };
+        mockResolvedValue: (value: UsageData) => void;
+    };
+    let mockObserveSpend: {
+        mock: { calls: unknown[][] };
+        mockReturnValue: (value: number | undefined) => void;
+    };
+
+    beforeEach(() => {
+        vi.restoreAllMocks();
+        mockFetchUsageData = vi.spyOn(usage, 'fetchUsageData');
+        mockFetchUsageData.mockResolvedValue({ extraUsageEnabled: true, extraUsageUsed: 12345 });
+        mockObserveSpend = vi.spyOn(dailySpend, 'observeExtraUsageSpend');
+        mockObserveSpend.mockReturnValue(825);
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('works out today\'s spend for the Extra Usage Today widget', async () => {
+        vi.spyOn(usage, 'getUsageAccountKey').mockReturnValue('work-login');
+        vi.spyOn(usage, 'getUsageFetchedAt').mockReturnValue(FETCHED_AT);
+
+        const usageData = await prefetchUsageDataIfNeeded(makeLines([{ id: '1', type: 'extra-usage-today' }]), {});
+
+        expect(usageData).toEqual({
+            extraUsageEnabled: true,
+            extraUsageUsed: 12345,
+            extraUsageUsedToday: 825
+        });
+        expect(mockObserveSpend.mock.calls).toEqual([['work-login', 12345, FETCHED_AT]]);
+        expect(mockFetchUsageData.mock.calls).toEqual([
+            [{ requiredFields: ['extraUsageEnabled', 'extraUsageUsed'] }]
+        ]);
+    });
+
+    it('leaves today\'s spend out when the login is unknown', async () => {
+        vi.spyOn(usage, 'getUsageAccountKey').mockReturnValue(null);
+        vi.spyOn(usage, 'getUsageFetchedAt').mockReturnValue(FETCHED_AT);
+
+        const usageData = await prefetchUsageDataIfNeeded(makeLines([{ id: '1', type: 'extra-usage-today' }]), {});
+
+        expect(usageData).toEqual({ extraUsageEnabled: true, extraUsageUsed: 12345 });
+        expect(mockObserveSpend.mock.calls).toEqual([]);
+    });
+
+    it('leaves today\'s spend out when the fetch returned no data time', async () => {
+        vi.spyOn(usage, 'getUsageAccountKey').mockReturnValue('work-login');
+        vi.spyOn(usage, 'getUsageFetchedAt').mockReturnValue(null);
+
+        const usageData = await prefetchUsageDataIfNeeded(makeLines([{ id: '1', type: 'extra-usage-today' }]), {});
+
+        expect(usageData).toEqual({ extraUsageEnabled: true, extraUsageUsed: 12345 });
+        expect(mockObserveSpend.mock.calls).toEqual([]);
+    });
+
+    it('only works out today\'s spend when a widget shows it', async () => {
+        vi.spyOn(usage, 'getUsageAccountKey').mockReturnValue('work-login');
+
+        await prefetchUsageDataIfNeeded(makeLines([{ id: '1', type: 'extra-usage-used' }]), {});
+
+        expect(mockObserveSpend.mock.calls).toEqual([]);
     });
 });
 

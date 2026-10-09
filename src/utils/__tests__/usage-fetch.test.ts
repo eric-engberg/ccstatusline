@@ -30,6 +30,9 @@ interface UsageProbeResult {
     requestHost: string | null;
     homedir: string;
     lockContents: string | null;
+    accountKey: string | null;
+    fetchedAt: number | null;
+    cacheTokenHash: string | null;
 }
 
 interface TokenHome {
@@ -147,7 +150,7 @@ https.request = (...args) => {
     return request;
 };
 
-const { fetchUsageData } = await import(${JSON.stringify(usageModulePath)});
+const { fetchUsageData, getUsageAccountKey, getUsageFetchedAt } = await import(${JSON.stringify(usageModulePath)});
 
 const lockFile = path.join(os.homedir(), '.cache', 'ccstatusline', 'usage.lock');
 const cacheFile = path.join(os.homedir(), '.cache', 'ccstatusline', 'usage.json');
@@ -166,7 +169,10 @@ process.stdout.write(JSON.stringify({
     proxyAgentConfigured,
     requestHost,
     homedir: os.homedir(),
-    lockContents: fs.existsSync(lockFile) ? fs.readFileSync(lockFile, 'utf8') : null
+    lockContents: fs.existsSync(lockFile) ? fs.readFileSync(lockFile, 'utf8') : null,
+    accountKey: getUsageAccountKey(),
+    fetchedAt: getUsageFetchedAt(),
+    cacheTokenHash: fs.existsSync(cacheFile) ? (JSON.parse(fs.readFileSync(cacheFile, 'utf8')).tokenHash ?? null) : null
 }));
 `;
 
@@ -690,6 +696,49 @@ describe('fetchUsageData error handling', () => {
             });
             expect(result.second).toEqual(result.first);
             expect(result.requestCount).toBe(1);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    // Today's extra usage spend is kept per login, and a total only counts for
+    // the day it was fetched, so a fetch has to report both for its data.
+    it('reports the login and the fetch time of the data it returns', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome('account-key');
+            const result = harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                mode: 'success',
+                nowMs,
+                pathDir: home.bin,
+                requiredFields: ['extraUsageEnabled', 'extraUsageUsed'],
+                responseBody: extraUsageResponseBody
+            });
+
+            expect(result.accountKey).toMatch(/^[0-9a-f]{16}$/);
+            expect(result.accountKey).toBe(result.cacheTokenHash);
+            // Fetched from the API at the probe's clock; the second call
+            // returns the same data from memory, with the same fetch time.
+            expect(result.fetchedAt).toBe(nowMs);
+            expect(result.requestCount).toBe(1);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('reports no login or fetch time when there are no credentials', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createEmptyHome('no-credentials-account-key');
+            const result = harness.runProbe({ home: home.home, mode: 'unexpected', nowMs });
+
+            expect(result.first).toEqual({ error: 'no-credentials' });
+            expect(result.accountKey).toBeNull();
+            expect(result.fetchedAt).toBeNull();
         } finally {
             harness.cleanup();
         }
