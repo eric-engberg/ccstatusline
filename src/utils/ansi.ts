@@ -59,6 +59,11 @@ function matchesUnicodeProperty(character: string, regex: RegExp | null): boolea
     return regex?.test(character) ?? false;
 }
 
+/** Whether a character draws as an emoji without the emoji selector (U+FE0F): ⚡ does, ❤ doesn't. */
+export function isEmojiByDefault(character: string): boolean {
+    return matchesUnicodeProperty(character, EMOJI_PRESENTATION_REGEX);
+}
+
 function isVariationSelector(codePoint: number): boolean {
     return (codePoint >= VARIATION_SELECTOR_START && codePoint <= VARIATION_SELECTOR_END)
         || (codePoint >= VARIATION_SELECTOR_SUPPLEMENT_START && codePoint <= VARIATION_SELECTOR_SUPPLEMENT_END);

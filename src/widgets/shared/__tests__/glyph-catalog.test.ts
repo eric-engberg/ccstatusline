@@ -66,6 +66,15 @@ describe('glyph catalog', () => {
         expect(unicodeFor('exclamation mark').filter(glyph => glyph === '❗')).toHaveLength(1);
     });
 
+    // ⚡ is an emoji by default, so its emoji selector makes no new glyph. The
+    // curated one carries it anyway: Nerd Fonts draw their zap icon on U+26A1,
+    // and the selector asks the terminal for the emoji.
+    it('lists an emoji-by-default character once, under its curated form with the emoji selector', () => {
+        expect(unicodeFor('high voltage')).toEqual(['⚡\uFE0F']);
+        expect(unicodeFor('high voltage sign')).toEqual(['⚡\uFE0F']);
+        expect(glyphsFor('oct zap')).toEqual(['⚡\uFE0F']);
+    });
+
     it('keeps an emoji\'s text and emoji forms apart', () => {
         expect(unicodeFor('red heart')).toEqual(['❤️']);
         expect(unicodeFor('heavy black heart')[0]).toBe('❤');
