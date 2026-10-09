@@ -255,7 +255,7 @@ export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike & { g
         const widget = config.createWidget();
         const glyphItem: WidgetItem = { ...config.baseItem, rawValue: true, metadata: { display: 'glyph' } };
 
-        expect(config.render(widget, glyphItem, getUsageContext(config.usageField, 42))).toBe('⚡');
+        expect(config.render(widget, glyphItem, getUsageContext(config.usageField, 42))).toBe('⚡️');
         expect(config.render(widget, { ...glyphItem, metadata: { display: 'glyph', invert: 'true' } }, getUsageContext(config.usageField, 95))).toBe('🚨');
         expect(config.render(widget, { ...glyphItem, rawValue: false }, getUsageContext(config.usageField, 10))).toMatch(/: 🟢$/);
     });

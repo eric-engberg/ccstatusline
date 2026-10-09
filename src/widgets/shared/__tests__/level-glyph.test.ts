@@ -30,8 +30,8 @@ describe('level glyph', () => {
     it.each([
         [0, 'low', '🟢'],
         [19.9, 'low', '🟢'],
-        [20, 'medium', '⚡'],
-        [69.9, 'medium', '⚡'],
+        [20, 'medium', '⚡️'],
+        [69.9, 'medium', '⚡️'],
         [70, 'high', '🔥'],
         [89.9, 'high', '🔥'],
         [90, 'critical', '🚨'],
@@ -59,7 +59,7 @@ describe('level glyph', () => {
     it('labels each glyph slot with its range', () => {
         expect(getLevelGlyphSlots(item({ levelFromHigh: '60' }))).toEqual([
             { id: 'levelGlyphLow', label: 'Low (under 20%)', defaultSymbol: '🟢' },
-            { id: 'levelGlyphMedium', label: 'Medium (20-59%)', defaultSymbol: '⚡' },
+            { id: 'levelGlyphMedium', label: 'Medium (20-59%)', defaultSymbol: '⚡️' },
             { id: 'levelGlyphHigh', label: 'High (60-89%)', defaultSymbol: '🔥' },
             { id: 'levelGlyphCritical', label: 'Critical (90% and up)', defaultSymbol: '🚨' }
         ]);

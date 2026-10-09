@@ -24,7 +24,7 @@ export type LevelBreakPoint = Exclude<Level, 'low'>;
 export const LEVEL_BREAK_POINTS: readonly LevelBreakPoint[] = ['medium', 'high', 'critical'];
 
 const LEVEL_NAMES: Record<Level, string> = { low: 'Low', medium: 'Medium', high: 'High', critical: 'Critical' };
-const DEFAULT_GLYPHS: Record<Level, string> = { low: '🟢', medium: '⚡', high: '🔥', critical: '🚨' };
+const DEFAULT_GLYPHS: Record<Level, string> = { low: '🟢', medium: '⚡\uFE0F', high: '🔥', critical: '🚨' };
 const DEFAULT_BREAK_POINTS: Record<LevelBreakPoint, number> = { medium: 20, high: 70, critical: 90 };
 const GLYPH_KEYS: Record<Level, string> = { low: 'levelGlyphLow', medium: 'levelGlyphMedium', high: 'levelGlyphHigh', critical: 'levelGlyphCritical' };
 const BREAK_POINT_KEYS: Record<LevelBreakPoint, string> = { medium: 'levelFromMedium', high: 'levelFromHigh', critical: 'levelFromCritical' };
