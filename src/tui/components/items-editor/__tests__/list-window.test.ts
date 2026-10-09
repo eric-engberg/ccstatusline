@@ -5,6 +5,7 @@ import {
 } from 'vitest';
 
 import {
+    getDescriptionRows,
     getListWindow,
     getPickerMaxVisible
 } from '../list-window';
@@ -45,5 +46,36 @@ describe('getPickerMaxVisible', () => {
 
     it('falls back to ten entries when the terminal height is unknown', () => {
         expect(getPickerMaxVisible(undefined, 1)).toBe(10);
+    });
+
+    // The highlighted widget's description shows under the list, so a list
+    // holding a long one gives up rows for it
+    it('gives every description row past the first to the description', () => {
+        expect(getPickerMaxVisible(40, 1, 1)).toBe(23);
+        expect(getPickerMaxVisible(40, 1, 7)).toBe(17);
+        expect(getPickerMaxVisible(24, 1, 7)).toBe(3);
+    });
+});
+
+describe('getDescriptionRows', () => {
+    it('takes a row per line, wrapping long lines at word boundaries', () => {
+        expect(getDescriptionRows('Shows the model', 40)).toBe(1);
+        expect(getDescriptionRows('First line\nSecond line', 40)).toBe(2);
+        expect(getDescriptionRows('aaaa bbbb cccc', 9)).toBe(2);
+        expect(getDescriptionRows('aaaa bbbb cccc', 14)).toBe(1);
+        expect(getDescriptionRows('aaaa bbbb\ncc', 4)).toBe(3);
+    });
+
+    it('breaks a word wider than a row across rows', () => {
+        expect(getDescriptionRows('x'.repeat(25), 10)).toBe(3);
+        expect(getDescriptionRows(`a ${'x'.repeat(20)}`, 10)).toBe(3);
+    });
+
+    it('counts wide characters by the columns they take', () => {
+        expect(getDescriptionRows('日本語のテキスト', 8)).toBe(2);
+    });
+
+    it('takes a row per line when the width is unknown', () => {
+        expect(getDescriptionRows('one\ntwo\nthree', undefined)).toBe(3);
     });
 });
