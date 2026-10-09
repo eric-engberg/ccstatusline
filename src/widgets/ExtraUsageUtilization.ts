@@ -60,7 +60,6 @@ const VALUE_COLORS_EDITOR: ValueColorsEditorOptions = {
     label: LABEL
 };
 
-// Value colors apply to the plain percent; the bar modes have bar gradients
 // The usage API reports `utilization: null` until the first charge of the month,
 // while still reporting the amount spent and the monthly limit (both in cents).
 function getExtraUsageUtilization(data: RenderUsageData): number | undefined {
@@ -73,6 +72,7 @@ function getExtraUsageUtilization(data: RenderUsageData): number | undefined {
     return data.extraUsageUsed / data.extraUsageLimit * 100;
 }
 
+// Value colors apply to the plain percent; the bar modes have bar gradients
 function showsValueColors(item: WidgetItem): boolean {
     return isValueColorsEnabled(item) && !showsUsageBar(item);
 }
