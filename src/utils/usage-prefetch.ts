@@ -29,6 +29,7 @@ const BASE_USAGE_WIDGET_TYPES = [
     'extra-usage-utilization',
     'extra-usage-remaining',
     'extra-usage-used',
+    'extra-usage-daily-budget',
     'extra-usage-today'
 ];
 
@@ -76,6 +77,11 @@ const USAGE_WIDGET_REQUIREMENTS: Record<string, UsageFieldRequirement[]> = {
     ],
     'extra-usage-used': [
         { field: 'extraUsageEnabled' },
+        { field: 'extraUsageUsed' }
+    ],
+    'extra-usage-daily-budget': [
+        { field: 'extraUsageEnabled' },
+        { field: 'extraUsageLimit' },
         { field: 'extraUsageUsed' }
     ],
     'extra-usage-today': [
