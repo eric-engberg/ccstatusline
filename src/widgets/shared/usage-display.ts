@@ -220,6 +220,9 @@ export function toggleUsageWeekday(item: WidgetItem): WidgetItem {
 
 interface UsageDisplayModifierOptions {
     includeCompact?: boolean;
+    // Only for widgets that draw a time cursor: the cursor metadata outlives a
+    // type change in the widget picker
+    includeCursor?: boolean;
     includeDate?: boolean;
     // The percent widgets' level glyph. Without it, a glyph carried over from
     // one of them by a type change renders as the text mode, so it reads as that.
@@ -245,7 +248,7 @@ export function getUsageDisplayModifierText(
         modifiers.push('inverted');
     }
 
-    if (isUsageCursorEnabled(item) && (isUsageProgressMode(mode) || isUsageSliderMode(mode))) {
+    if (options.includeCursor && isUsageCursorEnabled(item) && (isUsageProgressMode(mode) || isUsageSliderMode(mode))) {
         modifiers.push('time cursor');
     }
 

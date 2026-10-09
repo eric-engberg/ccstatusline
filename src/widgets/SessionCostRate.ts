@@ -51,6 +51,7 @@ export class SessionCostRateWidget implements Widget {
     getDescription(): string { return 'Shows the session cost per hour, over the time Claude spent working or the whole session'; }
     getDisplayName(): string { return 'Session Cost Rate'; }
     getCategory(): string { return 'Session'; }
+    getLabelPrefix(): string { return LABEL; }
 
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         const valueColors = getValueColorsModifier(item);
