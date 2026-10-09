@@ -67,6 +67,7 @@ export { SessionUsageWidget } from './SessionUsage';
 export { SessionForecastWidget } from './SessionForecast';
 export { SessionLimitTimerWidget } from './SessionLimitTimer';
 export { WeeklyUsageWidget } from './WeeklyUsage';
+export { WeeklyLimitTimerWidget } from './WeeklyLimitTimer';
 export { ExtraUsageUtilizationWidget } from './ExtraUsageUtilization';
 export { ExtraUsageRemainingWidget } from './ExtraUsageRemaining';
 export { ExtraUsageDailyBudgetWidget } from './ExtraUsageDailyBudget';

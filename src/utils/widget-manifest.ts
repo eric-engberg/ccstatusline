@@ -88,6 +88,7 @@ export const WIDGET_MANIFEST: WidgetManifestEntry[] = [
     { type: 'session-forecast', create: () => new widgets.SessionForecastWidget() },
     { type: 'session-limit-timer', create: () => new widgets.SessionLimitTimerWidget() },
     { type: 'weekly-usage', create: () => new widgets.WeeklyUsageWidget() },
+    { type: 'weekly-limit-timer', create: () => new widgets.WeeklyLimitTimerWidget() },
     { type: 'extra-usage-utilization', create: () => new widgets.ExtraUsageUtilizationWidget() },
     { type: 'extra-usage-remaining', create: () => new widgets.ExtraUsageRemainingWidget() },
     { type: 'extra-usage-used', create: () => new widgets.ExtraUsageUsedWidget() },

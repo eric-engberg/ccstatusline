@@ -351,6 +351,28 @@ describe('usage prefetch', () => {
         ]);
     });
 
+    it('reads Weekly Limit Timer\'s data from rate_limits without fetching', async () => {
+        const lines = makeLines([{ id: '1', type: 'weekly-limit-timer' }]);
+
+        const usageData = await prefetchUsageDataIfNeeded(lines, { rate_limits: { seven_day: { used_percentage: 72, resets_at: 1776211200 } } });
+
+        expect(usageData).toEqual({ weeklyUsage: 72, weeklyResetAt: epochToIso(1776211200) });
+        expect(mockFetchUsageData.mock.calls.length).toBe(0);
+    });
+
+    it('fetches the weekly reset time Weekly Limit Timer needs and keeps quiet when that fails', async () => {
+        mockFetchUsageData.mockResolvedValue({ error: 'rate-limited' });
+
+        const lines = makeLines([{ id: '1', type: 'weekly-limit-timer' }]);
+
+        const usageData = await prefetchUsageDataIfNeeded(lines, { rate_limits: { seven_day: { used_percentage: 72 } } });
+
+        expect(usageData).toEqual({ weeklyUsage: 72 });
+        expect(mockFetchUsageData.mock.calls).toEqual([
+            [{ requiredFields: ['weeklyResetAt'] }]
+        ]);
+    });
+
     it('returns no usage data instead of a rate-limit error for reset-only startup fetches', async () => {
         mockFetchUsageData.mockResolvedValue({ error: 'rate-limited' });
 
