@@ -17,8 +17,8 @@ import {
 // that adding a model bucket can't desync one of these tables from the others.
 const BASE_USAGE_WIDGET_TYPES = [
     'session-usage',
-    'session-forecast',
-    'session-limit-timer',
+    'block-forecast',
+    'block-limit-timer',
     'weekly-usage',
     'weekly-limit-timer',
     'fable-weekly-limit-timer',
@@ -61,8 +61,8 @@ const USAGE_WIDGET_REQUIREMENTS: Record<string, UsageFieldRequirement[]> = {
     'session-usage': [{ field: 'sessionUsage' }],
     // The forecast widgets render nothing without data, so a failed fetch made only
     // for them isn't an error for the rest of the line.
-    'session-forecast': [{ field: 'sessionUsage', suppressFetchError: true }, { field: 'sessionResetAt', suppressFetchError: true }],
-    'session-limit-timer': [{ field: 'sessionUsage', suppressFetchError: true }, { field: 'sessionResetAt', suppressFetchError: true }],
+    'block-forecast': [{ field: 'sessionUsage', suppressFetchError: true }, { field: 'sessionResetAt', suppressFetchError: true }],
+    'block-limit-timer': [{ field: 'sessionUsage', suppressFetchError: true }, { field: 'sessionResetAt', suppressFetchError: true }],
     'weekly-limit-timer': [{ field: 'weeklyUsage', suppressFetchError: true }, { field: 'weeklyResetAt', suppressFetchError: true }],
     // Fable's window resets with the all-models one when the API sends no reset of its own
     'fable-weekly-limit-timer': [{ field: 'fableUsage', suppressFetchError: true }, { field: 'fableResetAt', alternatives: ['weeklyResetAt'], suppressFetchError: true }],

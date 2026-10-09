@@ -40,8 +40,8 @@ describe('widget catalog', () => {
         const totalSpeed = catalog.find(entry => entry.type === 'total-speed');
         const resetTimer = catalog.find(entry => entry.type === 'reset-timer');
         const weeklyResetTimer = catalog.find(entry => entry.type === 'weekly-reset-timer');
-        const sessionForecast = catalog.find(entry => entry.type === 'session-forecast');
-        const sessionLimitTimer = catalog.find(entry => entry.type === 'session-limit-timer');
+        const sessionForecast = catalog.find(entry => entry.type === 'block-forecast');
+        const sessionLimitTimer = catalog.find(entry => entry.type === 'block-limit-timer');
         const weeklyLimitTimer = catalog.find(entry => entry.type === 'weekly-limit-timer');
         const fableWeeklyLimitTimer = catalog.find(entry => entry.type === 'fable-weekly-limit-timer');
 
@@ -65,9 +65,9 @@ describe('widget catalog', () => {
         expect(resetTimer?.category).toBe('Usage');
         expect(weeklyResetTimer?.displayName).toBe('Weekly Reset Timer');
         expect(weeklyResetTimer?.category).toBe('Usage');
-        expect(sessionForecast?.displayName).toBe('Session Forecast');
+        expect(sessionForecast?.displayName).toBe('Block Forecast');
         expect(sessionForecast?.category).toBe('Usage');
-        expect(sessionLimitTimer?.displayName).toBe('Session Limit Timer');
+        expect(sessionLimitTimer?.displayName).toBe('Block Limit Timer');
         expect(sessionLimitTimer?.category).toBe('Usage');
         expect(weeklyLimitTimer?.displayName).toBe('Weekly Limit Timer');
         expect(weeklyLimitTimer?.category).toBe('Usage');
