@@ -38,7 +38,6 @@ import {
     getUsageDisplayModifierText,
     getUsagePercentCustomKeybinds,
     isUsageInverted,
-    showsPlainUsageValue,
     toggleUsageInverted
 } from './shared/usage-display';
 import {
@@ -77,10 +76,10 @@ function getExtraUsageUtilization(data: RenderUsageData): number | undefined {
     return data.extraUsageUsed / data.extraUsageLimit * 100;
 }
 
-// Value colors apply to the plain percent; the bar modes have bar gradients,
-// and the level glyph has no number to color
+// Value colors apply to the percent and to a bar; the level glyph has no
+// number to color
 function showsValueColors(item: WidgetItem): boolean {
-    return isValueColorsEnabled(item) && showsPlainUsageValue(item);
+    return isValueColorsEnabled(item) && !isLevelGlyphMode(item);
 }
 
 // The bar, the level glyph, or the percent in its value color. The glyph and
@@ -92,13 +91,10 @@ function formatUsedPercent(item: WidgetItem, label: string, usedPercent: number,
     const format = resolveNumberFormat('percent', item, settings);
     const renderedPercent = isUsageInverted(item) ? 100 - usedPercent : usedPercent;
 
+    // Value colors give a bar, and the percent after it, its level's color
     const bar = formatUsageBar(item, renderedPercent, format, settings, context);
-    if (bar !== null) {
-        return formatRawOrLabeledValue(item, label, bar);
-    }
-
     const formatOptions = getValueFormatOptions(settings);
-    return formatColoredValue(item, label, formatPercent(renderedPercent, format), usedPercent, LIMIT_SCALE, formatOptions);
+    return formatColoredValue(item, label, bar ?? formatPercent(renderedPercent, format), usedPercent, LIMIT_SCALE, formatOptions);
 }
 
 export class ExtraUsageUtilizationWidget implements Widget {
@@ -114,7 +110,7 @@ export class ExtraUsageUtilizationWidget implements Widget {
             modifierText: getUsageDisplayModifierText(item, {
                 includeGlyph: true,
                 showUsageDirection: true,
-                extraModifiers: [showsPlainUsageValue(item) ? getValueColorsModifier(item) : null].filter((modifier): modifier is string => modifier !== null)
+                extraModifiers: [getValueColorsModifier(item)].filter((modifier): modifier is string => modifier !== null)
             })
         };
     }
@@ -166,7 +162,7 @@ export class ExtraUsageUtilizationWidget implements Widget {
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
         const keybinds = getUsagePercentCustomKeybinds(item, false);
-        return withValueColorsKeybind(keybinds, item === undefined || showsPlainUsageValue(item));
+        return withValueColorsKeybind(keybinds, item === undefined || !isLevelGlyphMode(item));
     }
 
     // The level glyph's glyph and break point editors, or the value colors

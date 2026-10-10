@@ -9,6 +9,7 @@ import { getColorAnsiCode } from '../../utils/colors';
 import { paintCode } from './foreground';
 import {
     BAR_GRADIENT_PRESETS,
+    clearGradientPreset,
     gradientPresetCodeAt,
     isBarGradientPreset,
     type BarGradientPreset
@@ -18,6 +19,10 @@ import {
     setMetadataValue
 } from './metadata';
 import { getLabel } from './raw-or-labeled';
+import {
+    isValueColorsEnabled,
+    setValueColorsFlag
+} from './value-colors-flag';
 import {
     DOLLARS_PER_HOUR_UNIT,
     PERCENT_UNIT,
@@ -32,7 +37,6 @@ import {
 // Values are percents, e.g. of a budget or a limit, or amounts in a scale's own
 // unit, e.g. dollars. Every option stores nothing while at its default, so a
 // widget nobody has customized keeps an empty metadata object.
-const VALUE_COLORS_KEY = 'valueColors';
 const MODE_KEY = 'valueColorMode';
 const GRADIENT_KEY = 'valueGradient';
 const GRADIENT_END_KEY = 'valueGradientEnd';
@@ -88,12 +92,13 @@ export function getScaleUnit(scale: ValueColorScale): ValueUnit {
     return scale.unit ?? PERCENT_UNIT;
 }
 
-export function isValueColorsEnabled(item: WidgetItem): boolean {
-    return item.metadata?.[VALUE_COLORS_KEY] === 'true';
-}
+export { isValueColorsEnabled };
 
+// On a bar, value colors replace the bar gradient: one color for the bar's
+// level rather than one per cell, so turning them on clears it
 export function setValueColorsEnabled(item: WidgetItem, enabled: boolean): WidgetItem {
-    return setMetadataValue(item, VALUE_COLORS_KEY, enabled ? 'true' : null);
+    const flagged = setValueColorsFlag(item, enabled);
+    return enabled ? clearGradientPreset(flagged) : flagged;
 }
 
 export function getValueColorMode(item: WidgetItem): ValueColorMode {

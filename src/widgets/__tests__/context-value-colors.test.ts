@@ -49,14 +49,43 @@ describe.each([
         expect(render({ ...colored, metadata: { ...BAND_COLORS, inverse: 'true' } }, { isPreview: true })).toBe(`${HIGH}10.0%${FG_RESET}`);
     });
 
-    it('leaves the slider and level glyph modes as they were, without (v)', () => {
-        for (const display of ['slider', 'glyph']) {
-            const item = { ...colored, metadata: { ...BAND_COLORS, display } };
+    // The slider takes one color for its level, the percent after it too
+    it('colors the whole slider and its percent by how much is used, even when showing what\'s left', () => {
+        const slider = { ...colored, metadata: { ...BAND_COLORS, display: 'slider' } };
+        const output = render(slider, { isPreview: true }) ?? '';
 
-            expect(render(item, { isPreview: true })).not.toContain(HIGH);
-            expect(widget?.getCustomKeybinds?.(item).map(keybind => keybind.key)).not.toContain('v');
-            expect(widget?.colorsOnlyItsRuns?.(item)).toBe(false);
-        }
+        expect(output.startsWith(HIGH)).toBe(true);
+        expect(output.endsWith(` 90.0%${FG_RESET}`)).toBe(true);
+        expect(output.slice(HIGH.length, -FG_RESET.length)).not.toContain('\x1b');
+        expect(render({ ...slider, metadata: { ...slider.metadata, inverse: 'true' } }, { isPreview: true })?.endsWith(` 10.0%${FG_RESET}`)).toBe(true);
+        expect(widget?.getCustomKeybinds?.(slider).map(keybind => keybind.key)).toContain('v');
+        expect(widget?.colorsOnlyItsRuns?.(slider)).toBe(true);
+        expect(widget?.getEditorDisplay(slider).modifierText).toContain('value colors');
+    });
+
+    // A bar gradient colors each cell by where it sits, value colors the whole
+    // slider by its level, so only one of them is on at a time
+    it('sets a saved bar gradient aside, and (g) turns value colors off', () => {
+        const slider = { ...colored, metadata: { ...BAND_COLORS, display: 'slider' } };
+        const both = { ...slider, metadata: { ...slider.metadata, gradient: 'thermal' } };
+        const output = widget?.render(both, { isPreview: true }, { ...DEFAULT_SETTINGS, colorLevel: 3 }) ?? '';
+
+        expect(output.startsWith(HIGH)).toBe(true);
+        expect(output.slice(HIGH.length, -FG_RESET.length)).not.toContain('\x1b');
+        expect(widget?.getEditorDisplay(both).modifierText).not.toContain('gradient:');
+
+        const withGradient = widget?.handleEditorAction?.('cycle-gradient', slider);
+        expect(withGradient?.metadata?.gradient).toBe('traffic');
+        expect(withGradient?.metadata?.valueColors).toBeUndefined();
+    });
+
+    // The level glyph has no number to color
+    it('leaves the level glyph mode as it was, without (v)', () => {
+        const glyph = { ...colored, metadata: { ...BAND_COLORS, display: 'glyph' } };
+
+        expect(render(glyph, { isPreview: true })).not.toContain(HIGH);
+        expect(widget?.getCustomKeybinds?.(glyph).map(keybind => keybind.key)).not.toContain('v');
+        expect(widget?.colorsOnlyItsRuns?.(glyph)).toBe(false);
     });
 
     it('offers (v), names it on the editor row, opens its editor and colors around its value', () => {
