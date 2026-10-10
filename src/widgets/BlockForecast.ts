@@ -1,9 +1,12 @@
+import type React from 'react';
+
 import type { RenderContext } from '../types/RenderContext';
 import type { Settings } from '../types/Settings';
 import type {
     CustomKeybind,
     Widget,
     WidgetEditorDisplay,
+    WidgetEditorProps,
     WidgetItem
 } from '../types/Widget';
 import {
@@ -11,20 +14,31 @@ import {
     resolveNumberFormat
 } from '../utils/number-format';
 
-import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
 import {
     getUsageDirectionKeybind,
     getUsageDisplayModifierText,
     isUsageInverted,
     toggleUsageInverted
 } from './shared/usage-display';
+import {
+    LIMIT_SCALE,
+    formatColoredValue,
+    getValueColorsModifier,
+    getValueFormatOptions,
+    isValueColorsEnabled
+} from './shared/value-coloring';
+import {
+    renderValueColorsEditor,
+    withValueColorsKeybind
+} from './shared/value-colors-editor';
 
 const LABEL = '→';
+const DEFAULT_COLOR = 'brightBlue';
 // On pace for the limit, so the preview reads with Block Limit Timer's
 const PREVIEW_PROJECTED_PERCENT = 100;
 
 export class BlockForecastWidget implements Widget {
-    getDefaultColor(): string { return 'brightBlue'; }
+    getDefaultColor(): string { return DEFAULT_COLOR; }
     getDescription(): string { return 'Projected usage of the 5-hour block at its reset, from the recent pace; hidden until there\'s a forecast'; }
     getDisplayName(): string { return 'Block Forecast'; }
     getCategory(): string { return 'Usage'; }
@@ -33,7 +47,10 @@ export class BlockForecastWidget implements Widget {
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         return {
             displayText: this.getDisplayName(),
-            modifierText: getUsageDisplayModifierText(item, { showUsageDirection: true })
+            modifierText: getUsageDisplayModifierText(item, {
+                showUsageDirection: true,
+                extraModifiers: [getValueColorsModifier(item)].filter((modifier): modifier is string => modifier !== null)
+            })
         };
     }
 
@@ -45,9 +62,12 @@ export class BlockForecastWidget implements Widget {
         const format = resolveNumberFormat('percent', item, settings);
         const inverted = isUsageInverted(item);
         const shown = (usedPercent: number): string => formatPercent(inverted ? 100 - usedPercent : usedPercent, format);
+        // Value colors follow the projected used percent, even while the widget
+        // shows what would be left
+        const formatOptions = getValueFormatOptions(settings);
 
         if (context.isPreview) {
-            return formatRawOrLabeledValue(item, LABEL, shown(PREVIEW_PROJECTED_PERCENT));
+            return formatColoredValue(item, LABEL, shown(PREVIEW_PROJECTED_PERCENT), PREVIEW_PROJECTED_PERCENT, LIMIT_SCALE, formatOptions);
         }
 
         const forecast = context.sessionForecast;
@@ -62,11 +82,31 @@ export class BlockForecastWidget implements Widget {
             return null;
         }
 
-        return formatRawOrLabeledValue(item, LABEL, projected);
+        return formatColoredValue(item, LABEL, projected, forecast.projectedPercent, LIMIT_SCALE, formatOptions);
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
-        return [getUsageDirectionKeybind(item)];
+        return withValueColorsKeybind([getUsageDirectionKeybind(item)], true);
+    }
+
+    // The value colors editor, whose sample shows what's left while the widget does
+    renderEditor(props: WidgetEditorProps): React.ReactElement {
+        const showsRemaining = isUsageInverted(props.widget);
+        return renderValueColorsEditor(props, {
+            title: `${this.getDisplayName()}: value colors`,
+            scale: LIMIT_SCALE,
+            sampleNote: showsRemaining ? 'left' : 'used',
+            defaultColor: DEFAULT_COLOR,
+            maxPercent: 100,
+            label: LABEL,
+            showsRemaining
+        });
+    }
+
+    // Value colors paint only the value (or the whole text), so the renderer
+    // colors the rest with the theme or widget color
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
+        return isValueColorsEnabled(item);
     }
 
     supportsRawValue(): boolean { return true; }
