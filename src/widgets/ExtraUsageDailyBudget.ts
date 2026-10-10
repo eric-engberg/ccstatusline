@@ -11,23 +11,19 @@ import { resolveNumberFormat } from '../utils/number-format';
 import { getUsageErrorMessage } from '../utils/usage';
 
 import { formatUsageCurrency } from './shared/currency';
-import { countBudgetDaysLeft } from './shared/daily-budget';
+import {
+    TOGGLE_WEEKDAYS_ACTION,
+    countBudgetDaysLeft,
+    getWeekdaysKeybind,
+    isWeekdaysOnly,
+    toggleWeekdaysOnly
+} from './shared/daily-budget';
 import { EXTRA_USAGE_DISABLED_HIDEABLE_STATE } from './shared/extra-usage-disabled';
 import { isHidden } from './shared/hideable';
-import {
-    isMetadataFlagEnabled,
-    toggleMetadataFlag
-} from './shared/metadata';
 import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
 import { USAGE_NO_DATA_HIDEABLE_STATE } from './shared/usage-display';
 
 const LABEL = 'Daily Budget: ';
-const WEEKDAYS_ONLY_KEY = 'weekdaysOnly';
-const TOGGLE_WEEKDAYS_ACTION = 'toggle-weekdays';
-
-function isWeekdaysOnly(item: WidgetItem): boolean {
-    return isMetadataFlagEnabled(item, WEEKDAYS_ONLY_KEY);
-}
 
 export class ExtraUsageDailyBudgetWidget implements Widget {
     getDefaultColor(): string { return 'green'; }
@@ -44,12 +40,11 @@ export class ExtraUsageDailyBudgetWidget implements Widget {
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
-        const label = item && isWeekdaysOnly(item) ? '(w) count weekends' : '(w)eekdays only';
-        return [{ key: 'w', label, action: TOGGLE_WEEKDAYS_ACTION }];
+        return [getWeekdaysKeybind(item)];
     }
 
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
-        return action === TOGGLE_WEEKDAYS_ACTION ? toggleMetadataFlag(item, WEEKDAYS_ONLY_KEY) : null;
+        return action === TOGGLE_WEEKDAYS_ACTION ? toggleWeekdaysOnly(item) : null;
     }
 
     getHideableStates(): HideableState[] {

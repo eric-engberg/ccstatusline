@@ -1,4 +1,16 @@
+import type {
+    CustomKeybind,
+    WidgetItem
+} from '../../types/Widget';
+
+import {
+    isMetadataFlagEnabled,
+    toggleMetadataFlag
+} from './metadata';
+
 const DAY_MS = 24 * 60 * 60 * 1000;
+const WEEKDAYS_ONLY_KEY = 'weekdaysOnly';
+export const TOGGLE_WEEKDAYS_ACTION = 'toggle-weekdays';
 
 function isWeekday(dateMs: number): boolean {
     const day = new Date(dateMs).getUTCDay();
@@ -21,4 +33,18 @@ export function countBudgetDaysLeft(nowMs: number, weekdaysOnly: boolean): numbe
         }
     }
     return days;
+}
+
+// The (w) toggle for widgets that spread the budget over weekdays only
+export function isWeekdaysOnly(item: WidgetItem): boolean {
+    return isMetadataFlagEnabled(item, WEEKDAYS_ONLY_KEY);
+}
+
+export function toggleWeekdaysOnly(item: WidgetItem): WidgetItem {
+    return toggleMetadataFlag(item, WEEKDAYS_ONLY_KEY);
+}
+
+export function getWeekdaysKeybind(item: WidgetItem | undefined): CustomKeybind {
+    const label = item && isWeekdaysOnly(item) ? '(w) count weekends' : '(w)eekdays only';
+    return { key: 'w', label, action: TOGGLE_WEEKDAYS_ACTION };
 }

@@ -5,6 +5,7 @@ import { ExtraUsageAmountWidget } from './shared/extra-usage-amount-widget';
 export class ExtraUsageUsedWidget extends ExtraUsageAmountWidget {
     protected readonly label = 'Overage Used: ';
     protected readonly previewDollars = 106;
+    protected override readonly valueColors = { title: 'Extra Usage Used: value colors', sampleNote: 'of the limit' };
 
     getDescription(): string { return 'Shows extra usage spent: overage beyond Pro/Max plan limits, or your spend on Enterprise'; }
     getDisplayName(): string { return 'Extra Usage Used'; }

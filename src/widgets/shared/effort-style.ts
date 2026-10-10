@@ -1,8 +1,8 @@
 import type { ColorLevelString } from '../../types/ColorLevel';
 import type { WidgetItem } from '../../types/Widget';
-import { getColorAnsiCode } from '../../utils/colors';
 import type { TranscriptThinkingEffort } from '../../utils/jsonl-metadata';
 
+import { paintForeground } from './foreground';
 import {
     removeMetadataKeys,
     setMetadataValue
@@ -109,10 +109,7 @@ export function formatThinkingEffort(item: WidgetItem, effort: EffortDisplay, op
     // Only the level's runs are painted, each ending with the default-foreground
     // code; the renderer colors the label, unknown levels and widget-colored
     // brackets with the widget color (Widget.colorsOnlyItsRuns)
-    const paint = (text: string, color: string | null): string => {
-        const code = color ? getColorAnsiCode(color, options.colorLevel) : '';
-        return text && code ? `${code}${text}\x1b[39m` : text;
-    };
+    const paint = (text: string, color: string | null): string => (color ? paintForeground(text, color, options.colorLevel) : text);
     const valueColor = effort.level ? getLevelColor(item, effort.level, options.colorLevel) : null;
     const bracketColor = getBracketColorMode(item) === 'effort' ? valueColor : null;
 

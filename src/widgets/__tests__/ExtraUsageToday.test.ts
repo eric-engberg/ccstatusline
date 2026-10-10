@@ -12,6 +12,9 @@ import { DEFAULT_SETTINGS } from '../../types/Settings';
 import type { WidgetItem } from '../../types/Widget';
 import * as usage from '../../utils/usage';
 import { ExtraUsageTodayWidget } from '../ExtraUsageToday';
+import { gradientPresetCodeAt } from '../shared/gradient-bar';
+
+import { describeValueColorsOnTheLine } from './helpers/value-colors-line';
 
 let mockGetUsageErrorMessage: { mockReturnValue: (value: string) => void };
 
@@ -85,5 +88,130 @@ describe('ExtraUsageTodayWidget', () => {
 
         expect(widget.getHideableStates().map(state => state.key)).toEqual(['disabled', 'no-data']);
         expect(widget.getCategory()).toBe('Usage');
+    });
+
+    describe('value colors', () => {
+        const LOW = '\x1b[38;2;0;255;0m';
+        const MID = '\x1b[38;2;255;255;0m';
+        const HIGH = '\x1b[38;2;255;0;0m';
+        const FG_RESET = '\x1b[39m';
+        // Custom colors, so the escape codes don't depend on the terminal's
+        // color support (named colors go through chalk)
+        const colored: WidgetItem = {
+            ...item,
+            rawValue: true,
+            color: 'hex:112233',
+            metadata: {
+                'valueColors': 'true',
+                'valueColor.low': 'hex:00ff00',
+                'valueColor.mid': 'hex:ffff00',
+                'valueColor.high': 'hex:ff0000'
+            }
+        };
+        const weekdays: WidgetItem = { ...colored, metadata: { ...colored.metadata, weekdaysOnly: 'true' } };
+
+        // $100.00 spent before today, so $270.00 of the $370.00 limit was left
+        // when the day began: $10.00 a day over the month's 27 days left, or
+        // $13.50 over its 20 weekdays.
+        function spentToday(cents: number, limit = 37000): RenderContext {
+            return { usageData: { extraUsageEnabled: true, extraUsageLimit: limit, extraUsageUsed: 10000 + cents, extraUsageUsedToday: cents } };
+        }
+
+        beforeEach(() => {
+            // Monday 5 October 2026
+            vi.spyOn(Date, 'now').mockReturnValue(new Date('2026-10-05T15:00:00Z').getTime());
+        });
+
+        it('colors today\'s spend green below 80% of the day\'s budget, yellow up to it and red above it', () => {
+            expect(render(colored, spentToday(799))).toBe(`${LOW}$7.99${FG_RESET}`);
+            expect(render(colored, spentToday(800))).toBe(`${MID}$8.00${FG_RESET}`);
+            expect(render(colored, spentToday(1000))).toBe(`${MID}$10.00${FG_RESET}`);
+            expect(render(colored, spentToday(1001))).toBe(`${HIGH}$10.01${FG_RESET}`);
+        });
+
+        it('colors only the spend, leaving the label to the renderer', () => {
+            expect(render({ ...colored, rawValue: false }, spentToday(500))).toBe(`Overage Today: ${LOW}$5.00${FG_RESET}`);
+        });
+
+        it('spreads the budget over weekdays when that option is on', () => {
+            // $10.00 is 74% of a $13.50 weekday budget
+            expect(render(weekdays, spentToday(1000))).toBe(`${LOW}$10.00${FG_RESET}`);
+            expect(render(weekdays, spentToday(1080))).toBe(`${MID}$10.80${FG_RESET}`);
+        });
+
+        it('is red when nothing was left of the limit as the day began', () => {
+            expect(render(colored, spentToday(0, 10000))).toBe(`${HIGH}$0.00${FG_RESET}`);
+            expect(render(colored, spentToday(0, 9000))).toBe(`${HIGH}$0.00${FG_RESET}`);
+        });
+
+        it('leaves the spend to the renderer without a monthly limit to budget from', () => {
+            const context = { usageData: { extraUsageEnabled: true, extraUsageUsed: 10500, extraUsageUsedToday: 500 } };
+
+            expect(render(colored, context)).toBe('$5.00');
+        });
+
+        it('still renders nothing while today\'s spend is not known yet', () => {
+            expect(render(colored, { usageData: { extraUsageEnabled: true, extraUsageLimit: 37000, extraUsageUsed: 10000 } })).toBeNull();
+        });
+
+        it('places the spend along a gradient at 256 colors and up, and keeps the widget color at 16', () => {
+            const widget = new ExtraUsageTodayWidget();
+            const gradient = { ...colored, metadata: { ...colored.metadata, valueColorMode: 'gradient' } };
+
+            expect(widget.render(gradient, spentToday(500), { ...DEFAULT_SETTINGS, colorLevel: 3 })).toBe(`${gradientPresetCodeAt('traffic', 0.5, 'truecolor')}$5.00${FG_RESET}`);
+            expect(widget.render(gradient, spentToday(500), { ...DEFAULT_SETTINGS, colorLevel: 2 })).toBe(`${gradientPresetCodeAt('traffic', 0.5, 'ansi256')}$5.00${FG_RESET}`);
+            expect(widget.render(gradient, spentToday(500), { ...DEFAULT_SETTINGS, colorLevel: 1 })).toBe('$5.00');
+        });
+
+        it('renders plain text when colors are off for the whole status line', () => {
+            expect(new ExtraUsageTodayWidget().render(colored, spentToday(1001), { ...DEFAULT_SETTINGS, colorLevel: 0 })).toBe('$10.01');
+        });
+
+        // The sample is $46.10 of Daily Budget's $194.70 sample
+        it('previews its sample in its color', () => {
+            expect(render({ ...colored, rawValue: false }, { isPreview: true })).toBe(`Overage Today: ${LOW}$46.10${FG_RESET}`);
+        });
+
+        it('offers value colors, and the weekdays toggle once they\'re on', () => {
+            const widget = new ExtraUsageTodayWidget();
+
+            expect(widget.getCustomKeybinds(item)).toEqual([{ key: 'v', label: '(v)alue colors', action: 'edit-value-colors' }]);
+            expect(widget.getCustomKeybinds(colored)).toEqual([
+                { key: 'v', label: '(v)alue colors', action: 'edit-value-colors' },
+                { key: 'w', label: '(w)eekdays only', action: 'toggle-weekdays' }
+            ]);
+            expect(widget.handleEditorAction('toggle-weekdays', colored)?.metadata?.weekdaysOnly).toBe('true');
+            expect(widget.handleEditorAction('edit-value-colors', colored)).toBeNull();
+            expect(widget.renderEditor({ widget: colored, onComplete: () => undefined, onCancel: () => undefined })).toBeTruthy();
+        });
+
+        it('names the options on the editor row', () => {
+            const widget = new ExtraUsageTodayWidget();
+
+            expect(widget.getEditorDisplay(item).modifierText).toBeUndefined();
+            expect(widget.getEditorDisplay({ ...item, metadata: { weekdaysOnly: 'true' } }).modifierText).toBeUndefined();
+            expect(widget.getEditorDisplay(colored).modifierText).toBe('(value colors)');
+            expect(widget.getEditorDisplay({ ...weekdays, metadata: { ...weekdays.metadata, valueColorMode: 'gradient' } }).modifierText).toBe('(value colors: traffic gradient, weekdays)');
+        });
+
+        it('asks the renderer to color around its value only while value colors are on', () => {
+            const widget = new ExtraUsageTodayWidget();
+
+            expect(widget.colorsOnlyItsRuns(colored)).toBe(true);
+            expect(widget.colorsOnlyItsRuns(item)).toBe(false);
+        });
+
+        describeValueColorsOnTheLine({
+            item: { ...item, metadata: colored.metadata },
+            context: spentToday(500),
+            label: 'Overage Today: ',
+            value: '$5.00',
+            valueCode: LOW,
+            fallbacks: [
+                { context: { usageData: { extraUsageEnabled: true, extraUsageUsed: 10500, extraUsageUsedToday: 500 } }, text: 'Overage Today: $5.00' },
+                { context: { usageData: { extraUsageEnabled: false } }, text: 'Overage Today: n/a' },
+                { context: { usageData: { error: 'timeout' } }, text: '[Timeout]' }
+            ]
+        });
     });
 });
