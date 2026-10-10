@@ -1,9 +1,12 @@
+import type React from 'react';
+
 import type { RenderContext } from '../types/RenderContext';
 import type { Settings } from '../types/Settings';
 import type {
     CustomKeybind,
     Widget,
     WidgetEditorDisplay,
+    WidgetEditorProps,
     WidgetItem
 } from '../types/Widget';
 import {
@@ -11,13 +14,26 @@ import {
     resolveNumberFormat
 } from '../utils/number-format';
 
+import { makeModifierText } from './shared/editor-display';
 import {
     isMetadataFlagEnabled,
     toggleMetadataFlag
 } from './shared/metadata';
-import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
+import {
+    COST_RATE_SCALE,
+    formatColoredValue,
+    getValueColorsModifier,
+    getValueFormatOptions,
+    isValueColorsEnabled
+} from './shared/value-coloring';
+import {
+    VALUE_COLORS_KEYBIND,
+    renderValueColorsEditor
+} from './shared/value-colors-editor';
 
 const LABEL = 'Rate Today: ';
+const DEFAULT_COLOR = 'green';
+const PREVIEW_RATE = 6.2;
 const CLOCK_TIME_KEY = 'clockTime';
 const BILLED_SPEND_KEY = 'billedSpend';
 const TOGGLE_CLOCK_TIME_ACTION = 'toggle-clock-time';
@@ -48,7 +64,7 @@ function getTodaysCost(item: WidgetItem, context: RenderContext, claudeCodeCost:
 }
 
 export class DailyCostRateWidget implements Widget {
-    getDefaultColor(): string { return 'green'; }
+    getDefaultColor(): string { return DEFAULT_COLOR; }
     getDescription(): string { return 'Shows today\'s cost per hour across all of today\'s Claude Code sessions, from Claude Code\'s costs or billed spend'; }
     getDisplayName(): string { return 'Daily Cost Rate'; }
     getCategory(): string { return 'Session'; }
@@ -57,7 +73,8 @@ export class DailyCostRateWidget implements Widget {
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         const time = isClockTime(item) ? 'clock time' : 'active time';
         const cost = isBilledSpend(item) ? 'billed spend' : 'Claude Code cost';
-        return { displayText: this.getDisplayName(), modifierText: `(${time}, ${cost})` };
+        const valueColors = getValueColorsModifier(item);
+        return { displayText: this.getDisplayName(), modifierText: makeModifierText(valueColors ? [time, cost, valueColors] : [time, cost]) };
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
@@ -65,7 +82,8 @@ export class DailyCostRateWidget implements Widget {
         const costLabel = item && isBilledSpend(item) ? '(b) Claude Code cost' : '(b)illed spend';
         return [
             { key: 't', label: timeLabel, action: TOGGLE_CLOCK_TIME_ACTION },
-            { key: 'b', label: costLabel, action: TOGGLE_BILLED_SPEND_ACTION }
+            { key: 'b', label: costLabel, action: TOGGLE_BILLED_SPEND_ACTION },
+            VALUE_COLORS_KEYBIND
         ];
     }
 
@@ -79,10 +97,27 @@ export class DailyCostRateWidget implements Widget {
         return null;
     }
 
+    renderEditor(props: WidgetEditorProps): React.ReactElement {
+        return renderValueColorsEditor(props, {
+            title: `${this.getDisplayName()}: value colors`,
+            scale: COST_RATE_SCALE,
+            sampleNote: 'over today',
+            defaultColor: DEFAULT_COLOR,
+            label: LABEL
+        });
+    }
+
+    // Value colors paint only the value (or the whole text), so the renderer
+    // colors the rest with the theme or widget color
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
+        return isValueColorsEnabled(item);
+    }
+
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
         const format = resolveNumberFormat('cost', item, settings);
+        const formatOptions = getValueFormatOptions(settings);
         if (context.isPreview) {
-            return formatRawOrLabeledValue(item, LABEL, `${formatCost(6.2, format)}/hr`);
+            return formatColoredValue(item, LABEL, `${formatCost(PREVIEW_RATE, format)}/hr`, PREVIEW_RATE, COST_RATE_SCALE, formatOptions);
         }
 
         const totals = context.dailyCost;
@@ -96,7 +131,8 @@ export class DailyCostRateWidget implements Widget {
             return null;
         }
 
-        return formatRawOrLabeledValue(item, LABEL, `${formatCost(cost / (durationMs / HOUR_MS), format)}/hr`);
+        const perHour = cost / (durationMs / HOUR_MS);
+        return formatColoredValue(item, LABEL, `${formatCost(perHour, format)}/hr`, perHour, COST_RATE_SCALE, formatOptions);
     }
 
     supportsRawValue(): boolean { return true; }
