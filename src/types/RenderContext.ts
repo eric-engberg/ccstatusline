@@ -4,6 +4,7 @@ import type {
 } from '../types';
 import type { DailyCostTotals } from '../utils/daily-cost';
 
+import type { SessionForecast } from './SessionForecast';
 import type { SpeedMetrics } from './SpeedMetrics';
 import type { StatusJSON } from './StatusJSON';
 import type { TokenMetrics } from './TokenMetrics';
@@ -52,6 +53,7 @@ export interface RenderContext {
     windowedSpeedMetrics?: Record<string, SpeedMetrics> | null;
     usageData?: RenderUsageData | null;
     dailyCost?: DailyCostTotals | null;
+    sessionForecast?: SessionForecast | null;
     claudeStatusData?: ClaudeStatusRenderData | null;
     sessionDuration?: string | null;
     transcriptSessionName?: string | null;

@@ -37,6 +37,7 @@ import {
     preRenderAllWidgets,
     renderStatusLine
 } from './utils/renderer';
+import { computeSessionForecastIfNeeded } from './utils/session-forecast-prefetch';
 import { getSkillsMetrics } from './utils/skills';
 import {
     getWidgetSpeedWindowSeconds,
@@ -136,6 +137,7 @@ async function renderMultipleLines(data: StatusJSON) {
         prefetchUsageDataIfNeeded(lines, data),
         prefetchClaudeStatusIfNeeded(lines)
     ]);
+    const sessionForecast = computeSessionForecastIfNeeded(lines, usageData);
 
     const dailyCost = prefetchDailyCostIfNeeded(lines, data);
     const tokenMetrics = transcriptAnalysis?.tokenMetrics ?? null;
@@ -160,6 +162,7 @@ async function renderMultipleLines(data: StatusJSON) {
         windowedSpeedMetrics,
         usageData,
         dailyCost,
+        sessionForecast,
         claudeStatusData,
         sessionDuration,
         transcriptSessionName: hasSessionNameWidget
