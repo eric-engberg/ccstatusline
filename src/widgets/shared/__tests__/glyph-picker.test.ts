@@ -6,12 +6,14 @@ import {
     vi
 } from 'vitest';
 
+import { LabelEditor } from '../../../tui/components/LabelEditor';
 import type { SkinTone } from '../../../types/SkinTone';
 import type {
     WidgetEditorProps,
     WidgetItem
 } from '../../../types/Widget';
 import { CustomSymbolWidget } from '../../CustomSymbol';
+import { CustomTextWidget } from '../../CustomText';
 import { createGlyphCatalog } from '../glyph-catalog';
 import { GLYPH_GROUPS } from '../glyph-groups';
 import { SkinToneContext } from '../skin-tone';
@@ -24,6 +26,7 @@ import {
     DOWN,
     ENTER,
     ESC,
+    LEFT,
     RIGHT,
     renderWidgetEditor
 } from './helpers/widget-editor-harness';
@@ -38,6 +41,8 @@ const cwd: WidgetItem = { id: 'cwd', type: 'current-working-dir' };
 const singleGlyphEditor = (props: WidgetEditorProps) => renderSymbolOverrideEditor(props, '');
 const customSymbolEditor = (props: WidgetEditorProps) => new CustomSymbolWidget().renderEditor(props);
 const customSymbol: WidgetItem = { id: 'symbol', type: 'custom-symbol' };
+const labelEditor = (props: WidgetEditorProps) => React.createElement(LabelEditor, { ...props, defaultLabel: 'Model: ' });
+const customTextEditor = (props: WidgetEditorProps) => new CustomTextWidget().renderEditor(props);
 
 // The curated groups, with skin tones added to their emoji
 const groups = createGlyphCatalog().groups;
@@ -491,6 +496,65 @@ describe('glyph picker', () => {
                 const output = await openPicker(editor);
                 expect(output).toContain(groupHeader(groupIndex));
                 expect(output).toContain(entry?.name);
+            } finally {
+                editor.cleanup();
+            }
+        });
+    });
+
+    describe('the label and Custom Text editors', () => {
+        it('opens with ↓ in the label editor and inserts the pick at the cursor', async () => {
+            const editor = renderWidgetEditor(labelEditor, { id: 'model', type: 'model' });
+
+            try {
+                await editor.ready();
+                expect(editor.takeOutput()).toContain('↓ pick a glyph');
+                // To the start of "Model: "
+                await editor.press(...Array.from({ length: 7 }, () => LEFT));
+                await editor.press(DOWN);
+                await waitForOutput(editor, 'Pick a glyph');
+                await editor.press(ENTER);
+                expect(editor.takeOutput()).not.toContain('Pick a glyph');
+                expect(editor.onComplete).not.toHaveBeenCalled();
+                // The cursor is after the glyph, so a space goes between it and the label
+                await editor.press(' ', ENTER);
+                expect(savedWidget(editor)?.metadata?.label).toBe(`${firstGroup?.glyphs[0]?.glyph} Model: `);
+            } finally {
+                editor.cleanup();
+            }
+        });
+
+        it('goes back to the label unchanged on ESC', async () => {
+            const editor = renderWidgetEditor(labelEditor, { id: 'model', type: 'model' });
+
+            try {
+                await editor.ready();
+                await editor.press(DOWN);
+                await waitForOutput(editor, 'Pick a glyph');
+                await editor.press(RIGHT);
+                editor.takeOutput();
+                await editor.press(ESC);
+                const output = editor.takeOutput();
+                expect(output).not.toContain('Pick a glyph');
+                expect(output).toContain('(default: "Model: ")');
+                expect(editor.onCancel).not.toHaveBeenCalled();
+                await editor.press(ENTER);
+                expect(savedWidget(editor)?.metadata?.label).toBe('Model: ');
+            } finally {
+                editor.cleanup();
+            }
+        });
+
+        it('opens with ↓ in Custom Text and inserts the pick at the cursor', async () => {
+            const editor = renderWidgetEditor(customTextEditor, { id: 'text', type: 'custom-text', customText: 'Hello' });
+
+            try {
+                await editor.ready();
+                expect(editor.takeOutput()).toContain('↓ pick a glyph');
+                await editor.press(DOWN);
+                await waitForOutput(editor, 'Pick a glyph');
+                await editor.press(ENTER, ENTER);
+                expect(savedWidget(editor)?.customText).toBe(`Hello${firstGroup?.glyphs[0]?.glyph}`);
             } finally {
                 editor.cleanup();
             }
