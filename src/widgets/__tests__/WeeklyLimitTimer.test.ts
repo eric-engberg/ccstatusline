@@ -41,7 +41,7 @@ const TIMERS: TimerCase[] = [
         type: 'weekly-limit-timer',
         create: () => new WeeklyLimitTimerWidget(),
         displayName: 'Weekly Limit Timer',
-        label: 'Weekly Limit: ',
+        label: 'Weekly limit in: ',
         preview: ['1d 13hr', '1d13h'],
         usage: (weeklyUsage, weeklyResetAt) => ({ weeklyUsage, weeklyResetAt })
     },
@@ -50,7 +50,7 @@ const TIMERS: TimerCase[] = [
         type: 'fable-weekly-limit-timer',
         create: () => new FableWeeklyLimitTimerWidget(),
         displayName: 'Weekly Fable Limit Timer',
-        label: 'Weekly Fable Limit: ',
+        label: 'Fable limit in: ',
         preview: ['2d 4hr', '2d4h'],
         usage: (fableUsage, fableResetAt) => ({ fableUsage, fableResetAt })
     }
@@ -154,7 +154,7 @@ describe('the weekly limit timers\' windows', () => {
     const render = (widget: WeeklyLimitTimerWidget, usageData: RenderUsageData): string | null => widget.render({ id: 'limit', type: 'weekly-limit-timer' }, { usageData }, DEFAULT_SETTINGS);
 
     it('reads only the all-models window for Weekly Limit Timer', () => {
-        expect(render(new WeeklyLimitTimerWidget(), { weeklyUsage: 72, weeklyResetAt: RESET_AT, fableUsage: 50, fableResetAt: RESET_AT })).toBe('Weekly Limit: 1d 22hr 40m');
+        expect(render(new WeeklyLimitTimerWidget(), { weeklyUsage: 72, weeklyResetAt: RESET_AT, fableUsage: 50, fableResetAt: RESET_AT })).toBe('Weekly limit in: 1d 22hr 40m');
         expect(render(new WeeklyLimitTimerWidget(), { fableUsage: 72, fableResetAt: RESET_AT })).toBeNull();
     });
 
@@ -164,6 +164,6 @@ describe('the weekly limit timers\' windows', () => {
 
     // As Weekly Fable Usage's time cursor does when the API sends no Fable reset
     it('falls back to the all-models reset for Fable\'s window', () => {
-        expect(render(new FableWeeklyLimitTimerWidget(), { fableUsage: 72, weeklyResetAt: RESET_AT })).toBe('Weekly Fable Limit: 1d 22hr 40m');
+        expect(render(new FableWeeklyLimitTimerWidget(), { fableUsage: 72, weeklyResetAt: RESET_AT })).toBe('Fable limit in: 1d 22hr 40m');
     });
 });

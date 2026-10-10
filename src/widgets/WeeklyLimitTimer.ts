@@ -24,7 +24,7 @@ const HOUR_MS = 60 * 60 * 1000;
 
 const WEEKLY_LIMIT_WINDOWS: Record<WeeklyLimitWindow, WeeklyLimitWindowConfig> = {
     'weekly': {
-        label: 'Weekly Limit: ',
+        label: 'Weekly limit in: ',
         displayName: 'Weekly Limit Timer',
         description: 'Time until the 7-day limit at this week\'s average pace; shown only when that comes before the reset',
         previewLimitInMs: 37 * HOUR_MS,
@@ -32,7 +32,7 @@ const WEEKLY_LIMIT_WINDOWS: Record<WeeklyLimitWindow, WeeklyLimitWindowConfig> =
         resetFields: ['weeklyResetAt']
     },
     'fable-weekly': {
-        label: 'Weekly Fable Limit: ',
+        label: 'Fable limit in: ',
         displayName: 'Weekly Fable Limit Timer',
         description: 'Time until the Fable-only 7-day limit at this week\'s average pace; shown only when that comes before the reset',
         previewLimitInMs: 52 * HOUR_MS,
