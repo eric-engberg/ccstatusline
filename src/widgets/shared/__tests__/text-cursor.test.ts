@@ -7,6 +7,7 @@ import {
 
 import {
     applyTextCursorInput,
+    insertText,
     renderTextWithCursor
 } from '../text-cursor';
 
@@ -66,6 +67,13 @@ describe('applyTextCursorInput', () => {
     it('leaves non-editing keys to the caller', () => {
         expect(applyTextCursorInput({ text: 'a', cursor: 1 }, '', makeKey({ return: true }))).toBeNull();
         expect(applyTextCursorInput({ text: 'a', cursor: 1 }, '\t', makeKey({ tab: true }))).toBeNull();
+    });
+});
+
+describe('insertText', () => {
+    it('inserts at the cursor and moves the cursor past what it inserted', () => {
+        expect(insertText({ text: 'ac', cursor: 1 }, FAMILY)).toEqual({ text: `a${FAMILY}c`, cursor: 1 + FAMILY.length });
+        expect(insertText({ text: '', cursor: 0 }, 'ab')).toEqual({ text: 'ab', cursor: 2 });
     });
 });
 
