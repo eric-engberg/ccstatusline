@@ -4,8 +4,13 @@ import type {
 } from '../types/StatusJSON';
 import type { WidgetItem } from '../types/Widget';
 
+import { observeExtraUsageSpend } from './daily-spend';
 import type { UsageData } from './usage';
-import { fetchUsageData } from './usage';
+import {
+    fetchUsageData,
+    getUsageAccountKey,
+    getUsageFetchedAt
+} from './usage';
 import type { UsageDataField } from './usage-types';
 import {
     WEEKLY_MODEL_USAGE_BUCKETS,
@@ -24,8 +29,9 @@ const BASE_USAGE_WIDGET_TYPES = [
     'extra-usage-utilization',
     'extra-usage-remaining',
     'extra-usage-used',
-    'extra-usage-limit',
-    'extra-usage-daily-budget'
+    'extra-usage-daily-budget',
+    'extra-usage-today',
+    'extra-usage-limit'
 ];
 
 const USAGE_WIDGET_TYPES = new Set<string>([
@@ -82,8 +88,37 @@ const USAGE_WIDGET_REQUIREMENTS: Record<string, UsageFieldRequirement[]> = {
         { field: 'extraUsageEnabled' },
         { field: 'extraUsageLimit' },
         { field: 'extraUsageUsed' }
+    ],
+    'extra-usage-today': [
+        { field: 'extraUsageEnabled' },
+        { field: 'extraUsageUsed' }
     ]
 };
+
+const SPEND_TODAY_WIDGET_TYPES = new Set<string>(['extra-usage-today']);
+
+function needsSpendToday(lines: WidgetItem[][]): boolean {
+    return lines.some(line => line.some(item => SPEND_TODAY_WIDGET_TYPES.has(item.type)));
+}
+
+// Today's spend needs the month-to-date total, the login it belongs to (the
+// daily state file keeps each login's start-of-day total separately), and when
+// the usage API returned it: a cached total fetched before midnight is not
+// today's.
+function withSpendToday(data: UsageData, lines: WidgetItem[][]): UsageData {
+    if (!needsSpendToday(lines) || data.extraUsageUsed === undefined) {
+        return data;
+    }
+
+    const accountKey = getUsageAccountKey();
+    const fetchedAtMs = getUsageFetchedAt();
+    if (accountKey === null || fetchedAtMs === null) {
+        return data;
+    }
+
+    const spentToday = observeExtraUsageSpend(accountKey, data.extraUsageUsed, fetchedAtMs);
+    return spentToday === undefined ? data : { ...data, extraUsageUsedToday: spentToday };
+}
 
 const USAGE_CURSOR_REQUIREMENTS: Record<string, UsageFieldRequirement> = {
     'session-usage': { field: 'sessionResetAt' },
@@ -242,5 +277,5 @@ export async function prefetchUsageDataIfNeeded(lines: WidgetItem[][], data?: St
         return rateLimitsData;
     }
 
-    return mergeUsageData(rateLimitsData, apiData);
+    return withSpendToday(mergeUsageData(rateLimitsData, apiData), lines);
 }
