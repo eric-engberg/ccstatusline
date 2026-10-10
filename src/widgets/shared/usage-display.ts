@@ -319,15 +319,24 @@ export function toggleUsageInverted(item: WidgetItem): WidgetItem {
     return toggleMetadataFlag(item, 'invert');
 }
 
+export function getUsageDirectionKeybind(item?: WidgetItem): CustomKeybind {
+    const nextDirection = item && isUsageInverted(item) ? 'used' : 'remaining';
+    return { key: 'u', label: `(u) show ${nextDirection}`, action: 'toggle-invert' };
+}
+
+export function getUsageCompactKeybind(): CustomKeybind {
+    return COMPACT_TOGGLE_KEYBIND;
+}
+
 export function getUsagePercentCustomKeybinds(item?: WidgetItem, includeCursor = true): CustomKeybind[] {
     // The level glyph always measures what's used, so used/remaining doesn't apply
     if (item && isLevelGlyphMode(item)) {
         return [PROGRESS_TOGGLE_KEYBIND, ...getLevelGlyphKeybinds()];
     }
-    const nextDirection = item && isUsageInverted(item) ? 'used' : 'remaining';
+
     const keybinds: CustomKeybind[] = [
         PROGRESS_TOGGLE_KEYBIND,
-        { key: 'u', label: `(u) show ${nextDirection}`, action: 'toggle-invert' }
+        getUsageDirectionKeybind(item)
     ];
 
     if (item && includeCursor) {
