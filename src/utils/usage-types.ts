@@ -23,6 +23,7 @@ export interface UsageData {
     extraUsageUtilization?: number; // percentage 0-100
     extraUsageCurrency?: string;   // ISO 4217 currency code (e.g. 'USD', 'EUR')
     extraUsageUsedToday?: number;  // in cents, spent since 00:00 UTC; worked out per render, never cached
+    apiSessionUsage?: number;      // the usage API's own sessionUsage, never rate_limits'; see usage-prefetch.ts
     error?: UsageError;
 }
 
@@ -36,7 +37,7 @@ export interface UsageWindowMetrics {
 
 // Fields a usage fetch can supply and the cache stores. extraUsageUsedToday is
 // worked out from them per render, so it can't be required from a fetch.
-export type UsageDataField = Exclude<keyof UsageData, 'error' | 'extraUsageUsedToday'>;
+export type UsageDataField = Exclude<keyof UsageData, 'error' | 'extraUsageUsedToday' | 'apiSessionUsage'>;
 
 // TypeScript can't narrow `target[field] = value` when `field` is a plain
 // UsageDataField union at the call site (it can't prove `value`'s type

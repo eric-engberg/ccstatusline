@@ -25,6 +25,7 @@ export interface RenderUsageData {
     extraUsageUtilization?: number;
     extraUsageCurrency?: string;
     extraUsageUsedToday?: number;
+    apiSessionUsage?: number;
     error?: 'no-credentials' | 'timeout' | 'rate-limited' | 'api-error' | 'parse-error';
 }
 
