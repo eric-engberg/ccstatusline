@@ -17,6 +17,7 @@ import type {
 } from '../types/Widget';
 import { shouldInsertInput } from '../utils/input-guards';
 
+import { GlyphPicker } from './shared/glyph-picker';
 import { MERGE_TARGET_HIDDEN_HIDEABLE_STATE } from './shared/hideable';
 import { getGraphemes } from './shared/text-cursor';
 
@@ -59,9 +60,13 @@ export class CustomSymbolWidget implements Widget {
 
 const CustomSymbolEditor: React.FC<WidgetEditorProps> = ({ widget, onComplete, onCancel }) => {
     const [symbol, setSymbol] = useState(widget.customSymbol ?? '');
+    const [picking, setPicking] = useState(false);
 
+    // The picker takes the keys while it's open
     useInput((input, key) => {
-        if (key.return) {
+        if (key.rightArrow) {
+            setPicking(true);
+        } else if (key.return) {
             onComplete({ ...widget, customSymbol: symbol });
         } else if (key.escape) {
             onCancel();
@@ -72,7 +77,20 @@ const CustomSymbolEditor: React.FC<WidgetEditorProps> = ({ widget, onComplete, o
             const firstGrapheme = getGraphemes(input)[0] ?? '';
             setSymbol(firstGrapheme);
         }
-    });
+    }, { isActive: !picking });
+
+    if (picking) {
+        return (
+            <GlyphPicker
+                initialGlyph={symbol}
+                onPick={(glyph) => {
+                    setSymbol(glyph);
+                    setPicking(false);
+                }}
+                onCancel={() => { setPicking(false); }}
+            />
+        );
+    }
 
     return (
         <Box flexDirection='column'>
@@ -85,7 +103,7 @@ const CustomSymbolEditor: React.FC<WidgetEditorProps> = ({ widget, onComplete, o
                     <Text inverse dimColor>(empty)</Text>
                 )}
             </Text>
-            <Text dimColor>Type any character or emoji, Backspace clear, Enter save, ESC cancel</Text>
+            <Text dimColor>Type any character or emoji, → pick from a list, Backspace clear, Enter save, ESC cancel</Text>
         </Box>
     );
 };
