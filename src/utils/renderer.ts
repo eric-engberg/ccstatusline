@@ -1070,7 +1070,8 @@ function isAlignmentBoundary(entry: PreRenderedWidget | undefined): boolean {
 }
 
 // Whether a widget after this one renders before the next separator, so a
-// merge from this one has something to merge into
+// merge from this one has something to merge into. As in the renderers, the
+// merge carries past an empty widget only if that widget is merged onward too.
 function hasRenderedWidgetBeforeSeparator(preRenderedLine: PreRenderedWidget[], originalIndex: number): boolean {
     for (let j = originalIndex + 1; j < preRenderedLine.length; j++) {
         const nextEntry = preRenderedLine[j];
@@ -1080,6 +1081,8 @@ function hasRenderedWidgetBeforeSeparator(preRenderedLine: PreRenderedWidget[], 
             return false;
         if (nextEntry.content)
             return true;
+        if (!nextEntry.widget.merge)
+            return false;
     }
 
     return false;
