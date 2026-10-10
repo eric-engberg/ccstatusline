@@ -80,10 +80,6 @@ const USAGE_WIDGET_REQUIREMENTS: Record<string, UsageFieldRequirement[]> = {
         { field: 'extraUsageEnabled' },
         { field: 'extraUsageUsed' }
     ],
-    'extra-usage-limit': [
-        { field: 'extraUsageEnabled' },
-        { field: 'extraUsageLimit' }
-    ],
     'extra-usage-daily-budget': [
         { field: 'extraUsageEnabled' },
         { field: 'extraUsageLimit' },
@@ -92,6 +88,10 @@ const USAGE_WIDGET_REQUIREMENTS: Record<string, UsageFieldRequirement[]> = {
     'extra-usage-today': [
         { field: 'extraUsageEnabled' },
         { field: 'extraUsageUsed' }
+    ],
+    'extra-usage-limit': [
+        { field: 'extraUsageEnabled' },
+        { field: 'extraUsageLimit' }
     ]
 };
 
