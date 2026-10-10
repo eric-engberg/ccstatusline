@@ -161,6 +161,62 @@ describe('config utilities', () => {
         expect(merged.lines).toEqual(current.lines);
     });
 
+    it('does not give lines from a merge import the current per-line Powerline modes', async () => {
+        const { configDir } = getSettingsPaths();
+        const importPath = path.join(configDir, 'lines-import.json');
+        fs.mkdirSync(configDir, { recursive: true });
+        fs.writeFileSync(
+            importPath,
+            JSON.stringify({
+                version: CURRENT_VERSION,
+                lines: [[{ id: 'x', type: 'session-cost' }], [{ id: 'y', type: 'model' }]]
+            }),
+            'utf-8'
+        );
+        const current: Settings = {
+            ...DEFAULT_SETTINGS,
+            lines: [[{ id: 'a', type: 'model' }], [{ id: 'b', type: 'git-branch' }]],
+            powerline: { ...DEFAULT_SETTINGS.powerline, enabled: true, lineEnabled: [null, false] }
+        };
+
+        const validation = await validateImportFile(importPath);
+
+        expect(validation.status).toBe('valid');
+        if (validation.status !== 'valid') {
+            return;
+        }
+        const merged = applyImport(current, validation.data, 'merge', validation.presentKeys);
+        expect(merged.lines).toEqual(validation.data.lines);
+        expect(merged.powerline.enabled).toBe(true);
+        expect(merged.powerline.lineEnabled).toBeUndefined();
+    });
+
+    it.each([
+        { name: 'no per-line modes', powerline: { enabled: false } },
+        { name: 'per-line modes of its own', powerline: { enabled: false, lineEnabled: [true] } }
+    ])('keeps the current lines\' Powerline modes in a merge import of Powerline settings with $name', async ({ powerline }) => {
+        const { configDir } = getSettingsPaths();
+        const importPath = path.join(configDir, 'powerline-import.json');
+        fs.mkdirSync(configDir, { recursive: true });
+        fs.writeFileSync(importPath, JSON.stringify({ version: CURRENT_VERSION, powerline }), 'utf-8');
+        const current: Settings = {
+            ...DEFAULT_SETTINGS,
+            lines: [[{ id: 'a', type: 'model' }], [{ id: 'b', type: 'git-branch' }], [{ id: 'c', type: 'context-length' }]],
+            powerline: { ...DEFAULT_SETTINGS.powerline, enabled: true, lineEnabled: [null, false] }
+        };
+
+        const validation = await validateImportFile(importPath);
+
+        expect(validation.status).toBe('valid');
+        if (validation.status !== 'valid') {
+            return;
+        }
+        const merged = applyImport(current, validation.data, 'merge', validation.presentKeys);
+        expect(merged.lines).toEqual(current.lines);
+        expect(merged.powerline.enabled).toBe(false);
+        expect(merged.powerline.lineEnabled).toEqual([null, false]);
+    });
+
     it('rejects imports created by a newer schema version', async () => {
         const { configDir } = getSettingsPaths();
         const importPath = path.join(configDir, 'future-import.json');
