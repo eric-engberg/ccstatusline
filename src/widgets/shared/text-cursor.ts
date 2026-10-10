@@ -31,6 +31,11 @@ function getBoundaries(text: string): number[] {
     return boundaries;
 }
 
+/** The text with `inserted` at the cursor, and the cursor just after it. */
+export function insertText({ text, cursor }: TextCursorState, inserted: string): TextCursorState {
+    return { text: text.slice(0, cursor) + inserted + text.slice(cursor), cursor: cursor + inserted.length };
+}
+
 /** The state after a keypress, or null when the key is not a text-editing key. */
 export function applyTextCursorInput(state: TextCursorState, input: string, key: Key): TextCursorState | null {
     const { text, cursor } = state;
@@ -62,7 +67,7 @@ export function applyTextCursorInput(state: TextCursorState, input: string, key:
             : { text: text.slice(0, cursor) + text.slice(next), cursor };
     }
     if (shouldInsertInput(input, key)) {
-        return { text: text.slice(0, cursor) + input + text.slice(cursor), cursor: cursor + input.length };
+        return insertText(state, input);
     }
     return null;
 }
@@ -85,6 +90,13 @@ export function useTextCursor(initialText: string) {
     const [state, setState] = useState<TextCursorState>({ text: initialText, cursor: initialText.length });
     const latestState = useRef(state);
 
+    // Publish edits immediately so another key or Save sees them even before
+    // React renders the updated text.
+    const update = (nextState: TextCursorState) => {
+        latestState.current = nextState;
+        setState(nextState);
+    };
+
     return {
         text: state.text,
         display: renderTextWithCursor(state),
@@ -96,11 +108,12 @@ export function useTextCursor(initialText: string) {
             if (nextState === null) {
                 return false;
             }
-            // Publish edits immediately so another key or Save sees them
-            // even before React renders the updated text.
-            latestState.current = nextState;
-            setState(nextState);
+            update(nextState);
             return true;
+        },
+        // For text from elsewhere than a key, e.g. a glyph picked from a list
+        insert: (inserted: string): void => {
+            update(insertText(latestState.current, inserted));
         }
     };
 }

@@ -3,9 +3,10 @@ import {
     Text,
     useInput
 } from 'ink';
-import React from 'react';
+import React, { useState } from 'react';
 
 import type { WidgetItem } from '../../types/Widget';
+import { GlyphPicker } from '../../widgets/shared/glyph-picker';
 import {
     clearLabel,
     getLabel,
@@ -21,10 +22,14 @@ export interface LabelEditorProps {
 }
 
 export const LabelEditor: React.FC<LabelEditorProps> = ({ widget, defaultLabel, onComplete, onCancel }) => {
-    const { getText, display, handleInput } = useTextCursor(getLabel(widget, defaultLabel));
+    const { getText, display, handleInput, insert } = useTextCursor(getLabel(widget, defaultLabel));
+    const [picking, setPicking] = useState(false);
 
+    // The picker takes the keys while it's open
     useInput((input, key) => {
-        if (key.return) {
+        if (key.downArrow) {
+            setPicking(true);
+        } else if (key.return) {
             onComplete(setLabel(widget, getText()));
         } else if (key.escape) {
             onCancel();
@@ -33,7 +38,20 @@ export const LabelEditor: React.FC<LabelEditorProps> = ({ widget, defaultLabel, 
         } else {
             handleInput(input, key);
         }
-    });
+    }, { isActive: !picking });
+
+    if (picking) {
+        return (
+            <GlyphPicker
+                initialGlyph=''
+                onPick={(glyph) => {
+                    insert(glyph);
+                    setPicking(false);
+                }}
+                onCancel={() => { setPicking(false); }}
+            />
+        );
+    }
 
     // Quoted so trailing spaces, which usually separate the label from the
     // value, stay visible. One Text, because Ink measures a toned or joined
@@ -41,7 +59,7 @@ export const LabelEditor: React.FC<LabelEditorProps> = ({ widget, defaultLabel, 
     return (
         <Box flexDirection='column'>
             <Text bold>Label</Text>
-            <Text dimColor>←→ move cursor, Ctrl+←→ jump to start/end, Tab reset to default, Enter save, ESC cancel</Text>
+            <Text dimColor>←→ move cursor, ↓ pick a glyph, Ctrl+←→ jump to start/end, Tab reset to default, Enter save, ESC cancel</Text>
             <Box marginTop={1}>
                 <Text>
                     {`"${display}"`}
