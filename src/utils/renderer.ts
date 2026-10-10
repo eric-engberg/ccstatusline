@@ -47,6 +47,15 @@ import {
     isGradientSpec,
     parseGradientSpec
 } from './gradient';
+import {
+    START_LINE_COUNTERS,
+    advanceLineCounters
+} from './line-counters';
+import {
+    getAutoAlignLines,
+    getLineRenderItems,
+    getLineSettings
+} from './powerline-lines';
 import { getTerminalWidth } from './terminal';
 import { sanitizeTerminalText } from './terminal-sanitize';
 import {
@@ -936,8 +945,9 @@ function getBarColumnPadding(preRenderedLine: PreRenderedWidget[], bars: SizedBa
 
 // Grows each line's sized bars into the room the line leaves at the terminal's
 // width, measured with every bar at MIN_BAR_CELLS and flex separators at their
-// narrowest. Auto-align keeps the minimum widths, so a grown bar doesn't widen
-// the same column on other lines.
+// narrowest. Each line is measured as it renders: in its own mode, from where
+// it starts in the separator and cap cycles. Auto-align keeps the minimum
+// widths, so a grown bar doesn't widen the same column on other lines.
 function sizeBarsToLines(
     allLinesWidgets: WidgetItem[][],
     preRenderedLines: PreRenderedWidget[][],
@@ -946,18 +956,30 @@ function sizeBarsToLines(
     settings: Settings,
     context: RenderContext
 ): void {
-    const maxWidths = calculateMaxWidthsFromPreRendered(preRenderedLines, settings);
+    const maxWidths = calculateMaxWidthsFromPreRendered(getAutoAlignLines(settings, preRenderedLines), settings);
+    let counters = START_LINE_COUNTERS;
     sizedBars.forEach((bars, lineIndex) => {
+        const lineWidgets = allLinesWidgets[lineIndex] ?? [];
         const preRenderedLine = preRenderedLines[lineIndex] ?? [];
+        const lineCounters = counters;
+        counters = advanceLineCounters(counters, settings, lineIndex, lineWidgets, preRenderedLine);
         const shownBars = bars.filter(bar => preRenderedLine[bar.index]?.content);
         if (shownBars.length === 0) {
             return;
         }
 
-        const measureContext = { ...context, terminalWidth: 0, lineIndex };
-        const minimumWidth = getVisibleWidth(renderStatusLine(allLinesWidgets[lineIndex] ?? [], settings, measureContext, preRenderedLine, maxWidths));
+        const lineSettings = getLineSettings(settings, lineIndex);
+        const measureContext = {
+            ...context,
+            terminalWidth: 0,
+            lineIndex,
+            globalSeparatorIndex: lineCounters.separator,
+            globalPowerlineThemeIndex: lineCounters.theme,
+            globalPowerlineStartCapIndex: lineCounters.startCap
+        };
+        const minimumWidth = getVisibleWidth(renderStatusLine(getLineRenderItems(settings, lineIndex, lineWidgets), lineSettings, measureContext, preRenderedLine, maxWidths));
         // A bar fills its column's padding before it takes the line's room
-        const padding = getBarColumnPadding(preRenderedLine, shownBars, maxWidths, settings);
+        const padding = getBarColumnPadding(preRenderedLine, shownBars, maxWidths, lineSettings);
         const desired = shownBars.map(bar => getDesiredBarCells(bar.width, lineWidth));
         const cells = allocateBarCells(desired.map((count, position) => Math.max(MIN_BAR_CELLS, count - (padding[position] ?? 0))), lineWidth - minimumWidth)
             .map((count, position) => Math.min(desired[position] ?? count, count + (padding[position] ?? 0)));
