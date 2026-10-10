@@ -127,21 +127,24 @@ describe('ExtraUsageUtilizationWidget', () => {
         const baseItem: WidgetItem = { id: 'extra', type: 'extra-usage-utilization' };
 
         expect(widget.getCustomKeybinds(baseItem)).toEqual([
-            { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
+            { key: 'p', label: '(p) bar style', action: 'toggle-progress' },
             { key: 'u', label: '(u) show remaining', action: 'toggle-invert' }
         ]);
         expect(widget.getCustomKeybinds({
             ...baseItem,
             metadata: { display: 'progress' }
         })).toEqual([
-            { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
-            { key: 'u', label: '(u) show remaining', action: 'toggle-invert' }
+            { key: 'p', label: '(p) bar style', action: 'toggle-progress' },
+            { key: 'u', label: '(u) show remaining', action: 'toggle-invert' },
+            { key: 'g', label: '(g)radient', action: 'cycle-gradient' },
+            { key: 'b', label: '(b)ar size', action: 'edit-bar-width' },
+            { key: 'n', label: '(n) hide numbers', action: 'toggle-bar-numbers' }
         ]);
         expect(widget.getCustomKeybinds({
             ...baseItem,
             metadata: { invert: 'true' }
         })).toEqual([
-            { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
+            { key: 'p', label: '(p) bar style', action: 'toggle-progress' },
             { key: 'u', label: '(u) show used', action: 'toggle-invert' }
         ]);
         expect(widget.getEditorDisplay(baseItem).modifierText).toBe('(used)');
@@ -256,6 +259,6 @@ describe('ExtraUsageUtilizationWidget', () => {
                 extraUsageUtilization: 25
             }
         })).toBe('75.0%');
-        expect(render(widget, item, { isPreview: true })).toBe('Overage: 97.4%');
+        expect(render(widget, item, { isPreview: true })).toBe('Overage: 15.0%');
     });
 });

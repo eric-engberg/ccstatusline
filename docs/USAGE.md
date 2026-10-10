@@ -27,7 +27,7 @@ ccstatusline --version
 
 ### Claude & Session
 
-- **Model** / **Output Style** / **Version** - Show the active Claude model, output style, and Claude Code CLI version. Model names omit trailing context suffixes like `(1M context)`; use **Context Window** when you want the total window size shown.
+- **Model** / **Output Style** / **Version** - Show the active Claude model, output style, and Claude Code CLI version. Model names omit trailing context suffixes like `(1M context)`; use **Context Window** when you want the total window size shown. Model can color the name by family (Opus magenta, Sonnet cyan, Haiku green, Fable red by default, matched in the display name or id); the `Model: ` label keeps the widget color, and other models keep it too.
 - **Claude Session ID** / **Session Name** / **Claude Account Email** - Show session identifiers plus the currently signed-in Claude account email.
 - **Claude Status** - Show the current Claude/Anthropic service status from `status.claude.com` (`ok` when the indicator is `none`, otherwise the indicator word such as `minor`, `major`, `critical`, or `maintenance`). Press `h` in the editor to add a 48-hour incident-history strip of eight six-hour blocks (oldest to newest), each colored by the worst incident overlapping that block: green (none), yellow (minor), orange (major), red (critical). Responses are cached for about five minutes; on network failure the widget shows stale data when available or degrades to `?`. With the history strip enabled the widget colors itself by severity, so per-widget foreground colors and theme foregrounds are skipped, like Custom Command's preserve-colors mode.
 - **Voice Status** - Show whether Claude Code voice input is enabled. It can render as an icon, icon plus text, plain text, or `voice on/off`, with optional Nerd Font microphone icons.
@@ -143,6 +143,8 @@ The color editor can adjust foreground color, background color, bold, dim, and g
 
 - Use `←` / `→` to cycle the selected foreground or background color.
 - Press `f` to switch between foreground and background editing.
+- Press `a` (256-color or truecolor mode) to pick from the 256-color palette. Arrow keys move through a grid of all 256 colors while the preview follows; type a number to jump straight to that color. `Enter` keeps the color, `ESC` restores the previous one.
+- Press `h` (truecolor mode) to enter a hex color.
 - Press `b` to toggle bold.
 - Press `d` to cycle dim styling: off → whole widget → parenthesized text only → off.
 - Press `r` to reset styling on the selected widget, or `c` to clear styling on every widget in the line.
@@ -230,15 +232,15 @@ The Block Timer widget helps you track your progress through Claude Code's 5-hou
 
 **Display Modes:**
 - **Time Display** - Shows elapsed time as "3hr 45m" (default)
-- **Progress Bar** - Full width 32-character progress bar with percentage
-- **Progress Bar (Short)** - Compact 16-character progress bar with percentage
+- **Block Bar** - A progress bar like "[██████░░░░]" with percentage, 32 characters long by default
+- **Slider Bar** - A slimmer "▓▓▓▓░░░░" bar with percentage, 10 characters by default
 
 **Features:**
 - Automatically detects block boundaries from transcript timestamps
 - Floors block start time to the hour for consistent tracking
 - Shows "Block: 3hr 45m" in normal mode or just "3hr 45m" in raw value mode
 - Progress bars show completion percentage (e.g., "[████████████████████████░░░░░░░░] 73.9%")
-- Use **(p)** to cycle time/full bar/short bar, **(s)** for compact time mode, and **(v)** to invert fill in progress mode
+- Use **(p)** to cycle time/block bar/slider bar, **(s)** for compact time mode, and **(v)** to invert fill in the bar modes; **(b)** sets the bar's size and **(n)** hides the percentage after it (see Bar size)
 
 ## Raw Value Mode
 
@@ -288,20 +290,23 @@ The keybind footer in the TUI only shows shortcuts that apply to the currently s
 
 Widget-specific shortcuts:
 - **Glyph widgets** (Git Branch, Git Worktree, Git Worktree Mode, Git Staged, Git Unstaged, Git Untracked, Git Conflicts, Git Ahead/Behind, Git Status, Git Changes, Git Insertions, Git Deletions, Git Clean Status, Git Is Fork, JJ Revision, JJ Bookmarks, JJ Workspace, JJ Changes, JJ Insertions, JJ Deletions): `g` set custom glyphs for the widget's symbols; Backspace in the editor renders without one, and multi-symbol widgets (Ahead/Behind, Status, Conflicts, Changes, Clean Status) edit each part in one list
+- **Model**: `f` edit family colors: Space turns them on, ←→ cycle a family's named color, `x` sets a custom color (#RRGGBB or 0-255), `d` restores the defaults
 - **Git Branch**: `l` toggle clickable branch links (GitHub, GitLab, self-hosted), `w` set a maximum visible width (blank removes the limit)
 - **Git Root Dir**: `l` cycle IDE links (`off` → `VS Code` → `Cursor`), `w` set a maximum visible width (blank removes the limit)
 - **Git PR**: `s` toggle review status, `t` toggle title (renders "MR" for GitLab origins)
 - **Git remote widgets** (`Git Origin*` / `Git Upstream*`): `l` toggle clickable repo links
 - **Git Origin Owner/Repo**: `o` show only the owner when the repo is a fork
 - **Git Conflicts**: `z` toggles how a visible conflict-free tree renders (`⚠0` or the clean glyph); `g` edits the conflict and clean glyphs
-- **Context % widgets**: `u` toggle used vs remaining display, `p` cycle percentage/short bar/short bar only
+- **Context % widgets**: `u` toggle used vs remaining display, `p` switch between the percentage and a slider bar; with the bar, `g` cycles a bar gradient, `b` sets the bar size and `n` hides or shows the percentage after it (see Bar gradients and Bar size)
 - **Session Cost Rate**: `t` switch between active time (how long Claude spent working, the default) and clock time (the whole session)
-- **Session Usage / Weekly Usage / Weekly Sonnet Usage / Weekly Opus Usage / Weekly Fable Usage / Extra Usage Utilization**: `p` cycle percentage/full bar/medium bar/short bar/short bar only and `u` switch between used and remaining percentage in every display mode. The editor row labels the current direction as `used` or `remaining`, while the `u` helper names the direction it will switch to. Session and weekly usage widgets use `t` to toggle the time cursor in bar modes.
+- **Session Usage / Weekly Usage / Weekly Sonnet Usage / Weekly Opus Usage / Weekly Fable Usage / Extra Usage Utilization**: `p` cycle percentage/block bar/slider bar and `u` switch between used and remaining percentage in every display mode. The editor row labels the current direction as `used` or `remaining`, while the `u` helper names the direction it will switch to. Session and weekly usage widgets use `t` to toggle the time cursor in bar modes. In bar modes, `g` cycles a bar gradient (see Bar gradients), `b` sets the bar size and `n` hides or shows the percentage after the bar (see Bar size).
 - **Extra Usage Daily Budget**: `w` toggle counting weekdays only (Saturday and Sunday, UTC, are skipped; today always counts)
-- **Block Timer**: `p` cycle time/full bar/short bar, `s` toggle compact time, `v` invert fill in progress mode
-- **Block Reset Timer**: `p` cycle time/full bar/short bar, `s` toggle compact time/date, `t` toggle exact reset date/time, `f` toggle 12/24-hour display in date mode, `z` edit timezone in date mode, `l` edit locale in date mode, `v` invert fill in progress mode
-- **Weekly Reset Timer**: `p` cycle time/full bar/short bar, `s` toggle compact time/date, `t` toggle exact reset date/time, `o` toggle hours-only in time mode, `f` toggle 12/24-hour display in date mode, `z` edit timezone in date mode, `l` edit locale in date mode, `v` invert fill in progress mode
-- **Context Bar**: `p` cycle medium/full/short/short-only progress bar
+- **Block Timer**: `p` cycle time/block bar/slider bar, `s` toggle compact time, `v` invert fill in bar modes, `g` cycle a bar gradient, `b` set the bar size and `n` hide or show the percentage in bar modes (see Bar gradients and Bar size)
+- **Block Reset Timer**: `p` cycle time/block bar/slider bar, `s` toggle compact time/date, `t` toggle exact reset date/time, `f` toggle 12/24-hour display in date mode, `z` edit timezone in date mode, `l` edit locale in date mode, `v` invert fill in bar modes, `g` cycle a bar gradient, `b` set the bar size and `n` hide or show the percentage in bar modes (see Bar gradients and Bar size)
+- **Weekly Reset Timer**: `p` cycle time/block bar/slider bar, `s` toggle compact time/date, `t` toggle exact reset date/time, `o` toggle hours-only in time mode, `f` toggle 12/24-hour display in date mode, `z` edit timezone in date mode, `l` edit locale in date mode, `v` invert fill in bar modes, `g` cycle a bar gradient, `b` set the bar size and `n` hide or show the percentage in bar modes (see Bar gradients and Bar size)
+- **Context Bar**: `p` switch between a block bar and a slider bar, `g` cycle a bar gradient, `b` set the bar size, `n` cycle the numbers after the bar: the token counts and percentage, the percentage only, the counts only, or none (see Bar gradients and Bar size)
+- **Bar gradients** (Context Bar, Context %, the Usage widgets, Extra Usage Utilization and the timers, in their bar modes): `g` cycles a gradient for the filled cells, colored by position from calm to urgent: off/traffic (green to red)/thermal (blue to red)/viridis/cividis/blue-orange/mono. Viridis, cividis, blue-orange and mono stay readable with red-green color blindness. When a bar fills with what is left (inverted or remaining), the gradient runs from the urgent end, so the color where the fill ends still shows how urgent things are. Gradients need the Truecolor color level (Terminal Options → Color Level), so `g` is offered only there; a gradient saved earlier renders plain at lower levels, and the line editor notes that it needs truecolor
+- **Bar size** (the same widgets, in their bar modes): `p` picks a bar's style, block ("[███░░░]") or slider ("▓▓▓░░░"), and keeps its size; `b` sets the size. ←→ step through `short`, `medium` and `long` (10, 16 and 32 cells), 10% to 100% in steps of 5, and `fill`, with the preview updating as you go, then Enter saves and ESC cancels. A percentage asks for that share of the status line's width, and `fill` takes all the room the rest of the line leaves, so a lone fill bar can span the whole line. Sized bars never push the line past the terminal: they shrink to fit, down to 5 cells, and several on one line share the room, percentage bars first. When the terminal width can't be detected, they keep the size their bar had before (long or medium for a block bar, short for a slider). With Powerline auto-align, other lines align to a sized bar at its minimum width. `n` hides the percentage after any bar, leaving the bar alone; on the Context Bar it steps through its token counts and percentage separately. Switching to the text mode and back keeps a bar's size and numbers setting. Settings saved with the earlier modes keep rendering as before: full bar is a long block bar, medium bar a medium one, short bar a short slider, and short bar only a short slider with its numbers hidden
 - **Compaction Counter**: `v` cycle value (count/auto/manual/unknown/reclaimed), `f` cycle format, `n` toggle Nerd Font icon in icon mode, `s` toggle trigger split (auto/manual/unknown), `t` toggle tokens reclaimed
 - **Cache widgets** (Cache Hit Rate, Cache Read, Cache Write): `t` toggle turn/session scope
 - **Cache Timer**: `t` cycle 5-minute/1-hour TTL, `g` customize the working/fresh/draining/urgent/cold glyphs

@@ -13,11 +13,13 @@ import {
     DEFAULT_SETTINGS,
     type InstallationMetadata
 } from '../../types/Settings';
+import type { WidgetItem } from '../../types/Widget';
 import * as claudeSettings from '../../utils/claude-settings';
 import * as globalPackageManager from '../../utils/global-package-manager';
 import { getPackageVersion } from '../../utils/terminal';
 import * as updateChecker from '../../utils/update-checker';
 import {
+    applyLinePreview,
     applyTuiImport,
     buildConfigLoadWarning,
     buildInvalidConfigSaveConfirm,
@@ -598,5 +600,26 @@ describe('App while an install or update runs', () => {
         } finally {
             rendered.cleanup();
         }
+    });
+});
+
+describe('Widget picker line preview', () => {
+    const lines: WidgetItem[][] = [
+        [{ id: '1', type: 'model' }],
+        [{ id: '2', type: 'tokens-input' }]
+    ];
+
+    it('shows the configured lines when nothing is being previewed', () => {
+        expect(applyLinePreview(lines, 1, null)).toBe(lines);
+    });
+
+    it('swaps in the previewed line without touching the others or the saved lines', () => {
+        const preview: WidgetItem[] = [{ id: '2', type: 'tokens-input' }, { id: '3', type: 'git-branch' }];
+
+        expect(applyLinePreview(lines, 1, preview)).toEqual([
+            [{ id: '1', type: 'model' }],
+            [{ id: '2', type: 'tokens-input' }, { id: '3', type: 'git-branch' }]
+        ]);
+        expect(lines[1]).toEqual([{ id: '2', type: 'tokens-input' }]);
     });
 });

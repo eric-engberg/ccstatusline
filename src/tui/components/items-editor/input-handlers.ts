@@ -16,8 +16,23 @@ import {
     getWidget,
     type WidgetCatalogEntry
 } from '../../../utils/widgets';
+import {
+    CYCLE_BAR_NUMBERS_ACTION,
+    TOGGLE_BAR_NUMBERS_ACTION,
+    cycleBarNumbers,
+    toggleBarNumbers
+} from '../../../widgets/shared/bar-layout';
+import { EDIT_BAR_WIDTH_ACTION } from '../../../widgets/shared/bar-width';
 import { EDIT_HIDE_STATES_ACTION } from '../../../widgets/shared/hideable';
 import { EDIT_LABEL_ACTION } from '../../../widgets/shared/raw-or-labeled';
+
+// Keys every widget offering them shares, applied here rather than in each
+// widget's handleEditorAction
+const SHARED_ACTIONS: Record<string, ((widget: WidgetItem) => WidgetItem) | undefined> = {
+    [CYCLE_NUMBER_STYLE_ACTION]: cycleNumberStyle,
+    [TOGGLE_BAR_NUMBERS_ACTION]: toggleBarNumbers,
+    [CYCLE_BAR_NUMBERS_ACTION]: cycleBarNumbers
+};
 
 export type WidgetPickerAction = 'change' | 'add' | 'insert';
 export type WidgetPickerLevel = 'category' | 'widget';
@@ -483,19 +498,21 @@ export function handleNormalInputMode({
             const matchedKeybind = customKeybinds.find(kb => kb.key === shortcut);
 
             if (matchedKeybind) {
-                // The hide-state checklist and label editor are rendered by the
-                // items editor for every widget that opts in, so they bypass
-                // widget-level action handling.
-                if (matchedKeybind.action === EDIT_HIDE_STATES_ACTION || matchedKeybind.action === EDIT_LABEL_ACTION) {
+                // The hide-state checklist, the bar size editor and the label editor
+                // are rendered by the items editor for every widget that offers
+                // them, so they bypass widget-level action handling.
+                if (matchedKeybind.action === EDIT_HIDE_STATES_ACTION
+                    || matchedKeybind.action === EDIT_BAR_WIDTH_ACTION
+                    || matchedKeybind.action === EDIT_LABEL_ACTION) {
                     setCustomEditorWidget({ widget: currentWidget, impl: widgetImpl, action: matchedKeybind.action });
                     return;
                 }
 
-                // The precision cycle is shared by every numeric widget, so it is
-                // applied here instead of in each widget's handleEditorAction.
-                if (matchedKeybind.action === CYCLE_NUMBER_STYLE_ACTION) {
+                // The precision cycle and the bar numbers keys (see SHARED_ACTIONS)
+                const sharedAction = SHARED_ACTIONS[matchedKeybind.action];
+                if (sharedAction) {
                     const newWidgets = [...widgets];
-                    newWidgets[selectedIndex] = cycleNumberStyle(currentWidget);
+                    newWidgets[selectedIndex] = sharedAction(currentWidget);
                     onUpdate(newWidgets);
                 } else if (widgetImpl.handleEditorAction) {
                     const updatedWidget = widgetImpl.handleEditorAction(matchedKeybind.action, currentWidget);

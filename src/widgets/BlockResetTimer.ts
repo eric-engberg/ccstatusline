@@ -10,10 +10,7 @@ import type {
     WidgetEditorProps,
     WidgetItem
 } from '../types/Widget';
-import {
-    formatPercent,
-    resolveNumberFormat
-} from '../utils/number-format';
+import { resolveNumberFormat } from '../utils/number-format';
 import {
     formatUsageDuration,
     formatUsageResetAt,
@@ -21,12 +18,15 @@ import {
     resolveUsageWindowWithFallback
 } from '../utils/usage';
 
+import {
+    CYCLE_GRADIENT_ACTION,
+    cycleGradientPreset
+} from './shared/gradient-bar';
 import { isHidden } from './shared/hideable';
 import {
     LOCALE_EDITOR_ACTION,
     renderUsageLocaleEditor
 } from './shared/locale-editor';
-import { makeTimerProgressBar } from './shared/progress-bar';
 import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
 import {
     TIMEZONE_EDITOR_ACTION,
@@ -35,10 +35,10 @@ import {
 import {
     USAGE_NO_DATA_HIDEABLE_STATE,
     cycleUsageDisplayMode,
+    formatUsageBar,
     getUsageDisplayMode,
     getUsageDisplayModifierText,
     getUsageLocale,
-    getUsageProgressBarWidth,
     getUsageTimerCustomKeybinds,
     getUsageTimezone,
     isUsage12HourClock,
@@ -47,7 +47,6 @@ import {
     isUsageInverted,
     isUsageProgressMode,
     isUsageSliderMode,
-    makeSliderBar,
     toggleUsageCompact,
     toggleUsageDateMode,
     toggleUsageHourFormat,
@@ -82,6 +81,10 @@ export class BlockResetTimerWidget implements Widget {
     }
 
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
+        if (action === CYCLE_GRADIENT_ACTION) {
+            return cycleGradientPreset(item);
+        }
+
         if (action === 'toggle-progress') {
             return cycleUsageDisplayMode(item, ['compact', 'absolute'], true);
         }
@@ -106,27 +109,17 @@ export class BlockResetTimerWidget implements Widget {
     }
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
-        const displayMode = getUsageDisplayMode(item);
         const inverted = isUsageInverted(item);
         const compact = isUsageCompact(item);
         const dateMode = isUsageDateMode(item);
         const format = resolveNumberFormat('percent', item, settings);
 
         if (context.isPreview) {
-            const previewPercent = inverted ? 90.0 : 10.0;
+            const previewPercent = inverted ? 15.0 : 85.0;
 
-            if (isUsageProgressMode(displayMode)) {
-                const barWidth = getUsageProgressBarWidth(displayMode);
-                const progressBar = makeTimerProgressBar(previewPercent, barWidth);
-                return formatRawOrLabeledValue(item, this.getLabelPrefix(item), `[${progressBar}] ${formatPercent(previewPercent, format)}`);
-            }
-
-            if (isUsageSliderMode(displayMode)) {
-                const slider = makeSliderBar(previewPercent);
-                const sliderDisplay = displayMode === 'slider'
-                    ? `${slider} ${formatPercent(previewPercent, format)}`
-                    : slider;
-                return formatRawOrLabeledValue(item, this.getLabelPrefix(item), sliderDisplay);
+            const bar = formatUsageBar(item, previewPercent, format, settings, context);
+            if (bar !== null) {
+                return formatRawOrLabeledValue(item, this.getLabelPrefix(item), bar);
             }
 
             if (dateMode) {
@@ -140,7 +133,7 @@ export class BlockResetTimerWidget implements Widget {
                 return formatRawOrLabeledValue(item, this.getLabelPrefix(item), resetAt ?? (compact ? '03-12 08:30Z' : '2026-03-12 08:30 UTC'));
             }
 
-            return formatRawOrLabeledValue(item, this.getLabelPrefix(item), compact ? '4h30m' : '4hr 30m');
+            return formatRawOrLabeledValue(item, this.getLabelPrefix(item), '45m');
         }
 
         const usageData = context.usageData ?? {};
@@ -158,20 +151,9 @@ export class BlockResetTimerWidget implements Widget {
             return formatRawOrLabeledValue(item, this.getLabelPrefix(item), USAGE_TIMER_LOADING_MESSAGE);
         }
 
-        if (isUsageProgressMode(displayMode)) {
-            const barWidth = getUsageProgressBarWidth(displayMode);
-            const percent = inverted ? window.remainingPercent : window.elapsedPercent;
-            const progressBar = makeTimerProgressBar(percent, barWidth);
-            return formatRawOrLabeledValue(item, this.getLabelPrefix(item), `[${progressBar}] ${formatPercent(percent, format)}`);
-        }
-
-        if (isUsageSliderMode(displayMode)) {
-            const percent = inverted ? window.remainingPercent : window.elapsedPercent;
-            const slider = makeSliderBar(percent);
-            const sliderDisplay = displayMode === 'slider'
-                ? `${slider} ${formatPercent(percent, format)}`
-                : slider;
-            return formatRawOrLabeledValue(item, this.getLabelPrefix(item), sliderDisplay);
+        const bar = formatUsageBar(item, inverted ? window.remainingPercent : window.elapsedPercent, format, settings, context);
+        if (bar !== null) {
+            return formatRawOrLabeledValue(item, this.getLabelPrefix(item), bar);
         }
 
         if (dateMode) {
