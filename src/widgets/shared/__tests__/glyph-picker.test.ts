@@ -11,6 +11,7 @@ import type {
     WidgetEditorProps,
     WidgetItem
 } from '../../../types/Widget';
+import { CustomSymbolWidget } from '../../CustomSymbol';
 import { createGlyphCatalog } from '../glyph-catalog';
 import { GLYPH_GROUPS } from '../glyph-groups';
 import { SkinToneContext } from '../skin-tone';
@@ -35,6 +36,8 @@ const CTRL_T = '\x14';
 
 const cwd: WidgetItem = { id: 'cwd', type: 'current-working-dir' };
 const singleGlyphEditor = (props: WidgetEditorProps) => renderSymbolOverrideEditor(props, '');
+const customSymbolEditor = (props: WidgetEditorProps) => new CustomSymbolWidget().renderEditor(props);
+const customSymbol: WidgetItem = { id: 'symbol', type: 'custom-symbol' };
 
 // The curated groups, with skin tones added to their emoji
 const groups = createGlyphCatalog().groups;
@@ -430,6 +433,64 @@ describe('glyph picker', () => {
                 const output = await openPicker(editor);
                 expect(output).toContain('Skin tone: 🏿 dark');
                 expect(output).toContain('👍🏿  thumbs up: dark skin tone');
+            } finally {
+                editor.cleanup();
+            }
+        });
+    });
+
+    describe('Custom Symbol', () => {
+        it('opens with → and picks the highlighted glyph as the symbol', async () => {
+            const editor = renderWidgetEditor(customSymbolEditor, customSymbol);
+
+            try {
+                await editor.ready();
+                expect(editor.takeOutput()).toContain('→ pick from a list');
+                await openPicker(editor);
+                await editor.press(RIGHT);
+                editor.takeOutput();
+                await editor.press(ENTER);
+                const output = editor.takeOutput();
+                expect(output).not.toContain('Pick a glyph');
+                expect(output).toContain(`Enter custom symbol: ${firstGroup?.glyphs[1]?.glyph}`);
+                expect(editor.onComplete).not.toHaveBeenCalled();
+                await editor.press(ENTER);
+                expect(savedWidget(editor)?.customSymbol).toBe(firstGroup?.glyphs[1]?.glyph);
+            } finally {
+                editor.cleanup();
+            }
+        });
+
+        it('goes back to the symbol without picking on ESC', async () => {
+            const editor = renderWidgetEditor(customSymbolEditor, { ...customSymbol, customSymbol: '★' });
+
+            try {
+                await editor.ready();
+                await openPicker(editor);
+                await editor.press(RIGHT);
+                editor.takeOutput();
+                await editor.press(ESC);
+                const output = editor.takeOutput();
+                expect(output).not.toContain('Pick a glyph');
+                expect(output).toContain('Enter custom symbol: ★');
+                expect(editor.onCancel).not.toHaveBeenCalled();
+                await editor.press(ENTER);
+                expect(savedWidget(editor)?.customSymbol).toBe('★');
+            } finally {
+                editor.cleanup();
+            }
+        });
+
+        it('opens on the current symbol when the picker has it', async () => {
+            const groupIndex = GLYPH_GROUPS.findIndex(group => group.glyphs.some(entry => entry.glyph === '✔'));
+            const entry = GLYPH_GROUPS[groupIndex]?.glyphs.find(candidate => candidate.glyph === '✔');
+            const editor = renderWidgetEditor(customSymbolEditor, { ...customSymbol, customSymbol: '✔' });
+
+            try {
+                await editor.ready();
+                const output = await openPicker(editor);
+                expect(output).toContain(groupHeader(groupIndex));
+                expect(output).toContain(entry?.name);
             } finally {
                 editor.cleanup();
             }
