@@ -62,11 +62,11 @@ import {
     withValueColorsKeybind
 } from './value-colors-editor';
 
-export type UsagePercentWidgetKind = 'session' | 'weekly' | 'weekly-sonnet' | 'weekly-opus' | 'fable-weekly';
+export type UsagePercentWidgetKind = 'session' | 'weekly' | 'weekly-sonnet' | 'weekly-opus' | 'fable-weekly' | 'spend-limit';
 
 const DEFAULT_COLOR = 'brightBlue';
 
-type UsagePercentField = 'sessionUsage' | 'weeklyUsage' | 'weeklySonnetUsage' | 'weeklyOpusUsage' | 'fableUsage';
+type UsagePercentField = 'sessionUsage' | 'weeklyUsage' | 'weeklySonnetUsage' | 'weeklyOpusUsage' | 'fableUsage' | 'spendLimitUsage';
 
 interface UsageCursorOptions { cursorPercent: number }
 
@@ -76,13 +76,15 @@ interface UsagePercentWidgetKindConfig {
     description: string;
     previewPercent: number;
     usageField: UsagePercentField;
+    // The value comes from the statusline payload, so usage API errors say nothing about it.
+    ignoreApiError?: boolean;
 }
 
 const USAGE_PERCENT_WIDGET_CONFIG: Record<UsagePercentWidgetKind, UsagePercentWidgetKindConfig> = {
     'session': {
-        label: 'Session: ',
-        displayName: 'Session Usage',
-        description: 'Shows daily/session API usage percentage',
+        label: '5h: ',
+        displayName: 'Block Usage',
+        description: 'Shows the current 5-hour block\'s usage percentage',
         previewPercent: 90,
         usageField: 'sessionUsage'
     },
@@ -113,6 +115,14 @@ const USAGE_PERCENT_WIDGET_CONFIG: Record<UsagePercentWidgetKind, UsagePercentWi
         description: 'Shows Fable-only weekly usage percentage',
         previewPercent: 60,
         usageField: 'fableUsage'
+    },
+    'spend-limit': {
+        label: 'Spend Limit: ',
+        displayName: 'Spend Limit Usage',
+        description: 'Shows the percentage of your Claude apps gateway spend limit used',
+        previewPercent: 40,
+        usageField: 'spendLimitUsage',
+        ignoreApiError: true
     }
 };
 
@@ -131,7 +141,16 @@ function resolveUsageWindow(kind: UsagePercentWidgetKind, data: RenderUsageData,
     if (kind === 'weekly-opus') {
         return resolveWeeklyOpusUsageWindow(data);
     }
+    if (!hasUsageWindow(kind)) {
+        return null;
+    }
     return resolveFableUsageWindow(data);
+}
+
+// The spend limit payload does not say how long the limit's period is, so there
+// is no window to place a time cursor in.
+function hasUsageWindow(kind: UsagePercentWidgetKind): boolean {
+    return kind !== 'spend-limit';
 }
 
 function renderUsageDisplay(
@@ -218,7 +237,7 @@ export function renderUsagePercentWidgetValue(
     const data: RenderUsageData = context.usageData ?? {};
     const usagePercent = data[config.usageField];
     if (usagePercent === undefined) {
-        if (data.error) {
+        if (data.error && !config.ignoreApiError) {
             return isHidden(item, USAGE_NO_DATA_HIDEABLE_STATE.key)
                 ? null
                 : getUsageErrorMessage(data.error);
@@ -258,8 +277,9 @@ export class UsagePercentWidget implements Widget {
         return getUsagePercentWidgetEditorDisplay(this.kind, item);
     }
 
+    // The state hides the usage API's error, which a widget that ignores API errors never shows
     getHideableStates(): HideableState[] {
-        return [USAGE_NO_DATA_HIDEABLE_STATE];
+        return USAGE_PERCENT_WIDGET_CONFIG[this.kind].ignoreApiError ? [] : [USAGE_NO_DATA_HIDEABLE_STATE];
     }
 
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
@@ -271,7 +291,7 @@ export class UsagePercentWidget implements Widget {
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
-        return withValueColorsKeybind(getUsagePercentCustomKeybinds(item), item === undefined || !isLevelGlyphMode(item));
+        return withValueColorsKeybind(getUsagePercentCustomKeybinds(item, hasUsageWindow(this.kind)), item === undefined || !isLevelGlyphMode(item));
     }
 
     // The level glyph mode's glyph and break point editors, or value colors,
@@ -282,7 +302,7 @@ export class UsagePercentWidget implements Widget {
             title: `${this.getDisplayName()}: value colors`,
             scale: LIMIT_SCALE,
             sampleNote: showsRemaining ? 'left' : 'used',
-            defaultColor: DEFAULT_COLOR,
+            defaultColor: this.getDefaultColor(),
             maxPercent: 100,
             label: this.getLabelPrefix(),
             showsRemaining
