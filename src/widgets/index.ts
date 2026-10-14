@@ -76,6 +76,8 @@ export { WeeklySonnetUsageWidget } from './WeeklySonnetUsage';
 export { WeeklyOpusUsageWidget } from './WeeklyOpusUsage';
 export { FableWeeklyUsageWidget } from './FableWeeklyUsage';
 export { FableWeeklyLimitTimerWidget } from './FableWeeklyLimitTimer';
+export { SpendLimitUsageWidget } from './SpendLimitUsage';
+export { SpendLimitAmountWidget } from './SpendLimitAmount';
 export { BlockResetTimerWidget } from './BlockResetTimer';
 export { WeeklyResetTimerWidget } from './WeeklyResetTimer';
 export { ContextBarWidget } from './ContextBar';
