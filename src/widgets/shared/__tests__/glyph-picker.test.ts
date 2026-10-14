@@ -524,6 +524,27 @@ describe('glyph picker', () => {
             }
         });
 
+        it('previews the label with the pick in it, like a typed character', async () => {
+            const onPreview = vi.fn<(widget: WidgetItem) => void>();
+            const previewingLabelEditor = (props: WidgetEditorProps) => React.createElement(LabelEditor, { ...props, defaultLabel: 'Model: ', onPreview });
+            const editor = renderWidgetEditor(previewingLabelEditor, { id: 'model', type: 'model' });
+            const glyph = firstGroup?.glyphs[0]?.glyph;
+
+            try {
+                await editor.ready();
+                await editor.press(DOWN);
+                await waitForOutput(editor, 'Pick a glyph');
+                expect(onPreview).not.toHaveBeenCalled();
+                await editor.press(ENTER);
+                expect(onPreview.mock.calls.at(-1)?.[0].metadata?.label).toBe(`Model: ${glyph}`);
+                // Enter saves what the preview showed
+                await editor.press(ENTER);
+                expect(savedWidget(editor)?.metadata?.label).toBe(`Model: ${glyph}`);
+            } finally {
+                editor.cleanup();
+            }
+        });
+
         it('goes back to the label unchanged on ESC', async () => {
             const editor = renderWidgetEditor(labelEditor, { id: 'model', type: 'model' });
 

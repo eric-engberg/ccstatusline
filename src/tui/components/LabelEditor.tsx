@@ -26,6 +26,15 @@ export const LabelEditor: React.FC<LabelEditorProps> = ({ widget, defaultLabel, 
     const { getText, display, handleInput, insert } = useTextCursor(getLabel(widget, defaultLabel));
     const [picking, setPicking] = useState(false);
 
+    // Typed or picked, every change to the text shows in the preview
+    const editText = (edit: () => void) => {
+        const previousText = getText();
+        edit();
+        if (getText() !== previousText) {
+            onPreview?.(setLabel(widget, getText()));
+        }
+    };
+
     // The picker takes the keys while it's open
     useInput((input, key) => {
         if (key.downArrow) {
@@ -37,11 +46,7 @@ export const LabelEditor: React.FC<LabelEditorProps> = ({ widget, defaultLabel, 
         } else if (key.tab) {
             onComplete(clearLabel(widget));
         } else {
-            const previousText = getText();
-            handleInput(input, key);
-            if (getText() !== previousText) {
-                onPreview?.(setLabel(widget, getText()));
-            }
+            editText(() => { handleInput(input, key); });
         }
     }, { isActive: !picking });
 
@@ -50,7 +55,7 @@ export const LabelEditor: React.FC<LabelEditorProps> = ({ widget, defaultLabel, 
             <GlyphPicker
                 initialGlyph=''
                 onPick={(glyph) => {
-                    insert(glyph);
+                    editText(() => { insert(glyph); });
                     setPicking(false);
                 }}
                 onCancel={() => { setPicking(false); }}
