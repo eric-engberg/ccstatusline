@@ -484,20 +484,6 @@ export function buildInvalidConfigSaveConfirm(
     };
 }
 
-export function applyLinePreview(
-    lines: WidgetItem[][],
-    lineIndex: number,
-    previewLine: WidgetItem[] | null
-): WidgetItem[][] {
-    if (!previewLine) {
-        return lines;
-    }
-
-    const previewLines = [...lines];
-    previewLines[lineIndex] = previewLine;
-    return previewLines;
-}
-
 export const App: React.FC = () => {
     const { exit } = useApp();
     // Only set when running under the CCSTATUSLINE_DEV_RELOAD supervisor; the
@@ -510,6 +496,7 @@ export const App: React.FC = () => {
     const [configLoadError, setConfigLoadError] = useState<string | null>(null);
     const [screen, setScreen] = useState<AppScreen>(restored?.screen ?? 'main');
     const [selectedLine, setSelectedLine] = useState(restored?.selectedLine ?? 0);
+    const [previewWidgets, setPreviewWidgets] = useState<WidgetItem[] | null>(null);
     const [menuSelections, setMenuSelections] = useState<Record<string, number>>(restored?.menuSelections ?? {});
     const [itemsCursor, setItemsCursor] = useState(restored?.itemsCursor ?? 0);
     const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
@@ -521,7 +508,6 @@ export const App: React.FC = () => {
     const [existingStatusLine, setExistingStatusLine] = useState<string | null>(null);
     const [flashMessage, setFlashMessage] = useState<FlashMessage | null>(null);
     const [previewIsTruncated, setPreviewIsTruncated] = useState(false);
-    const [itemsPreviewLine, setItemsPreviewLine] = useState<WidgetItem[] | null>(null);
     const [currentRefreshInterval, setCurrentRefreshInterval] = useState<number | null>(null);
     const [supportsRefreshInterval] = useState(() => isClaudeCodeVersionAtLeast('2.1.97'));
     const [commandAvailability] = useState(() => getPackageCommandAvailability());
@@ -1207,6 +1193,10 @@ export const App: React.FC = () => {
     };
 
     const configWarning = buildConfigLoadWarning(configLoadError);
+    // Label drafts and the picker's highlighted widget affect only the preview until Enter accepts them.
+    const previewLines = screen === 'items' && previewWidgets
+        ? settings.lines.map((line, index) => index === selectedLine ? previewWidgets : line)
+        : settings.lines;
 
     return (
         <Box flexDirection='column'>
@@ -1234,7 +1224,7 @@ export const App: React.FC = () => {
             )}
 
             <StatusLinePreview
-                lines={applyLinePreview(settings.lines, selectedLine, itemsPreviewLine)}
+                lines={previewLines}
                 terminalWidth={terminalWidth}
                 settings={settings}
                 onTruncationChange={setPreviewIsTruncated}
@@ -1283,7 +1273,7 @@ export const App: React.FC = () => {
                     <ItemsEditor
                         widgets={settings.lines[selectedLine] ?? []}
                         onUpdate={(widgets) => { updateLine(selectedLine, widgets); }}
-                        onPreviewChange={setItemsPreviewLine}
+                        onPreviewChange={setPreviewWidgets}
                         initialSelectedIndex={itemsCursor}
                         onSelectedIndexChange={setItemsCursor}
                         onBack={() => {
