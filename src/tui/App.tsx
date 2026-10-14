@@ -489,6 +489,7 @@ export const App: React.FC = () => {
     const [configLoadError, setConfigLoadError] = useState<string | null>(null);
     const [screen, setScreen] = useState<AppScreen>('main');
     const [selectedLine, setSelectedLine] = useState(0);
+    const [previewWidgets, setPreviewWidgets] = useState<WidgetItem[] | null>(null);
     const [menuSelections, setMenuSelections] = useState<Record<string, number>>({});
     const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
     const [isClaudeInstalled, setIsClaudeInstalled] = useState(false);
@@ -1185,6 +1186,10 @@ export const App: React.FC = () => {
     };
 
     const configWarning = buildConfigLoadWarning(configLoadError);
+    // Label drafts affect only the preview until Enter accepts the edit.
+    const previewLines = screen === 'items' && previewWidgets
+        ? settings.lines.map((line, index) => index === selectedLine ? previewWidgets : line)
+        : settings.lines;
 
     return (
         <Box flexDirection='column'>
@@ -1211,7 +1216,7 @@ export const App: React.FC = () => {
             )}
 
             <StatusLinePreview
-                lines={settings.lines}
+                lines={previewLines}
                 terminalWidth={terminalWidth}
                 settings={settings}
                 onTruncationChange={setPreviewIsTruncated}
@@ -1261,6 +1266,7 @@ export const App: React.FC = () => {
                         <ItemsEditor
                             widgets={settings.lines[selectedLine] ?? []}
                             onUpdate={(widgets) => { updateLine(selectedLine, widgets); }}
+                            onPreviewChange={setPreviewWidgets}
                             onBack={() => {
                                 // When going back to lines menu, preserve which line was selected
                                 setMenuSelections(prev => ({ ...prev, lines: selectedLine }));
