@@ -120,11 +120,16 @@ function resolveUsageWindow(kind: UsagePercentWidgetKind, data: RenderUsageData,
     if (kind === 'weekly-opus') {
         return resolveWeeklyOpusUsageWindow(data);
     }
-    if (kind === 'spend-limit') {
-        // The payload does not say how long the limit's period is, so there is no window to place a cursor in.
+    if (!hasUsageWindow(kind)) {
         return null;
     }
     return resolveFableUsageWindow(data);
+}
+
+// The spend limit payload does not say how long the limit's period is, so there
+// is no window to place a time cursor in.
+function hasUsageWindow(kind: UsagePercentWidgetKind): boolean {
+    return kind !== 'spend-limit';
 }
 
 function renderUsageDisplay(
@@ -237,8 +242,9 @@ export class UsagePercentWidget implements Widget {
         return getUsagePercentWidgetEditorDisplay(this.kind, item);
     }
 
+    // The state hides the usage API's error, which a widget that ignores API errors never shows
     getHideableStates(): HideableState[] {
-        return [USAGE_NO_DATA_HIDEABLE_STATE];
+        return USAGE_PERCENT_WIDGET_CONFIG[this.kind].ignoreApiError ? [] : [USAGE_NO_DATA_HIDEABLE_STATE];
     }
 
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
@@ -250,7 +256,7 @@ export class UsagePercentWidget implements Widget {
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
-        return getUsagePercentCustomKeybinds(item);
+        return getUsagePercentCustomKeybinds(item, hasUsageWindow(this.kind));
     }
 
     supportsRawValue(): boolean { return true; }
