@@ -305,7 +305,7 @@ export class UsagePercentWidget implements Widget {
             title: `${this.getDisplayName()}: value colors`,
             scale: LIMIT_SCALE,
             sampleNote: showsRemaining ? 'left' : 'used',
-            defaultColor: DEFAULT_COLOR,
+            defaultColor: this.getDefaultColor(),
             maxPercent: 100,
             label: this.getLabelPrefix(),
             showsRemaining
