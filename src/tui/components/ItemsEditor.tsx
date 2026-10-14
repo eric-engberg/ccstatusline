@@ -71,10 +71,11 @@ import {
 export interface ItemsEditorProps {
     widgets: WidgetItem[];
     onUpdate: (widgets: WidgetItem[]) => void;
-    onBack: () => void;
-    // Receives the line as it would look with the widget highlighted in the
-    // picker, or null when nothing is being previewed. Pass a stable callback.
+    // Receives the line as it would look with a pending change (a label draft,
+    // or the widget highlighted in the picker), or null when nothing is being
+    // previewed. Pass a stable callback.
     onPreviewChange?: (widgets: WidgetItem[] | null) => void;
+    onBack: () => void;
     // Lets the caller restore the cursor, e.g. after a dev reload
     initialSelectedIndex?: number;
     onSelectedIndexChange?: (index: number) => void;
@@ -123,8 +124,8 @@ function renderWindowedList<T>(
 export const ItemsEditor: React.FC<ItemsEditorProps> = ({
     widgets,
     onUpdate,
-    onBack,
     onPreviewChange,
+    onBack,
     initialSelectedIndex = 0,
     onSelectedIndexChange,
     lineNumber,
@@ -141,6 +142,11 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
     const [showClearConfirm, setShowClearConfirm] = useState(false);
     const { stdout } = useStdout();
     const separatorChars = ['|', '-', ',', ' '];
+
+    // Discard a label draft or picker preview if navigation unmounts the editor (for example, a save dialog).
+    useEffect(() => () => {
+        onPreviewChange?.(null);
+    }, [onPreviewChange]);
 
     const widgetCatalog = getWidgetCatalog(settings);
     const widgetCategories = ['All', ...getWidgetCatalogCategories(widgetCatalog)];
@@ -180,10 +186,12 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
         const newWidgets = [...widgets];
         newWidgets[selectedIndex] = updatedWidget;
         onUpdate(newWidgets);
+        onPreviewChange?.(null);
         setCustomEditorWidget(null);
     };
 
     const handleEditorCancel = () => {
+        onPreviewChange?.(null);
         setCustomEditorWidget(null);
     };
 
@@ -414,10 +422,6 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
         onPreviewChange?.(previewWidgets);
     }, [onPreviewChange, previewWidgets]);
 
-    useEffect(() => () => {
-        onPreviewChange?.(null);
-    }, [onPreviewChange]);
-
     useEffect(() => {
         onSelectedIndexChange?.(selectedIndex);
     }, [onSelectedIndexChange, selectedIndex]);
@@ -471,6 +475,11 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
                 defaultLabel={customEditorWidget.impl.getLabelPrefix(customEditorWidget.widget)}
                 onComplete={handleEditorComplete}
                 onCancel={handleEditorCancel}
+                onPreview={(updatedWidget) => {
+                    const previewWidgets = [...widgets];
+                    previewWidgets[selectedIndex] = updatedWidget;
+                    onPreviewChange?.(previewWidgets);
+                }}
             />
         );
     }
