@@ -114,6 +114,14 @@ function readsSessionLimit(item: WidgetItem): boolean {
         || (item.type === 'session-usage' && isHidden(item, SESSION_AT_LIMIT_HIDEABLE_STATE.key));
 }
 
+// A cached answer can outlive its block: the cache is reused for minutes, and
+// for as long as the API keeps failing. Once its block has reset, its percent
+// says nothing about the current one.
+function isFromCurrentBlock(apiData: UsageData): boolean {
+    const resetAtMs = apiData.sessionResetAt === undefined ? Number.NaN : Date.parse(apiData.sessionResetAt);
+    return Number.isNaN(resetAtMs) || resetAtMs > Date.now();
+}
+
 export function hasUsageDependentWidgets(lines: WidgetItem[][]): boolean {
     return lines.some(line => line.some(item => USAGE_WIDGET_TYPES.has(item.type)));
 }
@@ -273,7 +281,7 @@ export async function prefetchUsageDataIfNeeded(lines: WidgetItem[][], data?: St
     }
 
     const usageData = mergeUsageData(rateLimitsData, apiData);
-    if (requirements.includes(SESSION_LIMIT_HIDE_REQUIREMENT) && apiData.sessionUsage !== undefined) {
+    if (requirements.includes(SESSION_LIMIT_HIDE_REQUIREMENT) && apiData.sessionUsage !== undefined && isFromCurrentBlock(apiData)) {
         usageData.apiSessionUsage = apiData.sessionUsage;
     }
     return usageData;
