@@ -801,4 +801,52 @@ describe('LineSelector Powerline per line', () => {
             view.cleanup();
         }
     });
+
+    // Turning Powerline mode off frees only the lines that follow it
+    it.each([
+        { name: 'follows Powerline mode', lineEnabled: [null, false], enabled: true, advice: '• Disable Powerline mode in Powerline Configuration' },
+        { name: 'was set to Powerline with Powerline mode off', lineEnabled: [true], enabled: false, advice: '• Set this line to plain with (p) in Edit Lines' },
+        { name: 'was set to Powerline before Powerline mode went on', lineEnabled: [true, false], enabled: true, advice: '• Set this line to plain with (p) in Edit Lines' }
+    ])('gives a way out of the theme that works for a line that $name', async ({ lineEnabled, enabled, advice }) => {
+        const view = renderLineSelector({
+            lines: [ONE_WIDGET, TWO_WIDGETS],
+            blockIfPowerlineActive: true,
+            settings: lineModes(enabled, lineEnabled, 'nord'),
+            title: 'Select Line to Edit Colors'
+        });
+
+        try {
+            await waitFor(() => {
+                expect(view.rows()).toHaveLength(3);
+            });
+
+            view.press(ENTER);
+            await waitFor(() => {
+                expect(view.frame()).toContain('⚠ Colors are currently managed by the Powerline theme: Nord');
+            });
+            expect(view.frame()).toContain('• Change to \'Custom\' theme in Powerline Configuration → Themes');
+            expect(view.frame()).toContain(advice);
+            expect(view.frame().match(/^\s*• /gm)).toHaveLength(2);
+        } finally {
+            view.cleanup();
+        }
+    });
+
+    it('points to (p) when every line is Powerline by its own setting', async () => {
+        const view = renderLineSelector({
+            lines: [ONE_WIDGET, TWO_WIDGETS],
+            blockIfPowerlineActive: true,
+            settings: lineModes(false, [true, true], 'nord')
+        });
+
+        try {
+            await waitFor(() => {
+                expect(view.frame()).toContain('⚠ Colors are currently managed by the Powerline theme: Nord');
+            });
+            expect(view.frame()).toContain('• Set lines to plain with (p) in Edit Lines');
+            expect(view.frame()).not.toContain('Disable Powerline mode');
+        } finally {
+            view.cleanup();
+        }
+    });
 });
