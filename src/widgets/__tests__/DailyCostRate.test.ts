@@ -40,6 +40,13 @@ describe('DailyCostRateWidget', () => {
         })).toBe('Rate Today: $12.40/hr');
     });
 
+    it('shows billed spend in the currency the usage API reports', () => {
+        expect(render(billedItem, {
+            ...context,
+            usageData: { extraUsageEnabled: true, extraUsageUsed: 12000, extraUsageUsedToday: 5000, extraUsageCurrency: 'EUR' }
+        })).toBe('Rate Today: €50.00/hr');
+    });
+
     it('renders nothing with billed spend on until today\'s spend is known', () => {
         expect(render(billedItem, { ...context, usageData: { extraUsageEnabled: true, extraUsageUsed: 12345 } })).toBeNull();
         expect(render(billedItem, context)).toBeNull();
