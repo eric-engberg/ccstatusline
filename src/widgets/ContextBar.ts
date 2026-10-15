@@ -23,7 +23,8 @@ import {
     cycleGradientPreset,
     getGradientKeybinds,
     getGradientModifier,
-    paintWidgetBar
+    paintWidgetBar,
+    paintsBarGradient
 } from './shared/gradient-bar';
 import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
 import { makeSliderBar } from './shared/usage-display';
@@ -164,6 +165,11 @@ export class ContextBarWidget implements Widget {
             { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
             ...getGradientKeybinds(true)
         ];
+    }
+
+    // A gradient preset paints only the bar, so the renderer colors the rest
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
+        return paintsBarGradient(item, true);
     }
 
     supportsRawValue(): boolean { return true; }

@@ -23,7 +23,10 @@ import {
     handleContextSliderAction,
     renderContextSlider
 } from './context-slider';
-import { paintWidgetBar } from './gradient-bar';
+import {
+    paintWidgetBar,
+    paintsBarGradient
+} from './gradient-bar';
 import { formatRawOrLabeledValue } from './raw-or-labeled';
 
 // Context % and Context % (usable) differ only in their name, color, label, preview
@@ -82,6 +85,11 @@ export abstract class ContextPercentageWidgetBase implements Widget {
             { key: 'u', label: '(u)sed/remaining', action: 'toggle-inverse' },
             ...getContextSliderKeybinds(item)
         ];
+    }
+
+    // A gradient preset paints only the slider, so the renderer colors the rest
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
+        return paintsBarGradient(item, getContextSliderMode(item) !== 'none');
     }
 
     supportsRawValue(): boolean { return true; }
