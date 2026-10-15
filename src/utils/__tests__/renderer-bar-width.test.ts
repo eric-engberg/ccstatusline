@@ -64,6 +64,7 @@ const contextBar = (id: string, barWidth?: string, display = 'progress'): Widget
     metadata: { display, ...(barWidth ? { barWidth } : {}) }
 });
 const text = (id: string, customText: string): WidgetItem => ({ id, type: 'custom-text', customText });
+const flex = (id: string): WidgetItem => ({ id, type: 'flex-separator' });
 const countCells = (line: string): number => line.match(/[█░▓│]/g)?.length ?? 0;
 
 // 'full' flex mode leaves 6 columns free, so a 100-column terminal gives 94
@@ -115,6 +116,29 @@ describe('bar width', () => {
     it('sizes bars the same way in Powerline mode', () => {
         const line = renderLine([text('t', 'model'), contextBar('bar', 'fill')], TERMINAL, { powerline: { ...DEFAULT_SETTINGS.powerline, enabled: true } });
         expect(getVisibleWidth(line)).toBe(LINE);
+    });
+
+    // A flex separator can close to no columns, so it leaves the bar all the room
+    it('grows a fill bar up to the widget after a flex separator', () => {
+        const withFlex = renderLine([text('a', 'A'), contextBar('bar', 'fill'), flex('f'), text('b', 'B')], TERMINAL);
+        const withoutFlex = renderLine([text('a', 'A'), contextBar('bar', 'fill'), text('b', 'B')], TERMINAL);
+        expect(getVisibleWidth(withFlex)).toBe(LINE);
+        expect(withFlex).toMatch(/\)B$/);
+        expect(countCells(withFlex)).toBe(countCells(withoutFlex));
+    });
+
+    it('shrinks a percentage bar beside a flex separator only as far as the line needs', () => {
+        const withFlex = renderLine([text('a', 'A'), contextBar('bar', '100'), flex('f'), text('b', 'B')], 60);
+        const withoutFlex = renderLine([text('a', 'A'), contextBar('bar', '100'), text('b', 'B')], 60);
+        expect(withFlex).toMatch(/\)B$/);
+        expect(countCells(withFlex)).toBe(countCells(withoutFlex));
+    });
+
+    it('keeps a spacing separator beside a flex separator in the room it measures', () => {
+        const space: WidgetItem = { id: 's', type: 'separator', character: ' ' };
+        const line = renderLine([text('a', 'A'), contextBar('bar', 'fill'), space, flex('f'), text('b', 'B')], TERMINAL);
+        expect(getVisibleWidth(line)).toBe(LINE);
+        expect(line).toMatch(/\) B$/);
     });
 
     it('saves no room for a widget whose width setting has no bar to apply to', () => {
