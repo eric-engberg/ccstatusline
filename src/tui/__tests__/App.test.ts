@@ -502,6 +502,48 @@ describe('App live label preview', () => {
     });
 });
 
+describe('App Powerline per line', () => {
+    let sandbox: AppSandbox;
+
+    beforeEach(() => {
+        sandbox = setUpAppSandbox();
+        vi.spyOn(claudeStatus, 'loadClaudeStatusLineState').mockResolvedValue({ existingStatusLine: null, refreshInterval: null });
+        vi.spyOn(claudeSettings, 'isInstalled').mockResolvedValue(false);
+    });
+
+    afterEach(() => {
+        sandbox.restore();
+    });
+
+    // With no theme a Powerline line's segments have no colors, and with no
+    // padding its text runs into the arrows
+    it('gives the first line switched to Powerline with p the theme and padding turning Powerline on sets', async () => {
+        fs.writeFileSync(sandbox.settingsPath, JSON.stringify({
+            ...DEFAULT_SETTINGS,
+            lines: [
+                [{ id: 'a', type: 'custom-text', customText: 'LineOne' }],
+                [{ id: 'b', type: 'custom-text', customText: 'LineTwo' }]
+            ]
+        }));
+        const rendered = renderApp();
+
+        try {
+            await waitFor(() => {
+                expect(rendered.getFrame()).toContain('Main Menu');
+            });
+            await pressKey(rendered, KEYS.enter, 'Select Line to Edit Items');
+            await pressKey(rendered, 'p', 'Line 1 (1 widget, Powerline)');
+            await pressKey(rendered, KEYS.ctrlS, '✓ Configuration saved');
+
+            const saved = JSON.parse(fs.readFileSync(sandbox.settingsPath, 'utf-8')) as { defaultPadding?: string; powerline: { enabled: boolean; lineEnabled?: unknown; theme?: string } };
+            expect(saved.powerline).toMatchObject({ enabled: false, lineEnabled: [true], theme: 'nord-aurora' });
+            expect(saved.defaultPadding).toBe(' ');
+        } finally {
+            rendered.cleanup();
+        }
+    });
+});
+
 describe('App save guard for an invalid settings.json', () => {
     let sandbox: AppSandbox;
 
