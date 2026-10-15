@@ -4,7 +4,10 @@ import type {
 } from '../types/StatusJSON';
 import type { WidgetItem } from '../types/Widget';
 import { isHidden } from '../widgets/shared/hideable';
-import { SESSION_UNDER_LIMIT_HIDEABLE_STATE } from '../widgets/shared/usage-display';
+import {
+    SESSION_AT_LIMIT_HIDEABLE_STATE,
+    SESSION_UNDER_LIMIT_HIDEABLE_STATE
+} from '../widgets/shared/usage-display';
 
 import type { UsageData } from './usage';
 import { fetchUsageData } from './usage';
@@ -98,12 +101,18 @@ const USAGE_CURSOR_REQUIREMENTS: Record<string, UsageFieldRequirement> = {
     ...Object.fromEntries(WEEKLY_MODEL_USAGE_BUCKETS.map(bucket => [bucket.widgetType, { field: bucket.resetField, alternatives: ['weeklyResetAt'] }]))
 };
 
-// Block Reset Timer's under-limit hide state reads the 5-hour block's percent
-// from the usage API, kept as apiSessionUsage. The payload's percent comes from
-// this session's last response, so in a session left idle while others use up
-// the limit it never reaches 100%. Like the timer's own reset requirement, a failed
-// fetch made only for it isn't an error, and the payload's percent stands in.
-const UNDER_LIMIT_HIDE_REQUIREMENT: UsageFieldRequirement = { field: 'sessionUsage', fromApi: true, suppressFetchError: true };
+// Block Reset Timer's under-limit and Block Usage's at-limit hide states read
+// the 5-hour block's percent from the usage API, kept as apiSessionUsage. The
+// payload's percent comes from this session's last response, so in a session
+// left idle while others use up the limit it never reaches 100%. Like the
+// timer's own reset requirement, a failed fetch made only for it isn't an
+// error, and the payload's percent stands in.
+const SESSION_LIMIT_HIDE_REQUIREMENT: UsageFieldRequirement = { field: 'sessionUsage', fromApi: true, suppressFetchError: true };
+
+function readsSessionLimit(item: WidgetItem): boolean {
+    return (item.type === 'reset-timer' && isHidden(item, SESSION_UNDER_LIMIT_HIDEABLE_STATE.key))
+        || (item.type === 'session-usage' && isHidden(item, SESSION_AT_LIMIT_HIDEABLE_STATE.key));
+}
 
 export function hasUsageDependentWidgets(lines: WidgetItem[][]): boolean {
     return lines.some(line => line.some(item => USAGE_WIDGET_TYPES.has(item.type)));
@@ -125,8 +134,8 @@ function getUsageFieldRequirements(lines: WidgetItem[][]): UsageFieldRequirement
                 requirements.push(cursorRequirement);
             }
 
-            if (item.type === 'reset-timer' && isHidden(item, SESSION_UNDER_LIMIT_HIDEABLE_STATE.key)) {
-                requirements.push(UNDER_LIMIT_HIDE_REQUIREMENT);
+            if (readsSessionLimit(item)) {
+                requirements.push(SESSION_LIMIT_HIDE_REQUIREMENT);
             }
         }
     }
@@ -264,7 +273,7 @@ export async function prefetchUsageDataIfNeeded(lines: WidgetItem[][], data?: St
     }
 
     const usageData = mergeUsageData(rateLimitsData, apiData);
-    if (requirements.includes(UNDER_LIMIT_HIDE_REQUIREMENT) && apiData.sessionUsage !== undefined) {
+    if (requirements.includes(SESSION_LIMIT_HIDE_REQUIREMENT) && apiData.sessionUsage !== undefined) {
         usageData.apiSessionUsage = apiData.sessionUsage;
     }
     return usageData;
