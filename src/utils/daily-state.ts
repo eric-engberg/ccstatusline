@@ -30,6 +30,8 @@ export interface SessionDayRecord {
     startedAt: number;
     /** When the session was first seen, or seen again after Claude Code restarted its totals; its clock time counts from then. */
     firstSeenAt: number;
+    /** When it was first seen, or seen again after a restart, on the day it was last seen; that day's starting point was taken then. */
+    dayFirstSeenAt: number;
     cost: number;
     apiMs: number;
     dayStartCost: number;
@@ -99,6 +101,7 @@ function isSessionDayRecord(value: unknown): value is SessionDayRecord {
         && isFiniteNumber(entry.lastSeenAt)
         && isFiniteNumber(entry.startedAt)
         && isFiniteNumber(entry.firstSeenAt)
+        && isFiniteNumber(entry.dayFirstSeenAt)
         && isFiniteNumber(entry.cost)
         && isFiniteNumber(entry.apiMs)
         && isFiniteNumber(entry.dayStartCost)

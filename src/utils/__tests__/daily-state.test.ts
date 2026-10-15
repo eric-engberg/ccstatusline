@@ -63,6 +63,7 @@ function sessionRecord(lastSeenDay: string): SessionDayRecord {
         lastSeenAt: Date.parse(`${lastSeenDay}T12:00:00Z`),
         startedAt: Date.parse(`${lastSeenDay}T10:00:00Z`),
         firstSeenAt: Date.parse(`${lastSeenDay}T10:00:00Z`),
+        dayFirstSeenAt: Date.parse(`${lastSeenDay}T10:00:00Z`),
         cost: 2.5,
         apiMs: 600_000,
         dayStartCost: 0,

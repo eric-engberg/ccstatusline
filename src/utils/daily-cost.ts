@@ -48,6 +48,10 @@ const REFRESH_UNCHANGED_MS = 60 * 1000;
 // before the render, wobbles a little from render to render.
 const START_TOLERANCE_MS = 60 * 1000;
 
+// A small step back of the clock, such as an NTP correction, leaves times just
+// ahead of now; those are real.
+const CLOCK_SKEW_TOLERANCE_MS = 60 * 1000;
+
 function utcMidnight(nowMs: number): number {
     const now = new Date(nowMs);
     return Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
@@ -70,13 +74,14 @@ export function advanceSessionRecord(record: SessionDayRecord | undefined, sampl
             return { ...record, ...seen };
         }
         if (record.lastSeenDay === previousUtcDayKey(nowMs)) {
-            return { ...record, ...seen, dayStartCost: record.cost, dayStartApiMs: record.apiMs };
+            return { ...record, ...seen, dayFirstSeenAt: nowMs, dayStartCost: record.cost, dayStartApiMs: record.apiMs };
         }
     }
     return {
         ...seen,
         startedAt: nowMs - sample.durationMs,
         firstSeenAt: nowMs,
+        dayFirstSeenAt: nowMs,
         dayStartCost: sample.cost,
         dayStartApiMs: sample.apiMs
     };
@@ -140,6 +145,30 @@ export function computeDailyTotals(sessions: Record<string, SessionDayRecord>, n
     return { claudeCodeCost, activeMs, clockMs: unionLength(intervals) };
 }
 
+// A record last seen further ahead was stamped while the system clock ran
+// ahead. If it was first seen today, at a time that has come, today's starting
+// point was taken then and stands: only the time it was last seen is off, so it
+// counts as last seen now. Otherwise its day can't be trusted either, and it
+// would count towards a later day once that came, so it's dropped.
+function settleRecordsAhead(sessions: Record<string, SessionDayRecord>, nowMs: number): Record<string, SessionDayRecord> {
+    const latestTrusted = nowMs + CLOCK_SKEW_TOLERANCE_MS;
+    const entries = Object.entries(sessions);
+    if (entries.every(([, record]) => record.lastSeenAt <= latestTrusted)) {
+        return sessions;
+    }
+
+    const today = utcDayKey(nowMs);
+    const settled: Record<string, SessionDayRecord> = {};
+    for (const [key, record] of entries) {
+        if (record.lastSeenAt <= latestTrusted) {
+            settled[key] = record;
+        } else if (record.lastSeenDay === today && record.dayFirstSeenAt <= latestTrusted) {
+            settled[key] = { ...record, lastSeenAt: nowMs };
+        }
+    }
+    return settled;
+}
+
 function isUnchanged(current: SessionDayRecord, next: SessionDayRecord): boolean {
     return current.lastSeenDay === next.lastSeenDay
         && current.firstSeenAt === next.firstSeenAt
@@ -158,19 +187,20 @@ export function observeSessionCost(profileKey: string, sessionId: string, sample
     const result: { sessions?: Record<string, SessionDayRecord> } = {};
 
     const ran = updateDailyState((state) => {
-        const profile = state.sessions[profileKey] ?? {};
+        const stored = state.sessions[profileKey] ?? {};
+        const profile = settleRecordsAhead(stored, nowMs);
         const current = profile[sessionId];
         const sessions = foldSessionSample(profile, sessionId, sample, nowMs);
         result.sessions = sessions;
         const next = sessions[sessionId];
-        if (current && next && isUnchanged(current, next)) {
+        if (profile === stored && current && next && isUnchanged(current, next)) {
             return null;
         }
         return { ...state, sessions: { ...state.sessions, [profileKey]: sessions } };
     }, deps);
 
     if (!ran || !result.sessions) {
-        const profile = readDailyState(deps).sessions[profileKey] ?? {};
+        const profile = settleRecordsAhead(readDailyState(deps).sessions[profileKey] ?? {}, nowMs);
         result.sessions = foldSessionSample(profile, sessionId, sample, nowMs);
     }
     return computeDailyTotals(result.sessions, nowMs);

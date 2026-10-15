@@ -72,6 +72,7 @@ function session(overrides: Partial<SessionDayRecord>): SessionDayRecord {
         lastSeenAt: NOW,
         startedAt: at('14:00'),
         firstSeenAt: at('14:00'),
+        dayFirstSeenAt: at('14:00'),
         cost: 2.5,
         apiMs: 30 * MINUTE,
         dayStartCost: 0,
@@ -94,7 +95,7 @@ describe('advanceSessionRecord', () => {
         // A resumed or forked session: Claude Code restores the totals and
         // backdates the start by the time the session ran before.
         expect(advanceSessionRecord(undefined, { cost: 2.5, apiMs: 30 * MINUTE, durationMs: HOUR }, NOW))
-            .toEqual(session({ firstSeenAt: NOW, dayStartCost: 2.5, dayStartApiMs: 30 * MINUTE }));
+            .toEqual(session({ firstSeenAt: NOW, dayFirstSeenAt: NOW, dayStartCost: 2.5, dayStartApiMs: 30 * MINUTE }));
     });
 
     it('starts an overnight session at what it had reached by the end of yesterday', () => {
@@ -103,6 +104,7 @@ describe('advanceSessionRecord', () => {
             lastSeenAt: Date.parse('2026-10-04T23:30:00Z'),
             startedAt: Date.parse('2026-10-04T22:00:00Z'),
             firstSeenAt: Date.parse('2026-10-04T22:00:00Z'),
+            dayFirstSeenAt: Date.parse('2026-10-04T22:00:00Z'),
             cost: 1,
             apiMs: 10 * MINUTE,
             dayStartCost: 0,
@@ -116,6 +118,7 @@ describe('advanceSessionRecord', () => {
         expect(record.dayStartApiMs).toBe(10 * MINUTE);
         expect(record.startedAt).toBe(Date.parse('2026-10-04T22:00:00Z'));
         expect(record.firstSeenAt).toBe(Date.parse('2026-10-04T22:00:00Z'));
+        expect(record.dayFirstSeenAt).toBe(NOW);
     });
 
     it('starts a session seen yesterday and resumed today at the totals Claude Code restored', () => {
@@ -124,6 +127,7 @@ describe('advanceSessionRecord', () => {
             lastSeenAt: Date.parse('2026-10-04T20:00:00Z'),
             startedAt: Date.parse('2026-10-04T18:00:00Z'),
             firstSeenAt: Date.parse('2026-10-04T18:00:00Z'),
+            dayFirstSeenAt: Date.parse('2026-10-04T18:00:00Z'),
             cost: 8,
             apiMs: 40 * MINUTE,
             dayStartCost: 0,
@@ -293,6 +297,69 @@ describe('observeSessionCost', () => {
 
         expect(observeSessionCost('default', 's1', { cost: 7, apiMs: 30 * MINUTE, durationMs: 2 * HOUR }, deps))
             .toEqual({ claudeCodeCost: 8, activeMs: 35 * MINUTE, clockMs: 3 * HOUR });
+    });
+
+    it('drops a session last seen while the clock ran ahead, rather than count it towards a later day', () => {
+        // While the clock ran a day ahead, from 08:00 to 10:00 today, s1 was
+        // first and last seen, at 08:00 and 10:00 tomorrow, and s3, running
+        // since 08:00 today, was last seen at 09:00 tomorrow, which made that
+        // its day. Now it's really 07:00 tomorrow, and s2 has run since 06:30,
+        // with nothing new since it was seen half a minute ago.
+        const s1 = session({
+            lastSeenDay: '2026-10-06',
+            lastSeenAt: Date.parse('2026-10-06T10:00:00Z'),
+            startedAt: Date.parse('2026-10-06T08:00:00Z'),
+            firstSeenAt: Date.parse('2026-10-06T08:00:00Z'),
+            dayFirstSeenAt: Date.parse('2026-10-06T08:00:00Z'),
+            cost: 4,
+            dayStartCost: 1
+        });
+        const s3 = session({
+            lastSeenDay: '2026-10-06',
+            lastSeenAt: Date.parse('2026-10-06T09:00:00Z'),
+            startedAt: at('08:00'),
+            firstSeenAt: at('08:00'),
+            dayFirstSeenAt: Date.parse('2026-10-06T09:00:00Z'),
+            cost: 2,
+            dayStartCost: 1.5
+        });
+        const s2 = session({
+            lastSeenDay: '2026-10-06',
+            lastSeenAt: Date.parse('2026-10-06T06:59:30Z'),
+            startedAt: Date.parse('2026-10-06T06:30:00Z'),
+            firstSeenAt: Date.parse('2026-10-06T06:30:00Z'),
+            dayFirstSeenAt: Date.parse('2026-10-06T06:30:00Z'),
+            cost: 0.5,
+            apiMs: 5 * MINUTE
+        });
+        const deps = makeDeps({ version: 1, spend: {}, sessions: { default: { s1, s2, s3 } } }, Date.parse('2026-10-06T07:00:00Z'));
+
+        expect(observeSessionCost('default', 's2', { cost: 0.5, apiMs: 5 * MINUTE, durationMs: 30 * MINUTE }, deps))
+            .toEqual({ claudeCodeCost: 0.5, activeMs: 5 * MINUTE, clockMs: 30 * MINUTE });
+        expect(Object.keys(readDailyState(deps).sessions.default ?? {})).toEqual(['s2']);
+    });
+
+    it('keeps what sessions counted today when the clock ran ahead and was put right the same day', () => {
+        // s0 has run since 22:00 yesterday and was first seen today at 00:30;
+        // s1 has run since 08:00 and s2 since 09:00. At 10:00 the clock ran two
+        // hours ahead, so they were last seen at "11:00", "12:00" and "11:30".
+        const s0 = session({
+            startedAt: Date.parse('2026-10-04T22:00:00Z'),
+            firstSeenAt: Date.parse('2026-10-04T22:00:00Z'),
+            dayFirstSeenAt: at('00:30'),
+            lastSeenAt: at('11:00'),
+            cost: 4,
+            apiMs: 40 * MINUTE,
+            dayStartCost: 3,
+            dayStartApiMs: 30 * MINUTE
+        });
+        const s1 = session({ startedAt: at('08:00'), firstSeenAt: at('08:00'), dayFirstSeenAt: at('08:00'), lastSeenAt: at('12:00'), cost: 5, apiMs: 50 * MINUTE });
+        const s2 = session({ startedAt: at('09:00'), firstSeenAt: at('09:00'), dayFirstSeenAt: at('09:00'), lastSeenAt: at('11:30'), cost: 1, apiMs: 10 * MINUTE });
+        const deps = makeDeps({ version: 1, spend: {}, sessions: { default: { s0, s1, s2 } } }, at('10:05'));
+
+        expect(observeSessionCost('default', 's1', { cost: 6, apiMs: 60 * MINUTE, durationMs: 2 * HOUR + 5 * MINUTE }, deps))
+            .toEqual({ claudeCodeCost: 8, activeMs: 80 * MINUTE, clockMs: 10 * HOUR + 5 * MINUTE });
+        expect(readDailyState(deps).sessions.default?.s2?.lastSeenAt).toBe(at('10:05'));
     });
 });
 
