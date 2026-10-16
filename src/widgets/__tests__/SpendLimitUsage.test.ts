@@ -1,3 +1,5 @@
+import chalk from 'chalk';
+import React from 'react';
 import {
     afterEach,
     describe,
@@ -11,6 +13,7 @@ import { DEFAULT_SETTINGS } from '../../types/Settings';
 import type { WidgetItem } from '../../types/Widget';
 import * as usage from '../../utils/usage';
 import { SpendLimitUsageWidget } from '../SpendLimitUsage';
+import { renderWidgetEditor } from '../shared/__tests__/helpers/widget-editor-harness';
 
 function render(item: WidgetItem, context: RenderContext = {}): string | null {
     return new SpendLimitUsageWidget().render(item, context, DEFAULT_SETTINGS);
@@ -28,6 +31,7 @@ describe('SpendLimitUsageWidget', () => {
         const widget = new SpendLimitUsageWidget();
 
         expect(widget.getDisplayName()).toBe('Spend Limit Usage');
+        expect(widget.getDefaultColor()).toBe('brightMagenta');
         expect(widget.getCategory()).toBe('Usage');
         expect(widget.getLabelPrefix()).toBe('Spend Limit: ');
         expect(widget.supportsRawValue()).toBe(true);
@@ -77,6 +81,27 @@ describe('SpendLimitUsageWidget', () => {
     it('offers no time cursor because the payload carries no window length', () => {
         const keybinds = new SpendLimitUsageWidget().getCustomKeybinds(baseItem);
 
-        expect(keybinds.map(keybind => keybind.action)).toEqual(['toggle-progress', 'toggle-invert']);
+        expect(keybinds.map(keybind => keybind.action)).toEqual(['toggle-progress', 'toggle-invert', 'edit-value-colors']);
+    });
+
+    it('offers no state to hide, because it never shows a usage API error', () => {
+        expect(new SpendLimitUsageWidget().getHideableStates()).toEqual([]);
+    });
+
+    // The status line draws the sample's spaces in the widget's own color
+    it('samples value colors in its own color', async () => {
+        const originalLevel = chalk.level;
+        chalk.level = 1;
+        const widget = new SpendLimitUsageWidget();
+        const editor = renderWidgetEditor(props => widget.renderEditor({ ...props, action: 'edit-value-colors' }) ?? React.createElement(React.Fragment), { ...baseItem, metadata: { valueColors: 'true' } }, { ...DEFAULT_SETTINGS, colorLevel: 1 });
+        try {
+            await editor.ready();
+            const output = editor.takeColoredOutput();
+            expect(output).toContain('\x1b[95m');
+            expect(output).not.toContain('\x1b[94m');
+        } finally {
+            editor.cleanup();
+            chalk.level = originalLevel;
+        }
     });
 });
