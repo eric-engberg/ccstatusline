@@ -22,6 +22,11 @@ const CACHE_FILE = path.join(CACHE_DIR, 'claude-status.json');
 const LOCK_FILE = path.join(CACHE_DIR, 'claude-status.lock');
 const CACHE_MAX_AGE = 300;       // seconds - refresh service status every ~5 minutes
 const FAILURE_BACKOFF = 30;      // seconds - wait before retrying after a failed fetch
+// Longest the last fetched status stands in while the status page can't be
+// reached; past it the widget shows `?`, as with no data at all. Staying under
+// one six-hour history block means an incident still open in the cache colors
+// the same blocks it would had it ended when last seen, never unseen hours.
+const STALE_MAX_AGE = 3600;      // seconds
 
 const STATUS_HOST = 'status.claude.com';
 /** The status page itself, which the widget can link to. */
@@ -237,10 +242,18 @@ function writeCachedClaudeStatus(cache: CachedClaudeStatus): void {
     }
 }
 
+// Whether a timestamp lies within maxAgeSeconds of now. One dated ahead of now
+// still counts within that window, since clocks sharing a home directory can
+// sit a little apart; further ahead, it was written under a clock since set
+// back, and trusting it would hold that state until real time caught up.
+function isWithinAge(stampSeconds: number, nowSeconds: number, maxAgeSeconds: number): boolean {
+    return Math.abs(nowSeconds - stampSeconds) < maxAgeSeconds;
+}
+
 function isFailureLockActive(nowSeconds: number): boolean {
     try {
         const lockMtime = Math.floor(fs.statSync(LOCK_FILE).mtimeMs / 1000);
-        return nowSeconds - lockMtime < FAILURE_BACKOFF;
+        return isWithinAge(lockMtime, nowSeconds, FAILURE_BACKOFF);
     } catch {
         return false;
     }
@@ -369,21 +382,23 @@ async function fetchClaudeServiceStatus(includeIncidents: boolean): Promise<Clau
     const nowSeconds = Math.floor(nowMs / 1000);
 
     if (memoryCache
-        && nowSeconds - Math.floor(memoryCache.fetchedAt / 1000) < CACHE_MAX_AGE
+        && isWithinAge(Math.floor(memoryCache.fetchedAt / 1000), nowSeconds, CACHE_MAX_AGE)
         && isCacheUsable(memoryCache, includeIncidents)) {
         return toStatusData(memoryCache);
     }
 
     const diskCache = readCachedClaudeStatus();
     if (diskCache
-        && nowSeconds - Math.floor(diskCache.fetchedAt / 1000) < CACHE_MAX_AGE
+        && isWithinAge(Math.floor(diskCache.fetchedAt / 1000), nowSeconds, CACHE_MAX_AGE)
         && isCacheUsable(diskCache, includeIncidents)) {
         memoryCache = diskCache;
         return toStatusData(diskCache);
     }
 
     const serveStaleOrError = (): ClaudeServiceStatusData => {
-        if (diskCache && isCacheUsable(diskCache, includeIncidents)) {
+        if (diskCache
+            && isWithinAge(Math.floor(diskCache.fetchedAt / 1000), nowSeconds, STALE_MAX_AGE)
+            && isCacheUsable(diskCache, includeIncidents)) {
             return toStatusData(diskCache);
         }
         return { error: true };
