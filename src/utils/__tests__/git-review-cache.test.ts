@@ -267,7 +267,7 @@ const RERUN_ROLLUP = [
     { __typename: 'CheckRun', conclusion: 'SUCCESS', name: 'lint', startedAt: '2026-10-14T10:00:00Z', status: 'COMPLETED', workflowName: 'CI' }
 ];
 // `gh pr checks` keeps the newest run of each check
-const RERUN_CHECK_ROWS = JSON.stringify([{ bucket: 'pass' }, { bucket: 'pass' }]);
+const RERUN_CHECK_ROWS = JSON.stringify([{ state: 'SUCCESS' }, { state: 'SUCCESS' }]);
 const RERUN_ROLLUP_COUNTS = { failing: 1, pending: 0, state: 'failing', success: 2 };
 
 mockExecutableResolution();
@@ -750,7 +750,7 @@ describe('git-review-cache', () => {
         });
 
         const checksCalls = prChecksCalls(harness);
-        expect(checksCalls.map(call => call.args)).toEqual([['pr', 'checks', '--json', 'bucket', '--', '42']]);
+        expect(checksCalls.map(call => call.args)).toEqual([['pr', 'checks', '--json', 'state', '--', '42']]);
         expect(checksCalls[0]?.cwd).toBe('/tmp/repo');
         expect(gitConfigFromEnv(checksCalls[0]?.env)).toEqual(expect.arrayContaining([
             ['core.fsmonitor', ''],
@@ -765,7 +765,7 @@ describe('git-review-cache', () => {
             { __typename: 'StatusContext', context: 'ci/jenkins', startedAt: '2026-10-14T10:00:00Z', state: 'FAILURE' },
             { __typename: 'StatusContext', context: 'ci/jenkins', startedAt: '2026-10-14T10:20:00Z', state: 'SUCCESS' }
         ]));
-        harness.ghResponses.push(JSON.stringify([{ bucket: 'pass' }]));
+        harness.ghResponses.push(JSON.stringify([{ state: 'SUCCESS' }]));
 
         expect(fetchGitReviewData('/tmp/repo', harness.deps, { includeChecks: true })?.checks).toEqual({
             failing: 0,
@@ -776,7 +776,7 @@ describe('git-review-cache', () => {
         expect(prChecksCalls(harness)).toHaveLength(1);
     });
 
-    it('counts gh pr checks\' pending, skipping and cancel rows as it counts the rollup', () => {
+    it('classifies gh pr checks rows as it classifies the rollup', () => {
         const harness = createHarness();
         harness.setOriginRemoteUrl('https://github.com/example-owner/example-repo.git');
         harness.ghResponses.push(prWithChecks([
@@ -784,12 +784,20 @@ describe('git-review-cache', () => {
             { __typename: 'CheckRun', conclusion: 'FAILURE', name: 'test', startedAt: '2026-10-14T10:00:00Z', status: 'COMPLETED', workflowName: 'CI' },
             { __typename: 'CheckRun', conclusion: '', name: 'test', startedAt: '2026-10-14T10:20:00Z', status: 'IN_PROGRESS', workflowName: 'CI' },
             { __typename: 'CheckRun', conclusion: 'SKIPPED', name: 'docs', startedAt: '2026-10-14T10:00:00Z', status: 'COMPLETED', workflowName: 'CI' },
-            { __typename: 'CheckRun', conclusion: 'CANCELLED', name: 'deploy', startedAt: '2026-10-14T10:00:00Z', status: 'COMPLETED', workflowName: 'CI' }
+            { __typename: 'CheckRun', conclusion: 'CANCELLED', name: 'deploy', startedAt: '2026-10-14T10:00:00Z', status: 'COMPLETED', workflowName: 'CI' },
+            { __typename: 'CheckRun', conclusion: 'STARTUP_FAILURE', name: 'release', startedAt: '2026-10-14T10:00:00Z', status: 'COMPLETED', workflowName: 'Release' }
         ]));
-        harness.ghResponses.push(JSON.stringify([{ bucket: 'pending' }, { bucket: 'skipping' }, { bucket: 'cancel' }]));
+        // A check run's state is its conclusion once it has completed, and its
+        // status before that
+        harness.ghResponses.push(JSON.stringify([
+            { state: 'IN_PROGRESS' },
+            { state: 'SKIPPED' },
+            { state: 'CANCELLED' },
+            { state: 'STARTUP_FAILURE' }
+        ]));
 
         expect(fetchGitReviewData('/tmp/repo', harness.deps, { includeChecks: true })?.checks).toEqual({
-            failing: 1,
+            failing: 2,
             pending: 1,
             state: 'failing',
             success: 0
@@ -809,7 +817,7 @@ describe('git-review-cache', () => {
             { __typename: 'CheckRun', conclusion: 'SUCCESS', name: 'test', startedAt: '2026-10-14T10:20:00Z', status: 'COMPLETED', workflowName: 'CI' }
         ]));
         // The newest pull_request run, and the push run
-        harness.ghResponses.push(JSON.stringify([{ bucket: 'pass' }, { bucket: 'fail' }]));
+        harness.ghResponses.push(JSON.stringify([{ state: 'SUCCESS' }, { state: 'FAILURE' }]));
 
         expect(fetchGitReviewData('/tmp/repo', harness.deps, { includeChecks: true })?.checks).toEqual({
             failing: 1,
@@ -869,7 +877,7 @@ describe('git-review-cache', () => {
 
         expect(fetchGitReviewData('/tmp/repo', harness.deps, { includeChecks: true })?.checks?.state).toBe('passing');
         expect(prChecksCalls(harness).map(call => call.args)).toEqual([
-            ['pr', 'checks', '--repo', 'https://github.com/fork-owner/example-repo', '--json', 'bucket', '--', '42']
+            ['pr', 'checks', '--repo', 'https://github.com/fork-owner/example-repo', '--json', 'state', '--', '42']
         ]);
     });
 

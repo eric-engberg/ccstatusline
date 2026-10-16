@@ -122,26 +122,32 @@ export function computeCiRollup(rollup: unknown): GitCiChecks | null {
     return summarizeCiChecks(rollup.filter(isRecord).map(classifyCheck));
 }
 
-// Classify a `gh pr checks` row by the bucket gh sorts it into. A cancelled
-// run counts as failed, as a CANCELLED conclusion does in the rollup.
-function classifyCheckBucket(bucket: string): CiCheckKind {
-    if (bucket === 'pass')
+// The statuses of a check run that hasn't completed, and a status context's
+// pending states
+const PENDING_CHECK_STATES = new Set(['REQUESTED', 'QUEUED', 'IN_PROGRESS', 'WAITING', 'PENDING', 'EXPECTED']);
+
+// Classify a `gh pr checks` row as classifyCheck does the rollup entry it came
+// from. Its state is a check run's conclusion once the run has completed and
+// its status before that, or a status context's state. (gh's own `bucket`
+// files STARTUP_FAILURE and STALE under pending.)
+function classifyCheckRowState(state: string): CiCheckKind {
+    if (state === 'SUCCESS')
         return 'success';
-    if (bucket === 'pending')
-        return 'pending';
-    if (bucket === 'skipping')
+    if (state === 'NEUTRAL' || state === 'SKIPPED')
         return 'ignored';
+    if (PENDING_CHECK_STATES.has(state))
+        return 'pending';
     return 'failed';
 }
 
-// `gh pr checks --json bucket` prints one row per check
+// `gh pr checks --json state` prints one row per check
 function computeCiChecksFromRows(rows: unknown): GitCiChecks | null {
     if (!Array.isArray(rows))
         return null;
-    const buckets = rows.map(row => (isRecord(row) ? row.bucket : undefined));
-    if (!buckets.every((bucket): bucket is string => typeof bucket === 'string'))
+    const states = rows.map(row => (isRecord(row) ? row.state : undefined));
+    if (!states.every((state): state is string => typeof state === 'string'))
         return null;
-    return summarizeCiChecks(buckets.map(classifyCheckBucket));
+    return summarizeCiChecks(states.map(state => classifyCheckRowState(state.toUpperCase())));
 }
 
 // Two rollup entries are runs of the same check when they share a status
@@ -171,7 +177,7 @@ const REFRESH_LOCK_STALE_MS = 30_000;
 const DEFAULT_TITLE_MAX_WIDTH = 30;
 const GH_PR_METADATA_FIELDS = 'url,number,title,state,reviewDecision';
 const GH_PR_WITH_CHECKS_FIELDS = `${GH_PR_METADATA_FIELDS},statusCheckRollup`;
-const GH_PR_CHECKS_FIELDS = 'bucket';
+const GH_PR_CHECKS_FIELDS = 'state';
 export const GIT_REVIEW_REFRESH_FLAG = '--internal-refresh-git-review-cache';
 
 export interface GitReviewCacheDeps {
