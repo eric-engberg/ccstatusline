@@ -55,9 +55,10 @@ const GIT_COMMAND_TIMEOUT_MS = 5_000;
 
 // In-process cache keeps cwd in the key; the persistent cache uses one file
 // per (repo, cwd) pair, stores cwd once at the file level and keys entries by
-// command. Per-cwd files matter because some outputs are cwd-scoped (e.g.
-// `ls-files --unmerged`) and because sessions in the same repo at different
-// cwds (root vs a subdirectory) would otherwise evict each other every render.
+// command. Per-cwd files matter because some outputs depend on cwd (ls-files
+// prints paths relative to it) and because sessions in the same repo at
+// different cwds (root vs a subdirectory) would otherwise evict each other
+// every render.
 const gitCommandCache = new Map<string, GitCacheEntry>();
 const filterOverrideCache = new Map<string, string[] | null>();
 
@@ -72,8 +73,12 @@ const WORK_TREE_COMMAND_ARGS = new Map<string, string[]>([
 // Options set ahead of a command so it reports on the whole repository.
 // diff.relative (git 2.28 and later) limits diff to the current directory; git
 // before 2.28 ignores the setting, where it would reject --no-relative.
+// GIT_LITERAL_PATHSPECS=1 in the environment makes ls-files read the `:/`
+// pathspec as a file name; git has accepted --no-literal-pathspecs since it
+// added that variable.
 const WHOLE_REPOSITORY_ARGS = new Map<string, string[]>([
-    ['diff', ['-c', 'diff.relative=false']]
+    ['diff', ['-c', 'diff.relative=false']],
+    ['ls-files', ['--no-literal-pathspecs']]
 ]);
 
 // `git config --get-regexp` exits with 1 when nothing matches
@@ -265,7 +270,8 @@ function getRepositoryFilterOverrideArgs(cwd: string | undefined): string[] | nu
  * Runs git as every status line call should: with fsmonitor off, no bare
  * repository found by searching upward, and, for commands that re-read work tree
  * files, none of the repository's own filter drivers or external diff tools,
- * and with diff covering the whole repository whatever diff.relative says.
+ * and with diff and ls-files covering the whole repository whatever
+ * diff.relative or GIT_LITERAL_PATHSPECS says.
  * Throws when git fails, or when the repository's filters can't be turned off.
  */
 export function execGit(args: string[], cwd: string | undefined): string {
@@ -708,7 +714,9 @@ export function getGitAheadBehind(context: RenderContext): GitAheadBehind | null
 }
 
 export function getGitConflictCount(context: RenderContext): number {
-    const output = runGit('ls-files --unmerged', context);
+    // `:/` covers the whole repository, as git status does; without a path
+    // ls-files only lists the session's directory
+    const output = runGit('ls-files --unmerged -- :/', context);
     if (!output)
         return 0;
 

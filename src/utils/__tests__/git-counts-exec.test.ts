@@ -20,6 +20,9 @@ import {
 const require = createRequire(import.meta.url);
 const { execFileSync } = require('node:child_process') as typeof childProcess;
 
+// Turns off pathspec magic, so git reads `:/` as a file name
+const LITERAL_PATHSPECS_ENV: NodeJS.ProcessEnv = { GIT_LITERAL_PATHSPECS: '1' };
+
 describe.skipIf(process.platform === 'win32')('git counts across the whole repository', () => {
     let root = '';
     let probePath = '';
@@ -27,9 +30,9 @@ describe.skipIf(process.platform === 'win32')('git counts across the whole repos
 
     // What a helper exported by git.ts returns with the session in cwd, read
     // fresh rather than from an earlier call's cache
-    function gitHelper(name: string, cwd: string): unknown {
+    function gitHelper(name: string, cwd: string, extraEnv: NodeJS.ProcessEnv = {}): unknown {
         fs.rmSync(path.join(root, 'home'), { recursive: true, force: true });
-        return JSON.parse(execFileSync(process.execPath, [probePath, JSON.stringify([name, cwd])], { encoding: 'utf8', env })) as unknown;
+        return JSON.parse(execFileSync(process.execPath, [probePath, JSON.stringify([name, cwd])], { encoding: 'utf8', env: { ...env, ...extraEnv } })) as unknown;
     }
 
     function plainGit(cwd: string, ...args: string[]): string {
@@ -85,5 +88,36 @@ describe.skipIf(process.platform === 'win32')('git counts across the whole repos
             expect(gitHelper('getGitChangeCounts', cwd)).toEqual({ insertions: 3, deletions: 0 });
         }
         expect(plainGit(path.join(dir, 'c'), 'diff', '--cached', '--shortstat')).toBe('');
+    });
+
+    // Mid-merge, with top.txt and sub/f.txt both conflicted and nothing in docs/
+    function makeConflictRepo(name: string): string {
+        const dir = makeRepo(name, { 'top.txt': 'base\n', 'sub/f.txt': 'base\n', 'docs/readme.md': 'readme\n' });
+        plainGit(dir, 'checkout', '-qb', 'other');
+        write(path.join(dir, 'top.txt'), 'other\n');
+        write(path.join(dir, 'sub', 'f.txt'), 'other\n');
+        plainGit(dir, 'commit', '-qam', 'other');
+        plainGit(dir, 'checkout', '-q', '-');
+        write(path.join(dir, 'top.txt'), 'mine\n');
+        write(path.join(dir, 'sub', 'f.txt'), 'mine\n');
+        plainGit(dir, 'commit', '-qam', 'mine');
+        expect(() => plainGit(dir, 'merge', 'other')).toThrow();
+        return dir;
+    }
+
+    it('counts conflicts outside the session\'s directory', () => {
+        const dir = makeConflictRepo('conflicts');
+
+        for (const cwd of [dir, path.join(dir, 'sub'), path.join(dir, 'docs')]) {
+            expect(gitHelper('getGitConflictCount', cwd)).toBe(2);
+        }
+        expect(plainGit(path.join(dir, 'docs'), 'ls-files', '--unmerged')).toBe('');
+    });
+
+    it('counts conflicts with GIT_LITERAL_PATHSPECS set', () => {
+        const dir = makeConflictRepo('conflicts-literal');
+
+        expect(gitHelper('getGitConflictCount', dir, LITERAL_PATHSPECS_ENV)).toBe(2);
+        expect(execFileSync('git', ['ls-files', '--unmerged', '--', ':/'], { cwd: dir, env: { ...env, ...LITERAL_PATHSPECS_ENV }, encoding: 'utf8' })).toBe('');
     });
 });

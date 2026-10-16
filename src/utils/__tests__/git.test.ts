@@ -214,6 +214,22 @@ describe('git utils', () => {
                 '--shortstat'
             ]);
         });
+
+        it('turns pathspec magic back on for ls-files, so `:/` covers the whole repository', () => {
+            const { root } = createGitRepo();
+            mockExecFileSync.mockReturnValueOnce('');
+
+            execGit(['ls-files', '--unmerged', '--', ':/'], root);
+
+            expect(mockExecFileSync.mock.calls[0]?.[1]).toEqual([
+                ...GIT_HARDENING_ARGS,
+                '--no-literal-pathspecs',
+                'ls-files',
+                '--unmerged',
+                '--',
+                ':/'
+            ]);
+        });
     });
 
     describe('runGit', () => {
