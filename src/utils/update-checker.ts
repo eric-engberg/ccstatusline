@@ -257,9 +257,39 @@ export async function checkForUpdates({
     }
 }
 
-export function fetchLatestNpmVersion(timeoutMs = DEFAULT_REGISTRY_TIMEOUT_MS): Promise<string> {
+interface RegistryResponse {
+    statusCode?: number;
+    resume(): unknown;
+    setEncoding(encoding: BufferEncoding): unknown;
+    on(event: 'data', listener: (chunk: string) => void): unknown;
+    on(event: 'end', listener: () => void): unknown;
+}
+
+interface RegistryRequest {
+    destroy(error?: Error): unknown;
+    end(): unknown;
+    on(event: 'error', listener: (error: Error) => void): unknown;
+}
+
+type RegistryRequestFn = (
+    url: string,
+    options: https.RequestOptions,
+    onResponse: (response: RegistryResponse) => void
+) => RegistryRequest;
+
+const requestRegistry: RegistryRequestFn = (url, options, onResponse) => https.request(url, options, onResponse);
+
+export function fetchLatestNpmVersion(
+    timeoutMs = DEFAULT_REGISTRY_TIMEOUT_MS,
+    requestFn: RegistryRequestFn = requestRegistry
+): Promise<string> {
     return new Promise((resolve, reject) => {
-        const request = https.request(
+        const fail = (error: Error) => {
+            clearTimeout(deadline);
+            reject(error);
+        };
+
+        const request = requestFn(
             NPM_REGISTRY_LATEST_URL,
             {
                 headers: {
@@ -270,7 +300,7 @@ export function fetchLatestNpmVersion(timeoutMs = DEFAULT_REGISTRY_TIMEOUT_MS): 
             (response) => {
                 if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300) {
                     response.resume();
-                    reject(new Error(`npm registry returned HTTP ${response.statusCode ?? 'unknown'}`));
+                    fail(new Error(`npm registry returned HTTP ${response.statusCode ?? 'unknown'}`));
                     return;
                 }
 
@@ -285,23 +315,28 @@ export function fetchLatestNpmVersion(timeoutMs = DEFAULT_REGISTRY_TIMEOUT_MS): 
                     try {
                         const parsed = JSON.parse(body) as { version?: unknown };
                         if (typeof parsed.version !== 'string' || parsed.version.trim() === '') {
-                            reject(new Error('npm registry response did not include a version'));
+                            fail(new Error('npm registry response did not include a version'));
                             return;
                         }
 
+                        clearTimeout(deadline);
                         resolve(parsed.version);
                     } catch (error) {
-                        reject(error instanceof Error ? error : new Error(String(error)));
+                        fail(error instanceof Error ? error : new Error(String(error)));
                     }
                 });
             }
         );
 
-        request.setTimeout(timeoutMs, () => {
-            request.destroy(new Error(`npm registry request timed out after ${timeoutMs}ms`));
-        });
-
-        request.on('error', reject);
+        request.on('error', fail);
+        // Covers the whole request. A socket timeout only starts once the socket
+        // connects, and Bun's doesn't fire while it connects, so on a network
+        // that drops the connection it would wait for the OS to give up.
+        const deadline = setTimeout(() => {
+            const error = new Error(`npm registry request timed out after ${timeoutMs}ms`);
+            request.destroy(error);
+            fail(error);
+        }, timeoutMs);
         request.end();
     });
 }

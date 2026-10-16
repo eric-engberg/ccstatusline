@@ -1,4 +1,5 @@
 import * as childProcess from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import {
     afterEach,
     describe,
@@ -12,9 +13,12 @@ import { initConfigPath } from '../config';
 import {
     buildUpdateCheckResult,
     checkForUpdates,
+    fetchLatestNpmVersion,
     runGlobalPackageInstall,
     type UpdateCheckResult
 } from '../update-checker';
+
+type RegistryRequestFn = NonNullable<Parameters<typeof fetchLatestNpmVersion>[1]>;
 
 const ALL_AVAILABLE = {
     npm: true,
@@ -283,5 +287,25 @@ describe('update checker', () => {
                 available: false
             }
         ]);
+    });
+});
+
+describe('npm registry request', () => {
+    // Under Bun, and Node without an agent default, a socket timeout can't fire
+    // while the request is still connecting
+    it('gives up once the deadline passes, even before the request connects', async () => {
+        const destroy = vi.fn();
+        const connectingRequest: RegistryRequestFn = () => Object.assign(new EventEmitter(), {
+            destroy,
+            end: () => undefined
+        });
+
+        const result = await Promise.race([
+            fetchLatestNpmVersion(10, connectingRequest).catch((error: unknown) => error),
+            new Promise<'still pending'>(resolve => setTimeout(() => { resolve('still pending'); }, 1000))
+        ]);
+
+        expect(result).toEqual(new Error('npm registry request timed out after 10ms'));
+        expect(destroy).toHaveBeenCalledOnce();
     });
 });
