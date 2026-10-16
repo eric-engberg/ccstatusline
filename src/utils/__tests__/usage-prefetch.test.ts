@@ -421,7 +421,7 @@ describe('usage prefetch', () => {
 
         expect(usageData).toEqual({ weeklyUsage: 72, weeklyResetAt: epochToIso(1776211200), fableUsage: 8 });
         expect(mockFetchUsageData.mock.calls).toEqual([
-            [{ requiredFields: ['fableUsage'] }]
+            [{ requiredFields: ['fableUsage'], payloadResetAt: { weeklyResetAt: epochToIso(1776211200) } }]
         ]);
     });
 
@@ -434,7 +434,7 @@ describe('usage prefetch', () => {
 
         expect(usageData).toEqual({ weeklyUsage: 72, weeklyResetAt: epochToIso(1776211200) });
         expect(mockFetchUsageData.mock.calls).toEqual([
-            [{ requiredFields: ['fableUsage'] }]
+            [{ requiredFields: ['fableUsage'], payloadResetAt: { weeklyResetAt: epochToIso(1776211200) } }]
         ]);
     });
 
@@ -465,7 +465,7 @@ describe('usage prefetch', () => {
         expect(usageData?.sessionUsage).toBe(100);
         expect(usageData?.apiSessionUsage).toBe(100);
         expect(mockFetchUsageData.mock.calls).toEqual([
-            [{ requiredFields: ['sessionUsage'] }]
+            [{ requiredFields: ['sessionUsage'], payloadResetAt: { sessionResetAt: epochToIso(1774020000) } }]
         ]);
     });
 
@@ -494,7 +494,7 @@ describe('usage prefetch', () => {
         // The usage widgets keep the payload's percent; only the hide state reads the API's
         expect(usageData).toEqual({ sessionUsage: 97, sessionResetAt: epochToIso(1774020000), apiSessionUsage: 100 });
         expect(mockFetchUsageData.mock.calls).toEqual([
-            [{ requiredFields: ['sessionUsage'] }]
+            [{ requiredFields: ['sessionUsage'], payloadResetAt: { sessionResetAt: epochToIso(1774020000) } }]
         ]);
     });
 
@@ -567,7 +567,7 @@ describe('usage prefetch', () => {
         // The widget keeps showing the payload's percent; only the hide state reads the API's
         expect(usageData).toEqual({ sessionUsage: 97, sessionResetAt: epochToIso(1774020000), apiSessionUsage: 100 });
         expect(mockFetchUsageData.mock.calls).toEqual([
-            [{ requiredFields: ['sessionUsage'] }]
+            [{ requiredFields: ['sessionUsage'], payloadResetAt: { sessionResetAt: epochToIso(1774020000) } }]
         ]);
     });
 
@@ -583,7 +583,7 @@ describe('usage prefetch', () => {
 
         expect(usageData?.apiSessionUsage).toBe(100);
         expect(mockFetchUsageData.mock.calls).toEqual([
-            [{ requiredFields: ['sessionUsage'] }]
+            [{ requiredFields: ['sessionUsage'], payloadResetAt: { sessionResetAt: epochToIso(1774020000) } }]
         ]);
     });
 
