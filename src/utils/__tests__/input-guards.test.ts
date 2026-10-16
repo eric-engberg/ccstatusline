@@ -5,6 +5,7 @@ import {
 } from 'vitest';
 
 import {
+    getInsertableHexDigits,
     getInsertableText,
     getPlainInput,
     shouldInsertInput
@@ -90,5 +91,38 @@ describe('getInsertableText', () => {
         expect(getInsertableText('ab\u007F', {})).toBe('');
         // A bracketed paste, after Ink strips the leading ESC
         expect(getInsertableText('[200~abc\u001B[201~', {})).toBe('');
+    });
+});
+
+describe('getInsertableHexDigits', () => {
+    it('upper-cases a typed hex digit and ignores other keys', () => {
+        expect(getInsertableHexDigits('a', {}, 6)).toBe('A');
+        expect(getInsertableHexDigits('7', {}, 6)).toBe('7');
+        expect(getInsertableHexDigits('g', {}, 6)).toBe('');
+        expect(getInsertableHexDigits('#', {}, 6)).toBe('');
+        expect(getInsertableHexDigits(' ', {}, 6)).toBe('');
+    });
+
+    it('blocks chords and digits past the room left', () => {
+        expect(getInsertableHexDigits('a', { ctrl: true }, 6)).toBe('');
+        expect(getInsertableHexDigits('a', { meta: true }, 6)).toBe('');
+        expect(getInsertableHexDigits('a', {}, 0)).toBe('');
+    });
+
+    it('takes a pasted code whole, without its prefix, spaces or line break', () => {
+        expect(getInsertableHexDigits('ff8800', {}, 6)).toBe('FF8800');
+        expect(getInsertableHexDigits('#FF8800', {}, 6)).toBe('FF8800');
+        expect(getInsertableHexDigits(' #FF8800 \r', {}, 6)).toBe('FF8800');
+        expect(getInsertableHexDigits('U+E0B4', {}, 6)).toBe('E0B4');
+        expect(getInsertableHexDigits('u+1f984', {}, 6)).toBe('1F984');
+        expect(getInsertableHexDigits('0xE0B4', {}, 6)).toBe('E0B4');
+    });
+
+    it('ignores a paste that is not a hex code or does not fit', () => {
+        expect(getInsertableHexDigits('E0G4', {}, 6)).toBe('');
+        expect(getInsertableHexDigits('uniE0B4', {}, 6)).toBe('');
+        expect(getInsertableHexDigits('rgb(255, 136, 0)', {}, 6)).toBe('');
+        expect(getInsertableHexDigits('#', {}, 6)).toBe('');
+        expect(getInsertableHexDigits('FF8800', {}, 4)).toBe('');
     });
 });
