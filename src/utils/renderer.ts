@@ -969,9 +969,11 @@ function sizeBarsToLines(
         }
 
         const lineSettings = getLineSettings(settings, lineIndex);
+        // Width 0 reads as unknown, so the measured line isn't truncated
         const measureContext = {
             ...context,
             terminalWidth: 0,
+            measuringLine: true,
             lineIndex,
             globalSeparatorIndex: lineCounters.separator,
             globalPowerlineThemeIndex: lineCounters.theme,
@@ -1381,8 +1383,9 @@ export function renderStatusLine(
     // boundary. Drop any spacing-only separator stranded directly beside one so
     // that fallback does not render a duplicate space. With a known width, keep
     // the separator: a fully occupied line can leave the flex gap at zero columns,
-    // making this space the only boundary between the surrounding content.
-    if (terminalWidth === null) {
+    // making this space the only boundary between the surrounding content. A
+    // line measured for bar sizing keeps it too, since its flex takes no columns.
+    if (terminalWidth === null && !context.measuringLine) {
         for (let i = elements.length - 1; i >= 0; i--) {
             if (elements[i]?.type !== 'separator'
                 || !isSpacingSeparator(elements[i]?.widget, settings.defaultSeparator)) {
@@ -1517,8 +1520,10 @@ export function renderStatusLine(
             }
         }
     } else if (hasFlexSeparator) {
-        // No width detected: treat flex separators as normal separators
-        statusLine = finalElements.map(e => e ?? chalk.gray(' | ')).join('');
+        // No width detected: treat flex separators as normal separators. A line
+        // measured for bar sizing gives them no columns instead.
+        const flexFallback = context.measuringLine ? '' : chalk.gray(' | ');
+        statusLine = finalElements.map(e => e ?? flexFallback).join('');
     } else {
         // No flex separator: just join all elements normally
         statusLine = finalElements.join('');
