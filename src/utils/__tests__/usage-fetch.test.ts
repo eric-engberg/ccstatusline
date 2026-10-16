@@ -512,7 +512,7 @@ describe('fetchUsageData error handling', () => {
             expect(apiErrorResult.requestHost).toBe('api.anthropic.com');
             expect(parseLockContents(apiErrorResult.lockContents)).toEqual({
                 blockedUntil: Math.floor(nowMs / 1000) + 30,
-                error: 'timeout'
+                error: 'api-error'
             });
 
             const genericLockResult = harness.runProbe({
@@ -523,8 +523,8 @@ describe('fetchUsageData error handling', () => {
                 pathDir: apiErrorHome.bin
             });
 
-            expect(genericLockResult.first).toEqual({ error: 'timeout' });
-            expect(genericLockResult.second).toEqual({ error: 'timeout' });
+            expect(genericLockResult.first).toEqual({ error: 'api-error' });
+            expect(genericLockResult.second).toEqual({ error: 'api-error' });
             expect(genericLockResult.requestCount).toBe(0);
 
             const successResult = harness.runProbe({
@@ -966,6 +966,34 @@ describe('fetchUsageData error handling', () => {
 
             expect(result.requestCount).toBe(1);
             expect(result.cacheExists).toBe(true);
+            expect(result.lockContents).toBe(rateLimitedLock);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('keeps a rate-limit lock that a concurrent render wrote during a failed fetch', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome('error-keeps-foreign-lock');
+            const rateLimitedLock = JSON.stringify({
+                blockedUntil: Math.floor(nowMs / 1000) + 300,
+                error: 'rate-limited'
+            });
+            const result = harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                lockWrittenDuringRequest: rateLimitedLock,
+                mode: 'error',
+                nowMs,
+                pathDir: home.bin
+            });
+
+            // The failure's own 30-second backoff must not cut the server's
+            // Retry-After window short.
+            expect(result.first).toEqual({ error: 'api-error' });
+            expect(result.requestCount).toBe(1);
             expect(result.lockContents).toBe(rateLimitedLock);
         } finally {
             harness.cleanup();
@@ -1652,6 +1680,43 @@ describe('fetchUsageData error handling', () => {
 
             expect(activeLockResult.first).toEqual({ error: 'parse-error' });
             expect(activeLockResult.second).toEqual({ error: 'parse-error' });
+            expect(activeLockResult.requestCount).toBe(0);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('keeps API-error locks distinct from timeout locks', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome('api-error-lock');
+            const apiErrorResult = harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                mode: 'status',
+                nowMs,
+                pathDir: home.bin,
+                responseBody: '{"type":"error","error":{"type":"authentication_error"}}',
+                statusCode: 401
+            });
+
+            expect(apiErrorResult.first).toEqual({ error: 'api-error' });
+            expect(parseLockContents(apiErrorResult.lockContents)).toEqual({
+                blockedUntil: Math.floor(nowMs / 1000) + 30,
+                error: 'api-error'
+            });
+
+            const activeLockResult = harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                mode: 'unexpected',
+                nowMs: nowMs + 10000,
+                pathDir: home.bin
+            });
+
+            expect(activeLockResult.first).toEqual({ error: 'api-error' });
+            expect(activeLockResult.second).toEqual({ error: 'api-error' });
             expect(activeLockResult.requestCount).toBe(0);
         } finally {
             harness.cleanup();

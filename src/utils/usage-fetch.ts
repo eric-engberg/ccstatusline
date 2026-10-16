@@ -87,7 +87,7 @@ const UsageCredentialsSchema = z.object({
         refreshToken: z.string().nullable().optional()
     }).optional()
 });
-const UsageLockErrorSchema = z.enum(['timeout', 'rate-limited', 'parse-error']);
+const UsageLockErrorSchema = z.enum(['timeout', 'rate-limited', 'api-error', 'parse-error']);
 const UsageLockSchema = z.object({
     blockedUntil: z.number(),
     error: UsageLockErrorSchema.optional()
@@ -700,6 +700,19 @@ function clearOwnUsageLock(ownContents: string): void {
     }
 }
 
+// Swap the in-flight record this process wrote for a failed request's own
+// backoff, so later renders report that failure rather than a timeout. As
+// above, a concurrent render's newer lock is left in place.
+function replaceOwnUsageLock(ownContents: string, blockedUntil: number, error: UsageLockError): void {
+    try {
+        if (fs.readFileSync(LOCK_FILE, 'utf8') === ownContents) {
+            writeUsageLock(blockedUntil, error);
+        }
+    } catch {
+        // Ignore lock file errors
+    }
+}
+
 function readActiveUsageLock(now: number): { blockedUntil: number; error: UsageLockError } | null {
     let hasValidJsonLock = false;
 
@@ -932,6 +945,7 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
         }
 
         if (response.kind === 'error') {
+            replaceOwnUsageLock(inFlightLock, now + LOCK_MAX_AGE, 'api-error');
             return getStaleUsageOrError('api-error', now, cacheIdentity, LOCK_MAX_AGE, requiredFields);
         }
 
