@@ -42,6 +42,7 @@ import {
     getUsageProgressBarWidth,
     getUsageTimerCustomKeybinds,
     getUsageTimezone,
+    isAtSessionLimit,
     isUsage12HourClock,
     isUsageCompact,
     isUsageDateMode,
@@ -145,11 +146,7 @@ export class BlockResetTimerWidget implements Widget {
         }
 
         const usageData = context.usageData ?? {};
-        // The usage API's percent when there is one (see usage-prefetch.ts), and
-        // the raw percent, not the rounded one: 99.7% isn't the limit yet.
-        const sessionUsage = usageData.apiSessionUsage ?? usageData.sessionUsage;
-        const atSessionLimit = sessionUsage !== undefined && sessionUsage >= 100;
-        if (!atSessionLimit && isHidden(item, SESSION_UNDER_LIMIT_HIDEABLE_STATE.key)) {
+        if (!isAtSessionLimit(usageData) && isHidden(item, SESSION_UNDER_LIMIT_HIDEABLE_STATE.key)) {
             return null;
         }
         const window = resolveUsageWindowWithFallback(usageData, context.blockMetrics);
