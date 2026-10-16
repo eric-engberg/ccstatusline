@@ -9,7 +9,8 @@ import type { UsageData } from './usage';
 import {
     fetchUsageData,
     getUsageAccountKey,
-    getUsageFetchedAt
+    getUsageFetchedAt,
+    lookUpUsageAccount
 } from './usage';
 import type { UsageDataField } from './usage-types';
 import {
@@ -123,8 +124,10 @@ function needsSpendToday(lines: WidgetItem[][]): boolean {
 // Today's spend needs the month-to-date total, the login it belongs to (the
 // daily state file keeps each login's start-of-day total separately), and when
 // the usage API returned it: a cached total fetched before midnight is not
-// today's.
-function withSpendToday(data: UsageData, lines: WidgetItem[][]): UsageData {
+// today's. The login's token fingerprint changes each time Claude Code
+// refreshes its tokens, so the record is kept under the account the profile
+// lookup names, and under the fingerprint only until that lookup answers.
+async function withSpendToday(data: UsageData, lines: WidgetItem[][]): Promise<UsageData> {
     if (!needsSpendToday(lines) || data.extraUsageUsed === undefined) {
         return data;
     }
@@ -135,7 +138,10 @@ function withSpendToday(data: UsageData, lines: WidgetItem[][]): UsageData {
         return data;
     }
 
-    const spentToday = observeExtraUsageSpend(accountKey, data.extraUsageUsed, fetchedAtMs);
+    const account = await lookUpUsageAccount();
+    const spentToday = account
+        ? observeExtraUsageSpend(account.key, data.extraUsageUsed, fetchedAtMs, undefined, account.fingerprints)
+        : observeExtraUsageSpend(accountKey, data.extraUsageUsed, fetchedAtMs);
     return spentToday === undefined ? data : { ...data, extraUsageUsedToday: spentToday };
 }
 

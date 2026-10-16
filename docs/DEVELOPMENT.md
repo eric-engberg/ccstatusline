@@ -62,6 +62,7 @@ bun run docs
 - `~/.cache/ccstatusline/terminal-width.json` - per-session no-width probe results; detected numeric widths are not persisted by the renderer
 - `~/.cache/ccstatusline/usage.json` and `~/.cache/ccstatusline/usage.lock` - usage API data cache and fetch backoff lock
 - `~/.cache/ccstatusline/usage-credentials.lock` - 30-second backoff after a usage credential lookup finds no OAuth login, tagged with the profile it applies to
+- `~/.cache/ccstatusline/usage-account.json` - the account each usage login fingerprint belongs to (itself fingerprinted), looked up from `/api/oauth/profile` for today's extra usage spend, and each fingerprint's backoff after a failed lookup
 - `~/.cache/ccstatusline/claude-status.json` and `~/.cache/ccstatusline/claude-status.lock` - Claude service-status cache and failed-fetch backoff lock
 - `~/.cache/ccstatusline/skills/skills-<sessionId>.jsonl` - skill hook records; session IDs must contain only ASCII letters, digits, `-`, or `_`
 
@@ -101,7 +102,7 @@ After a complete successful usage fetch, the process clears the lock only if its
 - **Sandbox Status** reads `sandbox.enabled` from Claude Code's layered project-local, project, user-local, and user settings on every refresh. This reflects `/sandbox` file updates but remains a best-effort indicator when managed or CLI settings take precedence.
 - **Skills** reads only logs for session IDs accepted by `getSkillsFilePath()`. Rejected IDs return no metrics, and the hook handler exits before creating directories or writing a log.
 
-Both usage and service-status requests honor uppercase `HTTPS_PROXY` and share `isExcludedFromProxy()` for the `NO_PROXY`/`no_proxy` rules described in [Usage](USAGE.md#proxy-settings). Each request has a total five-second deadline in addition to its socket timeout. On expiry, `createProxyAgent().close()` aborts the pending proxy connection when `AbortController` is available; on older runtimes without it, that connection can remain open. The proxy integration tests require permission to listen on a local socket.
+Usage, account profile, and service-status requests honor uppercase `HTTPS_PROXY` and share `isExcludedFromProxy()` for the `NO_PROXY`/`no_proxy` rules described in [Usage](USAGE.md#proxy-settings). Each request has a total five-second deadline in addition to its socket timeout. On expiry, `createProxyAgent().close()` aborts the pending proxy connection when `AbortController` is available; on older runtimes without it, that connection can remain open. The proxy integration tests require permission to listen on a local socket.
 
 ## Widget Implementation
 

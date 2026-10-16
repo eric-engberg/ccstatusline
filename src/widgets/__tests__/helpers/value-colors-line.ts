@@ -10,6 +10,7 @@ import {
     type Settings
 } from '../../../types/Settings';
 import type { WidgetItem } from '../../../types/Widget';
+import { getColorAnsiCode } from '../../../utils/colors';
 import {
     calculateMaxWidthsFromPreRendered,
     preRenderAllWidgets,
@@ -35,6 +36,18 @@ const NORD: Partial<Settings> = {
 const NORD_TEXT = '\x1b[38;5;16m';
 const NORD_SEGMENT = `${NORD_TEXT}\x1b[48;5;73m`;
 const NORD_END = '\x1b[49m';
+const TRUECOLOR_FOREGROUND = '\x1b[38;2;';
+
+// A custom color's code at 256 colors, where it maps to the nearest palette entry
+function at256Colors(code: string): string {
+    if (!code.startsWith(TRUECOLOR_FOREGROUND) || !code.endsWith('m')) {
+        return code;
+    }
+    const hex = code.slice(TRUECOLOR_FOREGROUND.length, -1).split(';')
+        .map(channel => Number.parseInt(channel, 10).toString(16).padStart(2, '0'))
+        .join('');
+    return getColorAnsiCode(`hex:${hex}`, 'ansi256');
+}
 
 export interface ValueColorsLineCase {
     /** The widget with value colors on, in custom colors, and no color of its own. */
@@ -43,7 +56,7 @@ export interface ValueColorsLineCase {
     context: RenderContext;
     label: string;
     value: string;
-    /** The value's color, the same at 256 colors and truecolor (a custom color). */
+    /** The value's color at truecolor (a custom color); at 256 colors, its nearest palette entry is expected. */
     valueCode: string;
     /** What the widget shows with no value to color, e.g. "n/a" or a usage error. */
     fallbacks: { context: RenderContext; text: string }[];
@@ -54,11 +67,12 @@ export interface ValueColorsLineCase {
 // colors any widget (Widget.colorsOnlyItsRuns)
 export function describeValueColorsOnTheLine(line: ValueColorsLineCase): void {
     const { item, context, label, value, valueCode } = line;
+    const valueCode256 = at256Colors(valueCode);
     const wholeWidget: WidgetItem = { ...item, metadata: { ...item.metadata, valueColorScope: 'widget' } };
 
     describe('value colors on the status line', () => {
         it('draws the label in the Powerline theme\'s text color', () => {
-            expect(renderWidgetLine(item, NORD, context)).toBe(`${NORD_SEGMENT}${label}${valueCode}${value}${NORD_TEXT}${NORD_END}${FG_RESET}`);
+            expect(renderWidgetLine(item, NORD, context)).toBe(`${NORD_SEGMENT}${label}${valueCode256}${value}${NORD_TEXT}${NORD_END}${FG_RESET}`);
         });
 
         it('draws the label in the item color', () => {
@@ -80,7 +94,7 @@ export function describeValueColorsOnTheLine(line: ValueColorsLineCase): void {
         });
 
         it('colors the label with the value when set to the whole widget', () => {
-            expect(renderWidgetLine(wholeWidget, NORD, context)).toBe(`${NORD_SEGMENT}${valueCode}${label}${value}${NORD_TEXT}${NORD_END}${FG_RESET}`);
+            expect(renderWidgetLine(wholeWidget, NORD, context)).toBe(`${NORD_SEGMENT}${valueCode256}${label}${value}${NORD_TEXT}${NORD_END}${FG_RESET}`);
             expect(renderWidgetLine({ ...wholeWidget, color: 'hex:112233' }, { colorLevel: 3 }, context))
                 .toBe(`${BASE}${valueCode}${label}${value}${BASE}${FG_RESET}`);
         });

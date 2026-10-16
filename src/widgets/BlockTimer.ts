@@ -15,7 +15,8 @@ import {
 
 import {
     CYCLE_GRADIENT_ACTION,
-    cycleGradientPreset
+    cycleGradientPreset,
+    paintsBarGradient
 } from './shared/gradient-bar';
 import { isHidden } from './shared/hideable';
 import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
@@ -29,6 +30,7 @@ import {
     isUsageInverted,
     isUsageProgressMode,
     isUsageSliderMode,
+    showsUsageBar,
     toggleUsageCompact,
     toggleUsageInverted
 } from './shared/usage-display';
@@ -121,6 +123,11 @@ export class BlockTimerWidget implements Widget {
 
     getHideableStates(): HideableState[] {
         return [NO_DATA_HIDEABLE_STATE];
+    }
+
+    // A gradient preset paints only the bar, so the renderer colors the rest
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
+        return paintsBarGradient(item, showsUsageBar(item));
     }
 
     supportsRawValue(): boolean { return true; }

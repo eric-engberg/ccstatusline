@@ -22,7 +22,8 @@ import { getUsageErrorMessage } from '../utils/usage';
 import { EXTRA_USAGE_DISABLED_HIDEABLE_STATE } from './shared/extra-usage-disabled';
 import {
     CYCLE_GRADIENT_ACTION,
-    cycleGradientPreset
+    cycleGradientPreset,
+    paintsBarGradient
 } from './shared/gradient-bar';
 import { isHidden } from './shared/hideable';
 import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
@@ -165,10 +166,11 @@ export class ExtraUsageUtilizationWidget implements Widget {
         return renderValueColorsEditor(props, { ...VALUE_COLORS_EDITOR, showsRemaining, sampleNote: showsRemaining ? 'left' : 'used' });
     }
 
-    // Value colors paint only the value (or the whole text), so the renderer
-    // colors the rest with the theme or widget color
+    // Value colors paint only the value (or the whole text), and a gradient
+    // preset only the bar, so the renderer colors the rest with the theme
+    // or widget color
     colorsOnlyItsRuns(item: WidgetItem): boolean {
-        return showsValueColors(item);
+        return showsValueColors(item) || paintsBarGradient(item, showsUsageBar(item));
     }
 
     supportsRawValue(): boolean { return true; }
