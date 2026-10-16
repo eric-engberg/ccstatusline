@@ -35,7 +35,8 @@ import {
     cycleGradientPreset,
     getGradientKeybinds,
     getGradientModifier,
-    paintWidgetBar
+    paintWidgetBar,
+    paintsBarGradient
 } from './shared/gradient-bar';
 import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
 import { makeSliderBar } from './shared/usage-display';
@@ -138,6 +139,11 @@ export class ContextBarWidget implements Widget {
             ...getBarWidthKeybinds(true),
             ...getBarNumbersKeybinds(item, true, true)
         ];
+    }
+
+    // A gradient preset paints only the bar, so the renderer colors the rest
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
+        return paintsBarGradient(item, true);
     }
 
     supportsRawValue(): boolean { return true; }

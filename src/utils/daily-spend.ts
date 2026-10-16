@@ -1,4 +1,5 @@
 import type {
+    DailyState,
     DailyStateDeps,
     SpendDayRecord
 } from './daily-state';
@@ -84,24 +85,60 @@ function isSameRecord(a: SpendDayRecord, b: SpendDayRecord): boolean {
         && a.lastSeenAt === b.lastSeenAt;
 }
 
+// Folds one of a login's records into another, as the observation behind it
+// would have; a record's own starting point counts for its day too.
+function mergeSpendRecord(merged: SpendDayRecord | undefined, record: SpendDayRecord): SpendDayRecord {
+    if (!merged) {
+        return record;
+    }
+
+    const next = advanceSpendRecord(merged, record.lastSeenUsed, record.lastSeenAt);
+    return next.day === record.day ? { ...next, baselineUsed: Math.min(next.baselineUsed, record.baselineUsed) } : next;
+}
+
+// Until the profile lookup names a login's account, its record is kept under
+// its token fingerprint, which changes each time Claude Code refreshes its
+// tokens. Once the account is known, the records under its fingerprints move
+// into the account's record, oldest first, so the day keeps its starting
+// point. A record seen while the clock ran ahead is dropped, as advanceAsOf
+// drops it, rather than carried into the account's: its time would make
+// advanceAsOf drop the merged record. Returns `state` itself when there is
+// nothing to move.
+function adoptFormerRecords(state: DailyState, accountKey: string, formerKeys: readonly string[], nowMs: number): DailyState {
+    const moved = formerKeys.filter(key => key !== accountKey && state.spend[key] !== undefined);
+    if (moved.length === 0) {
+        return state;
+    }
+
+    const merged = [accountKey, ...moved]
+        .map(key => state.spend[key])
+        .filter((record): record is SpendDayRecord => record !== undefined && record.lastSeenAt <= nowMs + CLOCK_SKEW_TOLERANCE_MS)
+        .sort((a, b) => a.lastSeenAt - b.lastSeenAt)
+        .reduce<SpendDayRecord | undefined>(mergeSpendRecord, undefined);
+    const kept = Object.fromEntries(Object.entries(state.spend).filter(([key]) => !moved.includes(key)));
+    return { ...state, spend: merged ? { ...kept, [accountKey]: merged } : kept };
+}
+
 /**
  * Records the month-to-date total (cents) a login's usage fetch returned at
  * `fetchedAtMs`, and returns the extra usage spent today, or undefined until a
  * total fetched today has been seen. When another ccstatusline process holds
  * the state lock, this observation isn't stored, but today's spend is still
- * worked out from it.
+ * worked out from it. `formerKeys` are the other keys the login's records may
+ * be under (its token fingerprints); their records move to `accountKey`.
  */
-export function observeExtraUsageSpend(accountKey: string, used: number, fetchedAtMs: number, deps?: DailyStateDeps): number | undefined {
+export function observeExtraUsageSpend(accountKey: string, used: number, fetchedAtMs: number, deps?: DailyStateDeps, formerKeys: readonly string[] = []): number | undefined {
     // Read after the state each time, so a fetch another render has just
     // recorded is never taken for one from the future.
     const now = () => (deps ? deps.now() : Date.now());
     const result: { record?: SpendDayRecord } = {};
 
-    const ran = updateDailyState((state) => {
+    const ran = updateDailyState((stored) => {
+        const state = adoptFormerRecords(stored, accountKey, formerKeys, now());
         const current = state.spend[accountKey];
         const next = advanceAsOf(current, used, fetchedAtMs, now());
         result.record = next;
-        if (current === next || (current && next && isSameRecord(current, next))) {
+        if (state === stored && (current === next || (current && next && isSameRecord(current, next)))) {
             return null;
         }
         if (next) {
@@ -112,7 +149,7 @@ export function observeExtraUsageSpend(accountKey: string, used: number, fetched
     }, deps);
 
     if (!ran || !result.record) {
-        const stored = readDailyState(deps).spend[accountKey];
+        const stored = adoptFormerRecords(readDailyState(deps), accountKey, formerKeys, now()).spend[accountKey];
         result.record = advanceAsOf(stored, used, fetchedAtMs, now());
     }
     return getSpentToday(result.record, now());

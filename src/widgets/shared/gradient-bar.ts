@@ -145,6 +145,14 @@ export function noteGradientNeedsTruecolor(modifierText: string | undefined, set
     return modifierText.replace(/gradient: ([a-z-]+)/, 'gradient: $1, needs truecolor');
 }
 
+// A bar with a preset colors its own cells, so a gradient widget color has to
+// go around them instead of over them (Widget.colorsOnlyItsRuns). Below
+// truecolor or under a global foreground override nothing is painted, and there
+// is nothing to go around.
+export function paintsBarGradient(item: WidgetItem, showsBar: boolean): boolean {
+    return showsBar && getGradientPreset(item) !== null;
+}
+
 // Paints a widget's bar with its gradient preset when the settings allow it. A
 // global foreground override owns every widget's foreground, so it wins.
 // Reversed is for bars that fill with what's left: the color where the fill
