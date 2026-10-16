@@ -92,8 +92,10 @@ describe('ExtraUsageTodayWidget', () => {
 
     describe('value colors', () => {
         const LOW = '\x1b[38;2;0;255;0m';
-        const MID = '\x1b[38;2;255;255;0m';
-        const HIGH = '\x1b[38;2;255;0;0m';
+        // At the default 256 Color level these hex colors map to palette entries
+        const LOW_256 = '\x1b[38;5;46m';
+        const MID_256 = '\x1b[38;5;226m';
+        const HIGH_256 = '\x1b[38;5;196m';
         const FG_RESET = '\x1b[39m';
         // Custom colors, so the escape codes don't depend on the terminal's
         // color support (named colors go through chalk)
@@ -123,25 +125,25 @@ describe('ExtraUsageTodayWidget', () => {
         });
 
         it('colors today\'s spend green below 80% of the day\'s budget, yellow up to it and red above it', () => {
-            expect(render(colored, spentToday(799))).toBe(`${LOW}$7.99${FG_RESET}`);
-            expect(render(colored, spentToday(800))).toBe(`${MID}$8.00${FG_RESET}`);
-            expect(render(colored, spentToday(1000))).toBe(`${MID}$10.00${FG_RESET}`);
-            expect(render(colored, spentToday(1001))).toBe(`${HIGH}$10.01${FG_RESET}`);
+            expect(render(colored, spentToday(799))).toBe(`${LOW_256}$7.99${FG_RESET}`);
+            expect(render(colored, spentToday(800))).toBe(`${MID_256}$8.00${FG_RESET}`);
+            expect(render(colored, spentToday(1000))).toBe(`${MID_256}$10.00${FG_RESET}`);
+            expect(render(colored, spentToday(1001))).toBe(`${HIGH_256}$10.01${FG_RESET}`);
         });
 
         it('colors only the spend, leaving the label to the renderer', () => {
-            expect(render({ ...colored, rawValue: false }, spentToday(500))).toBe(`Overage Today: ${LOW}$5.00${FG_RESET}`);
+            expect(render({ ...colored, rawValue: false }, spentToday(500))).toBe(`Overage Today: ${LOW_256}$5.00${FG_RESET}`);
         });
 
         it('spreads the budget over weekdays when that option is on', () => {
             // $10.00 is 74% of a $13.50 weekday budget
-            expect(render(weekdays, spentToday(1000))).toBe(`${LOW}$10.00${FG_RESET}`);
-            expect(render(weekdays, spentToday(1080))).toBe(`${MID}$10.80${FG_RESET}`);
+            expect(render(weekdays, spentToday(1000))).toBe(`${LOW_256}$10.00${FG_RESET}`);
+            expect(render(weekdays, spentToday(1080))).toBe(`${MID_256}$10.80${FG_RESET}`);
         });
 
         it('is red when nothing was left of the limit as the day began', () => {
-            expect(render(colored, spentToday(0, 10000))).toBe(`${HIGH}$0.00${FG_RESET}`);
-            expect(render(colored, spentToday(0, 9000))).toBe(`${HIGH}$0.00${FG_RESET}`);
+            expect(render(colored, spentToday(0, 10000))).toBe(`${HIGH_256}$0.00${FG_RESET}`);
+            expect(render(colored, spentToday(0, 9000))).toBe(`${HIGH_256}$0.00${FG_RESET}`);
         });
 
         it('leaves the spend to the renderer without a monthly limit to budget from', () => {
@@ -169,7 +171,7 @@ describe('ExtraUsageTodayWidget', () => {
 
         // The sample is $46.10 of Daily Budget's $194.70 sample
         it('previews its sample in its color', () => {
-            expect(render({ ...colored, rawValue: false }, { isPreview: true })).toBe(`Overage Today: ${LOW}$46.10${FG_RESET}`);
+            expect(render({ ...colored, rawValue: false }, { isPreview: true })).toBe(`Overage Today: ${LOW_256}$46.10${FG_RESET}`);
         });
 
         it('offers value colors, and the weekdays toggle once they\'re on', () => {

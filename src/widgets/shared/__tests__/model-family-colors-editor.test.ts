@@ -55,7 +55,7 @@ describe('ModelFamilyColorsEditor', () => {
 
         try {
             await editor.ready();
-            expect(editor.takeColoredOutput()).toContain('Sample: \x1b[38;2;17;34;51mModel: \x1b[38;2;255;136;0mOpus');
+            expect(editor.takeColoredOutput()).toContain('Sample: \x1b[38;5;235mModel: \x1b[38;5;208mOpus');
         } finally {
             editor.cleanup();
         }

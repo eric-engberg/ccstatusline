@@ -42,11 +42,22 @@ export interface GlyphPickerProps {
 
 // The glyph data (several hundred KB with every Nerd Font icon) loads the
 // first time a picker opens, from its own build chunk, so the status line's
-// render path never loads it
+// render path never loads it. A failed load isn't kept, so the next picker
+// that opens tries again.
 let catalogPromise: Promise<GlyphCatalog> | null = null;
 function loadGlyphCatalog(): Promise<GlyphCatalog> {
-    catalogPromise ??= import('./glyph-catalog').then(module => module.createGlyphCatalog());
+    catalogPromise ??= import('./glyph-catalog')
+        .then(module => module.createGlyphCatalog())
+        .catch((error: unknown) => {
+            catalogPromise = null;
+            throw error;
+        });
     return catalogPromise;
+}
+
+/** Forget the loaded glyph data - for testing only */
+export function clearGlyphCatalogCache(): void {
+    catalogPromise = null;
 }
 
 // A toned glyph (👍🏾) is found by the emoji it's made from
@@ -215,13 +226,20 @@ const GlyphGrid: React.FC<GlyphPickerProps & { catalog: GlyphCatalog }> = ({ cat
 // Picks a glyph from groups of them, or by searching every glyph's name
 export const GlyphPicker: React.FC<GlyphPickerProps> = (props) => {
     const [catalog, setCatalog] = useState<GlyphCatalog | null>(null);
+    const [loadFailed, setLoadFailed] = useState(false);
     const { onCancel } = props;
 
+    // The glyph data's chunk is gone if ccstatusline was updated while the
+    // TUI is open; the picker says so instead of the TUI exiting
     useEffect(() => {
         let active = true;
-        void loadGlyphCatalog().then((loaded) => {
+        loadGlyphCatalog().then((loaded) => {
             if (active) {
                 setCatalog(loaded);
+            }
+        }, () => {
+            if (active) {
+                setLoadFailed(true);
             }
         });
         return () => {
@@ -235,7 +253,16 @@ export const GlyphPicker: React.FC<GlyphPickerProps> = (props) => {
         }
     }, { isActive: catalog === null });
 
-    return catalog
-        ? <GlyphGrid {...props} catalog={catalog} />
-        : <Text dimColor>Loading glyphs…</Text>;
+    if (catalog) {
+        return <GlyphGrid {...props} catalog={catalog} />;
+    }
+    if (loadFailed) {
+        return (
+            <Box flexDirection='column'>
+                <Text color='red'>Couldn't load the glyph list. Restart ccstatusline to pick from it.</Text>
+                <Text dimColor>ESC back</Text>
+            </Box>
+        );
+    }
+    return <Text dimColor>Loading glyphs…</Text>;
 };

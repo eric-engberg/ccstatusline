@@ -1,7 +1,9 @@
 export {
     fetchUsageData,
     getUsageAccountKey,
-    getUsageFetchedAt
+    getUsageFetchedAt,
+    lookUpUsageAccount,
+    type UsageAccount
 } from './usage-fetch';
 export {
     formatUsageDuration,

@@ -35,7 +35,7 @@ export interface SessionDayRecord {
 
 export interface DailyState {
     version: typeof STATE_VERSION;
-    /** Keyed by the login's token fingerprint, so accounts never mix. */
+    /** Keyed by the login's account, or its token fingerprint until the account is known, so accounts never mix. */
     spend: Record<string, SpendDayRecord>;
     /** Keyed by Claude Code profile (its CLAUDE_CONFIG_DIR), then by session id. */
     sessions: Record<string, Record<string, SessionDayRecord>>;
@@ -45,6 +45,11 @@ export interface DailyStateDeps {
     readFileSync: (path: string) => string;
     writeFileSync: (path: string, data: string) => void;
     renameSync: (from: string, to: string) => void;
+    /** Removes the temp file a failed write leaves; a test double whose writes never fail can leave it out. */
+    unlinkSync?: (path: string) => void;
+    /** With statSync and unlinkSync, finds earlier writes' leftover temp files to remove; optional like unlinkSync. */
+    readdirSync?: (path: string) => string[];
+    statSync?: (path: string) => { mtimeMs: number };
     mkdirSync: (path: string) => void;
     now: () => number;
     statePath: string;
@@ -54,6 +59,9 @@ const defaultDeps: DailyStateDeps = {
     readFileSync: (p: string) => fs.readFileSync(p, 'utf-8'),
     writeFileSync: (p: string, data: string) => { fs.writeFileSync(p, data, 'utf-8'); },
     renameSync: (from: string, to: string) => { fs.renameSync(from, to); },
+    unlinkSync: (p: string) => { fs.unlinkSync(p); },
+    readdirSync: (p: string) => fs.readdirSync(p),
+    statSync: (p: string) => fs.statSync(p),
     mkdirSync: (p: string) => { fs.mkdirSync(p, { recursive: true }); },
     now: () => Date.now(),
     statePath: path.join(os.homedir(), '.cache', 'ccstatusline', 'daily.json')
@@ -172,6 +180,45 @@ function prune(state: DailyState, nowMs: number): DailyState {
     return { ...state, spend, sessions };
 }
 
+// Another write's temp file this old has been left behind, not still being
+// written, so a write removes it.
+const ORPHANED_TEMP_FILE_AGE_MS = 60 * 1000;
+
+// Removes the state file's temp files that other writes left a minute or more
+// ago. A held handle (a Windows virus scanner or sync client) that fails a
+// rename can fail its unlink too, and builds from before that unlink left
+// theirs, so while the handle is held at most a minute's worth stays.
+function removeOrphanedTempFiles(deps: DailyStateDeps, nowMs: number): void {
+    const { readdirSync, statSync, unlinkSync } = deps;
+    if (!readdirSync || !statSync || !unlinkSync) {
+        return;
+    }
+
+    const dir = path.dirname(deps.statePath);
+    const prefix = `${path.basename(deps.statePath)}.`;
+    let names: string[];
+    try {
+        names = readdirSync(dir);
+    } catch {
+        return;
+    }
+
+    for (const name of names) {
+        if (!name.startsWith(prefix) || !/^\d+\.tmp$/.test(name.slice(prefix.length))) {
+            continue;
+        }
+
+        const tempPath = path.join(dir, name);
+        try {
+            if (nowMs - statSync(tempPath).mtimeMs >= ORPHANED_TEMP_FILE_AGE_MS) {
+                unlinkSync(tempPath);
+            }
+        } catch {
+            // Gone already, or still held; a later write tries again.
+        }
+    }
+}
+
 /**
  * Applies `update` to the current state under the cache lock and writes the
  * result atomically; `null` from `update` means nothing changed and nothing is
@@ -196,8 +243,22 @@ export function updateDailyState(
             }
 
             const tempPath = `${deps.statePath}.${process.pid}.tmp`;
-            deps.writeFileSync(tempPath, JSON.stringify(prune(next, deps.now())));
-            deps.renameSync(tempPath, deps.statePath);
+            try {
+                deps.writeFileSync(tempPath, JSON.stringify(prune(next, deps.now())));
+                deps.renameSync(tempPath, deps.statePath);
+            } catch {
+                // Every render is a new process with its own temp name, so a
+                // temp file kept after each failed write would pile up. A
+                // handle held on the temp file itself (a Windows virus
+                // scanner or sync client) can refuse this unlink as well as
+                // the rename; removeOrphanedTempFiles clears that one later.
+                try {
+                    deps.unlinkSync?.(tempPath);
+                } catch {
+                    // Nothing was written, or the file is still held.
+                }
+            }
+            removeOrphanedTempFiles(deps, deps.now());
         });
     } catch {
         // Best-effort state; the status line must render regardless.
