@@ -12,12 +12,18 @@ import {
     classifyInstallation,
     type PackageCommandAvailability
 } from './claude-settings';
+import { isExcludedFromProxy } from './no-proxy';
 import {
     getPackageManagerExecutable,
     getPackageManagerShellOptions
 } from './package-manager-executable';
+import {
+    createProxyAgent,
+    type ClosableProxyAgent
+} from './proxy-agent';
 
-export const NPM_REGISTRY_LATEST_URL = 'https://registry.npmjs.org/ccstatusline/latest';
+const NPM_REGISTRY_HOST = 'registry.npmjs.org';
+export const NPM_REGISTRY_LATEST_URL = `https://${NPM_REGISTRY_HOST}/ccstatusline/latest`;
 const DEFAULT_REGISTRY_TIMEOUT_MS = 5000;
 const GLOBAL_UPDATE_TIMEOUT_MS = 120000;
 
@@ -279,10 +285,23 @@ type RegistryRequestFn = (
 
 const requestRegistry: RegistryRequestFn = (url, options, onResponse) => https.request(url, options, onResponse);
 
+function getRegistryProxyUrl(): string | null {
+    const proxyUrl = process.env.HTTPS_PROXY?.trim();
+    return proxyUrl?.length && !isExcludedFromProxy(NPM_REGISTRY_HOST) ? proxyUrl : null;
+}
+
 export function fetchLatestNpmVersion(
     timeoutMs = DEFAULT_REGISTRY_TIMEOUT_MS,
     requestFn: RegistryRequestFn = requestRegistry
 ): Promise<string> {
+    let proxy: ClosableProxyAgent | null;
+    try {
+        const proxyUrl = getRegistryProxyUrl();
+        proxy = proxyUrl ? createProxyAgent(proxyUrl) : null;
+    } catch {
+        return Promise.reject(new Error('HTTPS_PROXY is not a valid URL'));
+    }
+
     return new Promise((resolve, reject) => {
         const fail = (error: Error) => {
             clearTimeout(deadline);
@@ -295,7 +314,8 @@ export function fetchLatestNpmVersion(
                 headers: {
                     'Accept': 'application/json',
                     'User-Agent': 'ccstatusline'
-                }
+                },
+                ...(proxy ? { agent: proxy.agent } : {})
             },
             (response) => {
                 if (!response.statusCode || response.statusCode < 200 || response.statusCode >= 300) {
@@ -331,10 +351,12 @@ export function fetchLatestNpmVersion(
         request.on('error', fail);
         // Covers the whole request. A socket timeout only starts once the socket
         // connects, and Bun's doesn't fire while it connects, so on a network
-        // that drops the connection it would wait for the OS to give up.
+        // that drops the connection it would wait for the OS to give up. Behind
+        // a proxy the request has no socket until the proxy answers CONNECT.
         const deadline = setTimeout(() => {
             const error = new Error(`npm registry request timed out after ${timeoutMs}ms`);
             request.destroy(error);
+            proxy?.close();
             fail(error);
         }, timeoutMs);
         request.end();
