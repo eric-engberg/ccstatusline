@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import * as fs from 'node:fs';
+import * as path from 'node:path';
 import {
     afterEach,
     beforeEach,
@@ -656,6 +657,73 @@ describe('App while an install or update runs', () => {
             });
             expect(rendered.getFrame()).toContain('Main Menu');
             expect(globalInstall.run).toHaveBeenCalledOnce();
+        } finally {
+            rendered.cleanup();
+        }
+    });
+});
+
+describe('App when Claude settings.json breaks while the TUI is open', () => {
+    let sandbox: AppSandbox;
+    let claudeSettingsPath: string;
+
+    beforeEach(() => {
+        sandbox = setUpAppSandbox();
+        claudeSettingsPath = claudeSettings.getClaudeSettingsPath();
+        fs.mkdirSync(path.dirname(claudeSettingsPath), { recursive: true });
+    });
+
+    afterEach(() => {
+        sandbox.restore();
+    });
+
+    it('fails the uninstall and keeps the npm global package when settings.json no longer parses', async () => {
+        const installation: InstallationMetadata = { method: 'pinned', installedVersion: getPackageVersion() };
+        fs.writeFileSync(sandbox.settingsPath, JSON.stringify({ ...DEFAULT_SETTINGS, installation }));
+        fs.writeFileSync(claudeSettingsPath, JSON.stringify({ statusLine: { type: 'command', command: 'ccstatusline', padding: 0 } }));
+        vi.spyOn(globalPackageManager, 'inspectActiveGlobalCommand').mockReturnValue({
+            packageManager: 'npm',
+            resolvedPath: '/usr/local/bin/ccstatusline',
+            resolvedPaths: ['/usr/local/bin/ccstatusline'],
+            binDir: '/usr/local/bin',
+            version: null,
+            warning: null
+        });
+        vi.spyOn(globalPackageManager, 'inspectGlobalPackageInstallations').mockReturnValue([
+            { packageManager: 'npm', available: true, installed: true, binDir: '/usr/local/bin' },
+            { packageManager: 'bun', available: false, installed: false, binDir: null }
+        ]);
+        // Stands in for `npm uninstall -g ccstatusline`
+        const globalUninstall = vi.spyOn(globalPackageManager, 'runGlobalPackageUninstall').mockResolvedValue(undefined);
+        const rendered = renderApp();
+
+        try {
+            await waitFor(() => {
+                expect(rendered.getFrame()).toContain('🧰 Manage Installation');
+            });
+            // A hand edit in another window leaves a trailing comma
+            const broken = '{ "statusLine": { "type": "command", "command": "ccstatusline", "padding": 0 }, }';
+            fs.writeFileSync(claudeSettingsPath, broken);
+
+            await pressKey(rendered, KEYS.up, '▶  ⭐ Like ccstatusline?');
+            await pressKey(rendered, KEYS.up, '▶  🚪 Exit');
+            await pressKey(rendered, KEYS.up, '▶  🧰 Manage Installation');
+            await pressKey(rendered, KEYS.enter, '▶  🔄 Check for Updates');
+            await pressKey(rendered, KEYS.down, '▶  🔌 Uninstall');
+            await pressKey(rendered, KEYS.enter, 'Remove from Claude Code settings only');
+            await pressKey(rendered, KEYS.down, '▶  Remove Claude settings and npm global package');
+            await pressKey(rendered, KEYS.enter, 'npm uninstall -g ccstatusline');
+            await pressKey(rendered, KEYS.enter, '✗ Uninstall failed');
+
+            expect(globalUninstall).not.toHaveBeenCalled();
+            expect(fs.readFileSync(claudeSettingsPath, 'utf-8')).toBe(broken);
+            const saved = JSON.parse(fs.readFileSync(sandbox.settingsPath, 'utf-8')) as { installation?: InstallationMetadata };
+            expect(saved.installation).toEqual(installation);
+
+            await pressKey(rendered, KEYS.escape, '▶  🔄 Check for Updates');
+            await pressKey(rendered, KEYS.escape, 'Main Menu');
+            expect(rendered.getFrame()).toContain('🧰 Manage Installation');
+            expect(rendered.getFrame()).not.toContain('📦 Install to Claude Code');
         } finally {
             rendered.cleanup();
         }

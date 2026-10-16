@@ -547,21 +547,20 @@ describe('backup and error handling behavior', () => {
         expect(fs.existsSync(`${settingsPath}.orig`)).toBe(false);
     });
 
-    it('uninstallStatusLine should warn and return without modifying invalid settings', async () => {
+    it('uninstallStatusLine should abort without touching settings that cannot be parsed', async () => {
         writeRawClaudeSettings('{ invalid json');
+        const settingsPath = getClaudeSettingsPath();
+        const installation = { method: 'pinned', installedVersion: '2.2.13' };
+        fs.writeFileSync(config.getConfigPath(), JSON.stringify({ ...DEFAULT_SETTINGS, installation }), 'utf-8');
         const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-        try {
-            await uninstallStatusLine();
 
-            const settingsPath = getClaudeSettingsPath();
-            expect(fs.readFileSync(settingsPath, 'utf-8')).toBe('{ invalid json');
-            expect(fs.existsSync(`${settingsPath}.bak`)).toBe(false);
-            expect(consoleErrorSpy).toHaveBeenCalledWith(
-                'Warning: Could not read existing Claude settings.'
-            );
-        } finally {
-            consoleErrorSpy.mockRestore();
-        }
+        await expect(uninstallStatusLine()).rejects.toThrow(settingsPath);
+
+        expect(fs.readFileSync(settingsPath, 'utf-8')).toBe('{ invalid json');
+        expect(fs.existsSync(`${settingsPath}.bak`)).toBe(false);
+        const savedSettings = JSON.parse(fs.readFileSync(config.getConfigPath(), 'utf-8')) as { installation?: unknown };
+        expect(savedSettings.installation).toEqual(installation);
+        expect(consoleErrorSpy).not.toHaveBeenCalled();
     });
 
     it('uninstallStatusLine should remove all managed hooks', async () => {

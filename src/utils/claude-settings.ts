@@ -415,22 +415,25 @@ async function loadSavedSettingsForHookSync(): Promise<Settings | null> {
     }
 }
 
+// A missing settings file loads as {}; any error here means the file exists
+// but could not be read or parsed. Writers abort with this error rather than
+// save over the file, which would discard the user's other Claude Code
+// settings, or return as if their change had been made.
+async function loadClaudeSettingsForUpdate(retry: string): Promise<ClaudeSettings> {
+    try {
+        return await loadClaudeSettings({ logErrors: false });
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new Error(`Could not read existing Claude settings at ${getClaudeSettingsPath()} (${reason}). The file was left unchanged; fix or remove it, then ${retry}.`, { cause: error });
+    }
+}
+
 export async function installStatusLine({
     commandMode,
     supportsRefreshInterval = false,
     installationMetadata
 }: InstallStatusLineOptions): Promise<void> {
-    let settings: ClaudeSettings;
-
-    // A missing settings file loads as {}; any error here means the file exists
-    // but could not be read or parsed. Abort rather than overwrite it with only
-    // our statusLine, which would discard the user's other Claude Code settings.
-    try {
-        settings = await loadClaudeSettings({ logErrors: false });
-    } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
-        throw new Error(`Could not read existing Claude settings at ${getClaudeSettingsPath()} (${reason}). The file was left unchanged; fix or remove it, then install again.`, { cause: error });
-    }
+    const settings = await loadClaudeSettingsForUpdate('install again');
 
     await backupClaudeSettings('.orig');
 
@@ -460,14 +463,10 @@ export async function installStatusLine({
 }
 
 export async function uninstallStatusLine(): Promise<void> {
-    let settings: ClaudeSettings;
-
-    try {
-        settings = await loadClaudeSettings({ logErrors: false });
-    } catch {
-        console.error('Warning: Could not read existing Claude settings.');
-        return; // if we can't read, return... what are we uninstalling?
-    }
+    // Throwing here, before anything is removed, keeps the installation
+    // metadata and hooks in place and stops the caller from going on to
+    // remove the global package that statusLine still runs.
+    const settings = await loadClaudeSettingsForUpdate('uninstall again');
 
     if (settings.statusLine) {
         delete settings.statusLine;
