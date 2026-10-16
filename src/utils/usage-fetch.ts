@@ -818,6 +818,28 @@ function isTransientUsageApiStatus(statusCode: number | undefined): boolean {
     return statusCode !== undefined && statusCode >= 500;
 }
 
+// A server certificate the runtime can't verify, or one issued for another
+// host. Behind a proxy or firewall that intercepts TLS with a certificate the
+// runtime doesn't trust, every request fails this way until the runtime is
+// set up to trust it. Node and Bun report the same codes, directly and
+// through a proxy's tunnel: a self-signed certificate, one from an unknown CA
+// (alone, with its root, or with an intermediate but not the root), an
+// expired or not-yet-valid one, and one for another host. Every other request
+// error is a network failure that may clear up by the next render.
+const LASTING_REQUEST_ERROR_CODES = new Set([
+    'DEPTH_ZERO_SELF_SIGNED_CERT',
+    'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+    'SELF_SIGNED_CERT_IN_CHAIN',
+    'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+    'CERT_HAS_EXPIRED',
+    'CERT_NOT_YET_VALID',
+    'ERR_TLS_CERT_ALTNAME_INVALID'
+]);
+
+function isLastingRequestError(error: NodeJS.ErrnoException | undefined): boolean {
+    return error?.code !== undefined && LASTING_REQUEST_ERROR_CODES.has(error.code);
+}
+
 function getUsageApiProxyUrl(): string | null {
     const proxyUrl = process.env.HTTPS_PROXY?.trim();
     if (proxyUrl === '' || isExcludedFromProxy(USAGE_API_HOST)) {
@@ -871,15 +893,16 @@ async function fetchFromUsageApi(token: string, deadlineMs = USAGE_API_TIMEOUT_M
             resolve(value);
         };
         // No answer, or one cut short: the network or the server may well be
-        // back by the next try. A failure after an answer that refused the
-        // request is still that refusal: under Bun, a proxy's refused CONNECT
-        // fails the request before the agent's replay of that answer ends.
-        const failRequest = () => {
+        // back by the next try, unless the server's certificate doesn't
+        // verify. A failure after an answer that refused the request is still
+        // that refusal: under Bun, a proxy's refused CONNECT fails the request
+        // before the agent's replay of that answer ends.
+        const failRequest = (error?: NodeJS.ErrnoException) => {
             const refused = answeredStatus !== undefined
                 && answeredStatus !== 200
                 && answeredStatus !== 429
                 && !isTransientUsageApiStatus(answeredStatus);
-            finish({ kind: 'error', transient: !refused });
+            finish({ kind: 'error', transient: !refused && !isLastingRequestError(error) });
         };
 
         const request = https.request(usageRequest.options, (response) => {

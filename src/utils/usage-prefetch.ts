@@ -65,9 +65,9 @@ const EMPTY_USAGE_REQUIREMENTS: UsageFieldRequirement[] = [];
 // Code starts up, before its payload carries rate_limits, or another render's
 // fetch still in flight. An API error joins them when the fetch marks it as
 // one that clears up on its own: a 5xx response, a network error or a request
-// past its deadline. Any other failure, a missing login or a rejected token
-// among them, may never clear up, so it is shown rather than a loading
-// placeholder that never ends.
+// past its deadline. Any other failure, a missing login, a rejected token or
+// a server certificate that doesn't verify among them, may never clear up, so
+// it is shown rather than a loading placeholder that never ends.
 const TRANSIENT_FETCH_ERRORS = new Set<UsageError>(['rate-limited', 'timeout']);
 
 // The spend limit widgets have no entry here on purpose: rate_limits.spend_limit

@@ -120,3 +120,66 @@ export async function startAnsweringProxy(statusCode: number): Promise<Answering
         })
     };
 }
+
+export interface TunnelingProxy {
+    url: string;
+    // How many CONNECT tunnels the proxy opened so far
+    tunnelCount: () => number;
+    stop: () => Promise<void>;
+}
+
+// A local proxy that opens every CONNECT tunnel to `targetPort` on this
+// machine, whatever host the CONNECT names, as a proxy in front of a local
+// stand-in for the API
+export async function startTunnelingProxy(targetPort: number): Promise<TunnelingProxy> {
+    let tunnels = 0;
+    const sockets = new Set<net.Socket>();
+    const track = (socket: net.Socket) => {
+        sockets.add(socket);
+        socket.on('error', () => undefined);
+        socket.on('close', () => {
+            sockets.delete(socket);
+        });
+    };
+    const server = net.createServer((client) => {
+        track(client);
+        let received = Buffer.alloc(0);
+        const onData = (chunk: Buffer) => {
+            received = Buffer.concat([received, chunk]);
+            const headersEnd = received.indexOf('\r\n\r\n');
+            if (headersEnd === -1) {
+                return;
+            }
+            client.off('data', onData);
+            tunnels += 1;
+            const upstream = net.connect(targetPort, '127.0.0.1', () => {
+                client.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+                upstream.write(received.subarray(headersEnd + 4));
+                client.pipe(upstream);
+                upstream.pipe(client);
+            });
+            track(upstream);
+            upstream.on('close', () => client.destroy());
+            client.on('close', () => upstream.destroy());
+        };
+        client.on('data', onData);
+    });
+
+    await new Promise<void>((resolve) => {
+        server.listen(0, '127.0.0.1', resolve);
+    });
+    const { port } = server.address() as net.AddressInfo;
+
+    return {
+        url: `http://127.0.0.1:${port}`,
+        tunnelCount: () => tunnels,
+        stop: () => new Promise<void>((resolve) => {
+            for (const socket of sockets) {
+                socket.destroy();
+            }
+            server.close(() => {
+                resolve();
+            });
+        })
+    };
+}

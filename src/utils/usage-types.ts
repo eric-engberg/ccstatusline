@@ -28,7 +28,8 @@ export interface UsageData {
     error?: UsageError;
     // Set with an api-error that clears up on its own: a 5xx response, a
     // network error or a request past its deadline. A request the API or a
-    // proxy refused, such as a rejected token, leaves it unset.
+    // proxy refused, such as a rejected token, and a server certificate that
+    // doesn't verify leave it unset.
     errorTransient?: boolean;
 }
 

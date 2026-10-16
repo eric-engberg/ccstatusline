@@ -21,10 +21,20 @@ import { WEEKLY_MODEL_USAGE_BUCKETS } from '../usage-types';
 
 import {
     startAnsweringProxy,
+    startRefusingProxy,
     startStalledProxy,
+    startTunnelingProxy,
     type AnsweringProxy,
-    type StalledProxy
+    type RefusingProxy,
+    type StalledProxy,
+    type TunnelingProxy
 } from './proxy-test-helpers';
+import {
+    createTestCertificate,
+    startTlsServer,
+    type TestCertificateOptions,
+    type TestTlsServer
+} from './tls-test-helpers';
 
 const require = createRequire(import.meta.url);
 const { execFileSync: realExecFileSync } = require('node:child_process') as { execFileSync: typeof childProcess.execFileSync };
@@ -40,6 +50,8 @@ interface UsageProbeResult {
     requestHost: string | null;
     homedir: string;
     lockContents: string | null;
+    // What prefetch hands a line of reset timers, when requested
+    resetOnly?: Record<string, unknown> | null;
 }
 
 interface TokenHome {
@@ -50,6 +62,8 @@ interface TokenHome {
 
 interface ProbeOptions {
     claudeConfigDir?: string;
+    // The code the request error carries in the `error` mode
+    errorCode?: string;
     home: string;
     httpsProxy?: string;
     lockWrittenDuringRequest?: string;
@@ -58,6 +72,8 @@ interface ProbeOptions {
     mode?: 'error' | 'request-timeout' | 'response-aborted' | 'response-error' | 'status' | 'success' | 'unexpected';
     nowMs: number;
     pathDir?: string;
+    // Also prefetch for a Weekly Reset Timer line and a Block Reset Timer line
+    prefetchResetOnly?: boolean;
     requiredFields?: string[];
     responseBody?: string;
     responseHeaders?: Record<string, string>;
@@ -70,6 +86,7 @@ function createProbeHarness() {
     const probeTmpDir = path.join(tempRoot, 'tmp');
     fs.mkdirSync(probeTmpDir);
     const usageModulePath = fileURLToPath(new URL('../usage.ts', import.meta.url));
+    const usagePrefetchModulePath = fileURLToPath(new URL('../usage-prefetch.ts', import.meta.url));
 
     const probeScript = `
 import * as fs from 'node:fs';
@@ -124,9 +141,13 @@ https.request = (...args) => {
             }
 
             if (mode === 'error') {
+                const error = new Error('mock request failure');
+                if (process.env.TEST_ERROR_CODE) {
+                    error.code = process.env.TEST_ERROR_CODE;
+                }
                 const handlers = requestHandlers.get('error') || [];
                 for (const handler of handlers) {
-                    handler(new Error('mock request failure'));
+                    handler(error);
                 }
                 return;
             }
@@ -191,10 +212,16 @@ const startedAt = performance.now();
 const first = await fetchUsageData({ requiredFields });
 const firstElapsedMs = performance.now() - startedAt;
 const second = await fetchUsageData({ requiredFields });
+let resetOnly;
+if (process.env.TEST_PREFETCH_RESET_ONLY) {
+    const { prefetchUsageDataIfNeeded } = await import(${JSON.stringify(usagePrefetchModulePath)});
+    resetOnly = await prefetchUsageDataIfNeeded([[{ id: 'weekly-reset', type: 'weekly-reset-timer' }], [{ id: 'reset', type: 'reset-timer' }]], {});
+}
 process.stdout.write(JSON.stringify({
     first,
     firstElapsedMs,
     second,
+    resetOnly,
     lockExists: fs.existsSync(lockFile),
     cacheExists: fs.existsSync(cacheFile),
     requestCount,
@@ -270,6 +297,10 @@ process.stdout.write(JSON.stringify({
             env.CLAUDE_CONFIG_DIR = options.claudeConfigDir;
         }
 
+        if (options.errorCode !== undefined) {
+            env.TEST_ERROR_CODE = options.errorCode;
+        }
+
         if (options.httpsProxy !== undefined) {
             env.HTTPS_PROXY = options.httpsProxy;
         }
@@ -284,6 +315,10 @@ process.stdout.write(JSON.stringify({
 
         if (options.noProxy !== undefined) {
             env.NO_PROXY = options.noProxy;
+        }
+
+        if (options.prefetchResetOnly) {
+            env.TEST_PREFETCH_RESET_ONLY = '1';
         }
 
         const output = realExecFileSync(process.execPath, [probeScriptPath], {
@@ -1864,6 +1899,9 @@ describe('fetchUsageData error handling', () => {
     it.each([
         { failure: { mode: 'status', statusCode: 503 }, name: 'a 503' },
         { failure: { mode: 'error' }, name: 'a network error' },
+        { failure: { errorCode: 'ECONNREFUSED', mode: 'error' }, name: 'a refused connection' },
+        { failure: { errorCode: 'ECONNRESET', mode: 'error' }, name: 'a reset connection' },
+        { failure: { errorCode: 'ENOTFOUND', mode: 'error' }, name: 'a failed DNS lookup' },
         { failure: { mode: 'request-timeout' }, name: 'a request timeout' }
     ] as const)('marks $name as an API error that clears up on its own, across its backoff', ({ failure }) => {
         const harness = createProbeHarness();
@@ -1875,11 +1913,13 @@ describe('fetchUsageData error handling', () => {
                 home: home.home,
                 nowMs,
                 pathDir: home.bin,
+                prefetchResetOnly: true,
                 ...failure
             });
 
             expect(failed.first).toEqual({ error: 'api-error', errorTransient: true });
             expect(failed.second).toEqual({ error: 'api-error', errorTransient: true });
+            expect(failed.resetOnly).toBeNull();
             expect(failed.requestCount).toBe(1);
             expect(parseLockContents(failed.lockContents)).toEqual({
                 blockedUntil: Math.floor(nowMs / 1000) + 30,
@@ -1892,10 +1932,12 @@ describe('fetchUsageData error handling', () => {
                 home: home.home,
                 mode: 'unexpected',
                 nowMs: nowMs + 10000,
-                pathDir: home.bin
+                pathDir: home.bin,
+                prefetchResetOnly: true
             });
 
             expect(backedOff.first).toEqual({ error: 'api-error', errorTransient: true });
+            expect(backedOff.resetOnly).toBeNull();
             expect(backedOff.requestCount).toBe(0);
         } finally {
             harness.cleanup();
@@ -1941,6 +1983,60 @@ describe('fetchUsageData error handling', () => {
             });
 
             expect(backedOff.first).toEqual({ error: 'api-error' });
+            expect(backedOff.requestCount).toBe(0);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    // A server certificate that doesn't verify, as behind a proxy or firewall
+    // that intercepts TLS with a certificate the runtime doesn't trust, fails
+    // the same way on every request, so the reset timers show the error. These
+    // are the codes Node and Bun report for a self-signed certificate, one
+    // from an unknown CA (alone, with its root, or with an intermediate but no
+    // root), an expired or not-yet-valid one, and one for another host.
+    it.each([
+        'DEPTH_ZERO_SELF_SIGNED_CERT',
+        'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+        'SELF_SIGNED_CERT_IN_CHAIN',
+        'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+        'CERT_HAS_EXPIRED',
+        'CERT_NOT_YET_VALID',
+        'ERR_TLS_CERT_ALTNAME_INVALID'
+    ])('keeps a request failing with %s a lasting API error, across its backoff', (errorCode) => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome(`certificate-${errorCode}`);
+            const failed = harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                errorCode,
+                home: home.home,
+                mode: 'error',
+                nowMs,
+                pathDir: home.bin,
+                prefetchResetOnly: true
+            });
+
+            expect(failed.first).toEqual({ error: 'api-error' });
+            expect(failed.resetOnly).toEqual({ error: 'api-error' });
+            expect(failed.requestCount).toBe(1);
+            expect(parseLockContents(failed.lockContents)).toEqual({
+                blockedUntil: Math.floor(nowMs / 1000) + 30,
+                error: 'api-error'
+            });
+
+            const backedOff = harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                mode: 'unexpected',
+                nowMs: nowMs + 10000,
+                pathDir: home.bin,
+                prefetchResetOnly: true
+            });
+
+            expect(backedOff.first).toEqual({ error: 'api-error' });
+            expect(backedOff.resetOnly).toEqual({ error: 'api-error' });
             expect(backedOff.requestCount).toBe(0);
         } finally {
             harness.cleanup();
@@ -2300,6 +2396,71 @@ describe('usage API request behind a proxy that refuses CONNECT', () => {
         process.env.HTTPS_PROXY = proxy.url;
 
         expect(await __testing.fetchFromUsageApi('test-token', 2000)).toEqual({ kind: 'error', transient });
+    });
+});
+
+describe('usage API request through a proxy to a server whose certificate does not verify', () => {
+    const root = createTestCertificate({ commonName: 'Test Root CA', isCa: true });
+    const intermediate = createTestCertificate({ commonName: 'Test Intermediate CA', isCa: true, issuer: root });
+    const createLeaf = (options: Partial<TestCertificateOptions> = {}) => createTestCertificate({
+        commonName: 'api.anthropic.com',
+        hosts: ['api.anthropic.com'],
+        issuer: root,
+        ...options
+    });
+    let originalProxy: string | undefined;
+    let proxy: TunnelingProxy | null = null;
+    let server: TestTlsServer | null = null;
+    let droppingServer: RefusingProxy | null = null;
+
+    beforeEach(() => {
+        originalProxy = process.env.HTTPS_PROXY;
+    });
+
+    afterEach(async () => {
+        await proxy?.stop();
+        await server?.stop();
+        await droppingServer?.stop();
+        proxy = null;
+        server = null;
+        droppingServer = null;
+        if (originalProxy === undefined) {
+            delete process.env.HTTPS_PROXY;
+        } else {
+            process.env.HTTPS_PROXY = originalProxy;
+        }
+    });
+
+    // The proxy opens the tunnel to a local server whose certificate the
+    // runtime doesn't trust, as a proxy or firewall that intercepts TLS does.
+    // Every request fails the same way until the runtime trusts it. Node names
+    // the expired and the not-yet-valid certificate by their dates, Bun by
+    // their unknown CA.
+    it.each([
+        { chain: () => [createLeaf({ issuer: undefined })], name: 'a self-signed certificate' },
+        { chain: () => [createLeaf()], name: 'a certificate from an unknown CA' },
+        { chain: () => [createLeaf(), root], name: 'a chain up to an unknown root' },
+        { chain: () => [createLeaf({ issuer: intermediate }), intermediate], name: 'a chain to an unknown root\'s intermediate' },
+        { chain: () => [createLeaf({ notAfter: new Date('2021-01-01'), notBefore: new Date('2020-01-01') })], name: 'an expired certificate' },
+        { chain: () => [createLeaf({ notAfter: new Date('2041-01-01'), notBefore: new Date('2040-01-01') })], name: 'a certificate not valid yet' }
+    ])('reports $name as a lasting API error', async ({ chain }) => {
+        server = await startTlsServer(chain());
+        proxy = await startTunnelingProxy(server.port);
+        process.env.HTTPS_PROXY = proxy.url;
+
+        expect(await __testing.fetchFromUsageApi('test-token', 2000)).toEqual({ kind: 'error', transient: false });
+        expect(proxy.tunnelCount()).toBe(1);
+    });
+
+    // Losing the connection is a network failure, which may clear up by the
+    // next render
+    it('reports a connection dropped before the TLS handshake ends as an API error that clears up on its own', async () => {
+        droppingServer = await startRefusingProxy();
+        proxy = await startTunnelingProxy(Number.parseInt(new URL(droppingServer.url).port, 10));
+        process.env.HTTPS_PROXY = proxy.url;
+
+        expect(await __testing.fetchFromUsageApi('test-token', 2000)).toEqual({ kind: 'error', transient: true });
+        expect(proxy.tunnelCount()).toBe(1);
     });
 });
 
