@@ -114,7 +114,7 @@ function adoptFormerRecords(state: DailyState, accountKey: string, formerKeys: r
         .map(key => state.spend[key])
         .filter((record): record is SpendDayRecord => record !== undefined && record.lastSeenAt <= nowMs + CLOCK_SKEW_TOLERANCE_MS)
         .sort((a, b) => a.lastSeenAt - b.lastSeenAt)
-        .reduce<SpendDayRecord | undefined>(mergeSpendRecord, undefined);
+        .reduce<SpendDayRecord | undefined>((merged, record) => mergeSpendRecord(merged, record), undefined);
     const kept = Object.fromEntries(Object.entries(state.spend).filter(([key]) => !moved.includes(key)));
     return { ...state, spend: merged ? { ...kept, [accountKey]: merged } : kept };
 }
