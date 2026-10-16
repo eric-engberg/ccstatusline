@@ -21,11 +21,15 @@ import {
 } from './context-inverse';
 import {
     getContextSliderKeybinds,
+    getContextSliderMode,
     getContextSliderModifierText,
     handleContextSliderAction,
     renderContextSlider
 } from './context-slider';
-import { paintWidgetBar } from './gradient-bar';
+import {
+    paintWidgetBar,
+    paintsBarGradient
+} from './gradient-bar';
 import {
     getLevelGlyph,
     isLevelGlyphMode
@@ -103,6 +107,11 @@ export abstract class ContextPercentageWidgetBase implements Widget {
     // The level glyph mode's glyph and break point editors
     renderEditor(props: WidgetEditorProps): React.ReactElement | null {
         return renderLevelGlyphEditor(props);
+    }
+
+    // A gradient preset paints only the slider, so the renderer colors the rest
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
+        return paintsBarGradient(item, getContextSliderMode(item) !== 'none');
     }
 
     supportsRawValue(): boolean { return true; }

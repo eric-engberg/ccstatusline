@@ -30,7 +30,8 @@ import type { UsageWindowMetrics } from '../../utils/usage-types';
 
 import {
     CYCLE_GRADIENT_ACTION,
-    cycleGradientPreset
+    cycleGradientPreset,
+    paintsBarGradient
 } from './gradient-bar';
 import { isHidden } from './hideable';
 import {
@@ -47,6 +48,7 @@ import {
     getUsagePercentCustomKeybinds,
     isUsageCursorEnabled,
     isUsageInverted,
+    showsUsageBar,
     toggleUsageCursor,
     toggleUsageInverted
 } from './usage-display';
@@ -275,6 +277,11 @@ export class UsagePercentWidget implements Widget {
     // The level glyph mode's glyph and break point editors
     renderEditor(props: WidgetEditorProps): React.ReactElement | null {
         return renderLevelGlyphEditor(props);
+    }
+
+    // A gradient preset paints only the bar, so the renderer colors the rest
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
+        return paintsBarGradient(item, showsUsageBar(item));
     }
 
     supportsRawValue(): boolean { return true; }

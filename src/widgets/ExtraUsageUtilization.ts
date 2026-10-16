@@ -22,7 +22,8 @@ import { getUsageErrorMessage } from '../utils/usage';
 import { EXTRA_USAGE_DISABLED_HIDEABLE_STATE } from './shared/extra-usage-disabled';
 import {
     CYCLE_GRADIENT_ACTION,
-    cycleGradientPreset
+    cycleGradientPreset,
+    paintsBarGradient
 } from './shared/gradient-bar';
 import { isHidden } from './shared/hideable';
 import {
@@ -38,6 +39,7 @@ import {
     getUsageDisplayModifierText,
     getUsagePercentCustomKeybinds,
     isUsageInverted,
+    showsUsageBar,
     toggleUsageInverted
 } from './shared/usage-display';
 
@@ -132,6 +134,11 @@ export class ExtraUsageUtilizationWidget implements Widget {
     // The level glyph mode's glyph and break point editors
     renderEditor(props: WidgetEditorProps): React.ReactElement | null {
         return renderLevelGlyphEditor(props);
+    }
+
+    // A gradient preset paints only the bar, so the renderer colors the rest
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
+        return paintsBarGradient(item, showsUsageBar(item));
     }
 
     supportsRawValue(): boolean { return true; }
