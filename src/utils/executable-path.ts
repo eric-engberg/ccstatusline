@@ -104,12 +104,16 @@ function isExecutableFile(candidate: string): boolean {
     }
 }
 
+function defaultPosixPathSearch(): PosixPathSearch {
+    return { env: process.env, isExecutableFile };
+}
+
 /**
  * Every file named `name` on PATH that the user can run, in PATH order: what
  * `which -a` lists. The default search reads process.env when called, so an env
  * object swapped in after this module loaded is still seen.
  */
-export function findAllOnPosixPath(name: string, search: PosixPathSearch = { env: process.env, isExecutableFile }): string[] {
+export function findAllOnPosixPath(name: string, search: PosixPathSearch = defaultPosixPathSearch()): string[] {
     const pathValue = search.env.PATH;
     if (!pathValue) {
         return [];
