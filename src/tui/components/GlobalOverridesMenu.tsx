@@ -24,9 +24,9 @@ import {
 } from '../../utils/colors';
 import { GRADIENT_PRESET_NAMES } from '../../utils/gradient';
 import {
+    getInsertableHexDigits,
     getInsertableText,
-    getPlainInput,
-    shouldInsertInput
+    getPlainInput
 } from '../../utils/input-guards';
 import { getNextNumberStyle } from '../../utils/number-format';
 
@@ -178,10 +178,10 @@ export const GlobalOverridesMenu: React.FC<GlobalOverridesMenuProps> = ({ settin
                     }
                 } else if (key.backspace || key.delete) {
                     setGradientHexInput(gradientHexInput.slice(0, -1));
-                } else if (shouldInsertInput(input, key) && gradientHexInput.length < 6) {
-                    const upperInput = input.toUpperCase();
-                    if (/^[0-9A-F]$/.test(upperInput)) {
-                        setGradientHexInput(gradientHexInput + upperInput);
+                } else {
+                    const digits = getInsertableHexDigits(input, key, 6 - gradientHexInput.length);
+                    if (digits) {
+                        setGradientHexInput(gradientHexInput + digits);
                     }
                 }
                 return;

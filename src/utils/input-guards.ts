@@ -19,18 +19,6 @@ export function getPlainInput(input: string, key: InputKeyLike): string {
     return key.ctrl || key.meta ? '' : input;
 }
 
-export const shouldInsertInput = (input: string, key: InputKeyLike): boolean => {
-    if (!input) {
-        return false;
-    }
-
-    if (key.ctrl || key.meta || key.tab) {
-        return false;
-    }
-
-    return !CONTROL_CHAR_REGEX.test(input);
-};
-
 // The text a keypress or a paste adds to a single-line field, or '' for none.
 // Ink hands over a paste as one input string, line breaks and tabs included:
 // the breaks are dropped at the ends and become a space between lines, and
