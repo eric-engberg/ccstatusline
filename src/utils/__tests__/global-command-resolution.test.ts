@@ -50,6 +50,11 @@ function missingProgramError(command: string): Error {
     return Object.assign(new Error(`spawnSync ${command} ENOENT`), { code: 'ENOENT' });
 }
 
+// What a program that runs and exits with status 1 throws, as `which` does when it finds nothing
+function failedCommandError(command: string): Error {
+    return Object.assign(new Error(`Command failed: ${command}`), { status: 1 });
+}
+
 // macOS and Windows file systems ignore letter case by default; most Linux ones don't
 function tempFileSystemIgnoresCase(): boolean {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-case-'));
@@ -119,6 +124,21 @@ describe('global command resolution', () => {
 
             expect(resolution.resolvedPaths).toEqual([path.join(binDir, 'ccstatusline')]);
             expect(resolution.warning).toBeNull();
+        } finally {
+            process.env.PATH = originalPath;
+            fs.rmSync(binDir, { recursive: true, force: true });
+        }
+    });
+
+    it.skipIf(process.platform === 'win32')('does not look through PATH itself when which runs and fails', () => {
+        const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-path-'));
+        const originalPath = process.env.PATH;
+        try {
+            fs.writeFileSync(path.join(binDir, 'ccstatusline'), '#!/bin/sh\n', { mode: 0o755 });
+            process.env.PATH = binDir;
+            mockExecFileSync({ 'which -a ccstatusline': failedCommandError('which -a ccstatusline') });
+
+            expect(getCommandResolutionPaths('ccstatusline', { platform: 'linux' })).toEqual([]);
         } finally {
             process.env.PATH = originalPath;
             fs.rmSync(binDir, { recursive: true, force: true });
