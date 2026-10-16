@@ -145,6 +145,48 @@ describe('global package manager inspection', () => {
         }
     });
 
+    it.skipIf(process.platform === 'win32')('lists another install once and leaves out other spellings of the active one', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-merged-usr-'));
+        try {
+            const packageDir = path.join(root, 'usr', 'lib', 'node_modules', 'ccstatusline');
+            fs.mkdirSync(path.join(root, 'usr', 'bin'), { recursive: true });
+            fs.mkdirSync(path.join(root, '.bun', 'bin'), { recursive: true });
+            fs.mkdirSync(packageDir, { recursive: true });
+            fs.writeFileSync(path.join(root, 'usr', 'bin', 'ccstatusline'), '#!/bin/sh\n', { mode: 0o755 });
+            fs.writeFileSync(path.join(root, '.bun', 'bin', 'ccstatusline'), '#!/bin/sh\n', { mode: 0o755 });
+            fs.writeFileSync(path.join(packageDir, 'package.json'), '{"version":"2.2.13"}');
+            fs.symlinkSync('usr/bin', path.join(root, 'bin'));
+            mockExecFileSync({
+                'which -a ccstatusline': `${root}/usr/bin/ccstatusline\n${root}/bin/ccstatusline\n${root}/.bun/bin/ccstatusline\n`,
+                'npm prefix -g': `${root}/usr\n`,
+                'npm root -g': `${root}/usr/lib/node_modules\n`
+            });
+
+            const activeCommand = inspectActiveGlobalCommand({
+                commandAvailability: {
+                    npm: true,
+                    bun: false
+                },
+                platform: 'linux'
+            });
+
+            expect(activeCommand).toEqual({
+                packageManager: 'npm',
+                resolvedPath: `${root}/usr/bin/ccstatusline`,
+                resolvedPaths: [
+                    `${root}/usr/bin/ccstatusline`,
+                    `${root}/bin/ccstatusline`,
+                    `${root}/.bun/bin/ccstatusline`
+                ],
+                binDir: `${root}/usr/bin`,
+                version: '2.2.13',
+                warning: `⚠ Multiple ccstatusline binaries are on PATH. Claude Code will run the first match: ${root}/usr/bin/ccstatusline.\nOther matches: ${root}/.bun/bin/ccstatusline`
+            });
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('ignores transient bunx status line shims when identifying the active global command', () => {
         mockExecFileSync({
             'which -a ccstatusline': '/var/folders/demo/T/bunx-501-ccstatusline@latest/node_modules/.bin/ccstatusline\n/Users/alice/.bun/bin/ccstatusline\n',

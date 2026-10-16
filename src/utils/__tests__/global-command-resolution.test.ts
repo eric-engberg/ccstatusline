@@ -173,6 +173,27 @@ describe('global command resolution', () => {
         }
     });
 
+    it.skipIf(process.platform === 'win32')('lists another install once and leaves out other spellings of the first match', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-merged-usr-'));
+        try {
+            fs.mkdirSync(path.join(root, 'usr', 'bin'), { recursive: true });
+            fs.mkdirSync(path.join(root, '.bun', 'bin'), { recursive: true });
+            fs.writeFileSync(path.join(root, 'usr', 'bin', 'ccstatusline'), '#!/bin/sh\n', { mode: 0o755 });
+            fs.writeFileSync(path.join(root, '.bun', 'bin', 'ccstatusline'), '#!/bin/sh\n', { mode: 0o755 });
+            fs.symlinkSync('usr/bin', path.join(root, 'bin'));
+            mockExecFileSync({
+                'which -a ccstatusline': `${root}/usr/bin/ccstatusline\n${root}/bin/ccstatusline\n${root}/.bun/bin/ccstatusline\n`,
+                'npm prefix -g': `${root}/usr\n`
+            });
+
+            const resolution = inspectGlobalCommandResolution('npm', { platform: 'linux' });
+
+            expect(resolution.warning).toBe(`⚠ Multiple ccstatusline binaries are on PATH. Claude Code will run the first match: ${root}/usr/bin/ccstatusline.\nOther matches: ${root}/.bun/bin/ccstatusline`);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('ignores transient bunx status line shims when resolving global commands', () => {
         mockExecFileSync({
             'which -a ccstatusline': '/var/folders/demo/T/bunx-501-ccstatusline@latest/node_modules/.bin/ccstatusline\n/Users/alice/.bun/bin/ccstatusline\n',

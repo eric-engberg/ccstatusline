@@ -179,22 +179,23 @@ export function getRealDirectory(dir: string): string {
     }
 }
 
-function getUniqueResolvedDirs(resolvedPaths: string[]): string[] {
+// The first listed path in each directory, comparing directories with symlinks
+// resolved: one path per install, starting with the first match
+function getOnePathPerDirectory(resolvedPaths: string[]): string[] {
     const seen = new Set<string>();
-    const dirs: string[] = [];
+    const paths: string[] = [];
 
     for (const resolvedPath of resolvedPaths) {
-        const dir = getDirectoryName(resolvedPath);
-        const comparableDir = normalizePathForComparison(getRealDirectory(dir));
+        const comparableDir = normalizePathForComparison(getRealDirectory(getDirectoryName(resolvedPath)));
         if (seen.has(comparableDir)) {
             continue;
         }
 
         seen.add(comparableDir);
-        dirs.push(dir);
+        paths.push(resolvedPath);
     }
 
-    return dirs;
+    return paths;
 }
 
 export function isPathInsideDir(filePath: string, dir: string): boolean {
@@ -222,9 +223,9 @@ function getResolutionWarning(
         return '⚠ ccstatusline is not currently resolvable on PATH. Claude Code runs ccstatusline, so restart your shell or update PATH if it cannot launch.';
     }
 
-    const resolvedDirs = getUniqueResolvedDirs(resolvedPaths);
-    if (resolvedDirs.length > 1) {
-        return `⚠ Multiple ccstatusline binaries are on PATH. Claude Code will run the first match: ${firstResolvedPath}.\nOther matches: ${formatPathList(resolvedPaths.slice(1))}`;
+    const installPaths = getOnePathPerDirectory(resolvedPaths);
+    if (installPaths.length > 1) {
+        return `⚠ Multiple ccstatusline binaries are on PATH. Claude Code will run the first match: ${firstResolvedPath}.\nOther matches: ${formatPathList(installPaths.slice(1))}`;
     }
 
     if (expectedBinDir && !isPathInsideDir(firstResolvedPath, expectedBinDir)) {
