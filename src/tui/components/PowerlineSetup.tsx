@@ -10,7 +10,10 @@ import type { PowerlineConfig } from '../../types/PowerlineConfig';
 import type { Settings } from '../../types/Settings';
 import { getPlainInput } from '../../utils/input-guards';
 import { type PowerlineFontStatus } from '../../utils/powerline';
-import { buildEnabledPowerlineSettings } from '../../utils/powerline-settings';
+import {
+    buildDisabledPowerlineSettings,
+    buildEnabledPowerlineSettings
+} from '../../utils/powerline-settings';
 
 import { ConfirmDialog } from './ConfirmDialog';
 import {
@@ -197,13 +200,7 @@ export const PowerlineSetup: React.FC<PowerlineSetupProps> = ({
                         onUpdate(buildEnabledPowerlineSettings(settings, false));
                     }
                 } else {
-                    onUpdate({
-                        ...settings,
-                        powerline: {
-                            ...powerlineConfig,
-                            enabled: false
-                        }
-                    });
+                    onUpdate(buildDisabledPowerlineSettings(settings));
                 }
             } else if (shortcut === 'i' || shortcut === 'I') {
                 setConfirmingFontInstall(true);

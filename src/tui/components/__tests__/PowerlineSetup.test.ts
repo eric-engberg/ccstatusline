@@ -246,6 +246,133 @@ describe('PowerlineSetup helpers', () => {
         }
     });
 
+    it.each([
+        ['unset', undefined, ''],
+        ['none', '', ''],
+        ['two spaces', '  ', '  ']
+    ])('restores the default padding (%s) when (t) turns Powerline on and off again', async (_name, padding, restored) => {
+        const stdin = createMockStdin();
+        const stdout = createMockStdout();
+        const stderr = createMockStdout();
+        // Each update is drawn again with the new settings, as the app does
+        const onUpdate = vi.fn<PowerlineSetupProps['onUpdate']>((settings) => {
+            instance.rerender(React.createElement(PowerlineSetup, { ...props, settings }));
+        });
+        const props: PowerlineSetupProps = {
+            settings: {
+                ...DEFAULT_SETTINGS,
+                lines: [[{ id: '1', type: 'model' }, { id: '2', type: 'context-length' }]],
+                defaultSeparator: '|',
+                defaultPadding: padding
+            },
+            powerlineFontStatus: { installed: true },
+            onUpdate,
+            onBack: vi.fn(),
+            onInstallFonts: vi.fn(),
+            installingFonts: false,
+            fontInstallMessage: null,
+            onClearMessage: vi.fn()
+        };
+        const instance = render(
+            React.createElement(PowerlineSetup, props),
+            {
+                stdin,
+                stdout,
+                stderr,
+                debug: true,
+                exitOnCtrlC: false,
+                patchConsole: false
+            }
+        );
+
+        try {
+            await waitFor(() => {
+                expect(stdout.getOutput()).toContain('✗ Disabled');
+            });
+
+            stdin.write('t');
+            await waitFor(() => {
+                expect(stdout.getOutput()).toContain('✓ Enabled');
+            });
+            expect(onUpdate.mock.calls[0]?.[0].defaultPadding).toBe(' ');
+
+            stdin.write('t');
+            await waitFor(() => {
+                expect(onUpdate).toHaveBeenCalledTimes(2);
+            });
+
+            const updatedSettings = onUpdate.mock.calls[1]?.[0];
+            expect(updatedSettings?.powerline.enabled).toBe(false);
+            expect(updatedSettings?.defaultPadding).toBe(restored);
+            expect(updatedSettings?.powerline.paddingToRestore).toBeUndefined();
+        } finally {
+            instance.unmount();
+            instance.cleanup();
+            stdin.destroy();
+            stdout.destroy();
+            stderr.destroy();
+        }
+    });
+
+    // A padding set while Powerline was on is the user's own choice
+    it('keeps a default padding changed since Powerline was turned on when (t) turns it off', async () => {
+        const stdin = createMockStdin();
+        const stdout = createMockStdout();
+        const stderr = createMockStdout();
+        const onUpdate = vi.fn<PowerlineSetupProps['onUpdate']>();
+        const instance = render(
+            React.createElement(PowerlineSetup, {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                    defaultPadding: '  ',
+                    powerline: {
+                        ...DEFAULT_SETTINGS.powerline,
+                        enabled: true,
+                        theme: 'nord-aurora',
+                        paddingToRestore: ''
+                    }
+                },
+                powerlineFontStatus: { installed: true },
+                onUpdate,
+                onBack: vi.fn(),
+                onInstallFonts: vi.fn(),
+                installingFonts: false,
+                fontInstallMessage: null,
+                onClearMessage: vi.fn()
+            }),
+            {
+                stdin,
+                stdout,
+                stderr,
+                debug: true,
+                exitOnCtrlC: false,
+                patchConsole: false
+            }
+        );
+
+        try {
+            await waitFor(() => {
+                expect(stdout.getOutput()).toContain('✓ Enabled');
+            });
+
+            stdin.write('t');
+            await waitFor(() => {
+                expect(onUpdate).toHaveBeenCalled();
+            });
+
+            const updatedSettings = onUpdate.mock.calls[0]?.[0];
+            expect(updatedSettings?.powerline.enabled).toBe(false);
+            expect(updatedSettings?.defaultPadding).toBe('  ');
+            expect(updatedSettings?.powerline.paddingToRestore).toBeUndefined();
+        } finally {
+            instance.unmount();
+            instance.cleanup();
+            stdin.destroy();
+            stdout.destroy();
+            stderr.destroy();
+        }
+    });
+
     it('warns when a global foreground override is active', async () => {
         const stdin = createMockStdin();
         const stdout = createMockStdout();

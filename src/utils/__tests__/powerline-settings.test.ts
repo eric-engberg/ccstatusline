@@ -55,6 +55,21 @@ describe('powerline settings helpers', () => {
         expect(updated.powerline.theme).toBe('custom');
     });
 
+    it.each([
+        ['unset', undefined, ''],
+        ['none', '', ''],
+        ['two spaces', '  ', '  ']
+    ])('remembers the default padding it replaces (%s) when enabling powerline', (_name, padding, remembered) => {
+        const settings = {
+            ...DEFAULT_SETTINGS,
+            defaultPadding: padding
+        };
+
+        const updated = buildEnabledPowerlineSettings(settings, false);
+        expect(updated.defaultPadding).toBe(' ');
+        expect(updated.powerline.paddingToRestore).toBe(remembered);
+    });
+
     it('removes manual separators while preserving flex separators when requested', () => {
         const line: WidgetItem[] = [
             { id: '1', type: 'model' },
