@@ -38,7 +38,6 @@ const DEFAULT_RATE_LIMIT_BACKOFF = 300; // seconds
 // stuck on [Timeout] and no code path able to recover.
 const MAX_LOCK_HORIZON = 24 * 60 * 60; // seconds
 const MACOS_USAGE_CREDENTIALS_SERVICE = 'Claude Code-credentials';
-const MACOS_SECURITY_DUMP_MAX_BUFFER = 8 * 1024 * 1024;
 // Keychain reads normally take milliseconds. A `security` call blocked on an
 // unlock prompt must not hold the status line until someone answers it.
 const MACOS_SECURITY_TIMEOUT_MS = 5000;
@@ -361,11 +360,6 @@ let usageErrorCacheMaxAge = LOCK_MAX_AGE;
 type UsageLockError = z.infer<typeof UsageLockErrorSchema>;
 
 type UsageApiFetchResult = { kind: 'success'; body: string } | { kind: 'rate-limited'; retryAfterSeconds: number } | { kind: 'error' };
-interface MacKeychainCredentialCandidate {
-    modifiedAt: string | null;
-    order: number;
-    service: string;
-}
 
 function ensureCacheDirExists(): void {
     if (!fs.existsSync(CACHE_DIR)) {
@@ -430,95 +424,6 @@ function getStaleUsageOrError(
     return setCachedUsageError(error, now, errorCacheMaxAge);
 }
 
-function normalizeSecurityTimedateValue(rawValue: string): string | null {
-    const cleaned = rawValue.replace(/\\000/g, '').replace(/\0/g, '').trim();
-    return /^\d{14}Z$/.test(cleaned) ? cleaned : null;
-}
-
-function decodeHexAscii(rawHex: string): string | null {
-    if (rawHex.length === 0 || rawHex.length % 2 !== 0) {
-        return null;
-    }
-
-    let decoded = '';
-
-    for (let i = 0; i < rawHex.length; i += 2) {
-        const byte = Number.parseInt(rawHex.slice(i, i + 2), 16);
-        if (Number.isNaN(byte)) {
-            return null;
-        }
-
-        decoded += String.fromCharCode(byte);
-    }
-
-    return decoded;
-}
-
-function parseModifiedTimeFromKeychainBlock(block: string): string | null {
-    const quotedMatch = /"mdat"<timedate>=(?:0x[0-9A-Fa-f]+\s+)?"([^"]+)"/.exec(block);
-    if (quotedMatch?.[1]) {
-        const parsed = normalizeSecurityTimedateValue(quotedMatch[1]);
-        if (parsed !== null) {
-            return parsed;
-        }
-    }
-
-    const hexMatch = /"mdat"<timedate>=0x([0-9A-Fa-f]+)/.exec(block);
-    if (!hexMatch?.[1]) {
-        return null;
-    }
-
-    const decoded = decodeHexAscii(hexMatch[1]);
-    return decoded ? normalizeSecurityTimedateValue(decoded) : null;
-}
-
-function sortMacKeychainCredentialCandidates(a: MacKeychainCredentialCandidate, b: MacKeychainCredentialCandidate): number {
-    if (a.modifiedAt !== null && b.modifiedAt !== null && a.modifiedAt !== b.modifiedAt) {
-        return b.modifiedAt.localeCompare(a.modifiedAt);
-    }
-
-    if (a.modifiedAt !== null && b.modifiedAt === null) {
-        return -1;
-    }
-
-    if (a.modifiedAt === null && b.modifiedAt !== null) {
-        return 1;
-    }
-
-    return a.order - b.order;
-}
-
-export function parseMacKeychainCredentialCandidates(rawDump: string, servicePrefix = MACOS_USAGE_CREDENTIALS_SERVICE): string[] {
-    const blocks = rawDump.split(/(?=^keychain:\s)/m).filter(block => block.trim().length > 0);
-    const dedupedCandidates = new Map<string, MacKeychainCredentialCandidate>();
-    let order = 0;
-
-    for (const block of blocks) {
-        const serviceMatch = /"svce"<blob>="([^"]+)"/.exec(block);
-        const service = serviceMatch?.[1];
-
-        if (!service || !service.startsWith(servicePrefix) || service === MACOS_USAGE_CREDENTIALS_SERVICE) {
-            continue;
-        }
-
-        const candidate: MacKeychainCredentialCandidate = {
-            modifiedAt: parseModifiedTimeFromKeychainBlock(block),
-            order,
-            service
-        };
-        order += 1;
-
-        const existing = dedupedCandidates.get(service);
-        if (!existing || sortMacKeychainCredentialCandidates(candidate, existing) < 0) {
-            dedupedCandidates.set(service, candidate);
-        }
-    }
-
-    return [...dedupedCandidates.values()]
-        .sort(sortMacKeychainCredentialCandidates)
-        .map(candidate => candidate.service);
-}
-
 function readMacKeychainSecret(service: string): string | null {
     try {
         return execFileSync(
@@ -534,39 +439,6 @@ function readMacKeychainSecret(service: string): string | null {
 function readUsageCredentialsFromMacKeychainService(service: string): UsageCredentials | null {
     const secret = readMacKeychainSecret(service);
     return secret ? parseUsageCredentials(secret) : null;
-}
-
-function listMacKeychainCredentialCandidates(): string[] {
-    try {
-        const rawDump = execFileSync(
-            'security',
-            ['dump-keychain'],
-            {
-                encoding: 'utf8',
-                maxBuffer: MACOS_SECURITY_DUMP_MAX_BUFFER,
-                stdio: ['pipe', 'pipe', 'ignore'],
-                timeout: MACOS_SECURITY_TIMEOUT_MS,
-                windowsHide: true
-            }
-        );
-
-        return parseMacKeychainCredentialCandidates(rawDump);
-    } catch {
-        return [];
-    }
-}
-
-function readUsageCredentialsFromMacKeychainCandidates(): UsageCredentials | null {
-    const candidates = listMacKeychainCredentialCandidates();
-
-    for (const service of candidates) {
-        const credentials = readUsageCredentialsFromMacKeychainService(service);
-        if (credentials) {
-            return credentials;
-        }
-    }
-
-    return null;
 }
 
 function readUsageCredentialsFromCredentialsFile(): UsageCredentials | null {
@@ -602,19 +474,14 @@ export function getUsageCredentials(): UsageCredentials | null {
         return readUsageCredentialsFromCredentialsFile();
     }
 
-    const configDirService = getMacKeychainConfigDirService();
-    if (configDirService !== null) {
-        // A non-default profile owns exactly one keychain service name. On a
-        // miss, the plain service and the other suffixed items all belong to
-        // other profiles (or MCP servers), so fall through only to the
-        // profile's own .credentials.json rather than surface another
-        // account's usage.
-        return readUsageCredentialsFromMacKeychainService(configDirService)
-            ?? readUsageCredentialsFromCredentialsFile();
-    }
-
-    return readUsageCredentialsFromMacKeychainService(MACOS_USAGE_CREDENTIALS_SERVICE)
-        ?? readUsageCredentialsFromMacKeychainCandidates()
+    // Every profile, the default one included, owns exactly one keychain
+    // service name, the only one Claude Code reads for it. On a miss, the
+    // remaining "Claude Code-credentials" items belong to other profiles (or
+    // hold only MCP tokens), so fall through only to the profile's own
+    // .credentials.json, Claude Code's fallback store, rather than surface
+    // another account's usage.
+    const service = getMacKeychainConfigDirService() ?? MACOS_USAGE_CREDENTIALS_SERVICE;
+    return readUsageCredentialsFromMacKeychainService(service)
         ?? readUsageCredentialsFromCredentialsFile();
 }
 
@@ -624,9 +491,9 @@ export function getUsageToken(): string | null {
 
 // A lookup that finds no OAuth login (an API-key user, a logged-out profile)
 // stands for LOCK_MAX_AGE across renders, as it already does within one
-// process: on macOS the default profile's lookup runs `security` twice, once
-// for a full keychain dump. The record names the credential stores it
-// covers, so one profile's miss never suppresses another profile's lookup.
+// process: on macOS every lookup spawns `security`. The record names the
+// credential stores it covers, so one profile's miss never suppresses another
+// profile's lookup.
 const NO_CREDENTIALS_LOCK_FILE = path.join(CACHE_DIR, 'usage-credentials.lock');
 const NoCredentialsLockSchema = z.object({
     blockedUntil: z.number(),
