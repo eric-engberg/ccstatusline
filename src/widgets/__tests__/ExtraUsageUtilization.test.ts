@@ -144,7 +144,8 @@ describe('ExtraUsageUtilizationWidget', () => {
             { key: 'u', label: '(u) show remaining', action: 'toggle-invert' },
             { key: 'g', label: '(g)radient', action: 'cycle-gradient' },
             { key: 'b', label: '(b)ar size', action: 'edit-bar-width' },
-            { key: 'n', label: '(n) hide numbers', action: 'toggle-bar-numbers' }
+            { key: 'n', label: '(n) hide numbers', action: 'toggle-bar-numbers' },
+            { key: 'v', label: '(v)alue colors', action: 'edit-value-colors' }
         ]);
         expect(widget.getCustomKeybinds({
             ...baseItem,
@@ -271,6 +272,7 @@ describe('ExtraUsageUtilizationWidget', () => {
 
     describe('value colors', () => {
         const LOW = '\x1b[38;2;0;255;0m';
+        const HIGH = '\x1b[38;2;255;0;0m';
         // At the default 256 Color level these hex colors map to palette entries
         const LOW_256 = '\x1b[38;5;46m';
         const MID_256 = '\x1b[38;5;226m';
@@ -365,14 +367,28 @@ describe('ExtraUsageUtilizationWidget', () => {
             expect(new ExtraUsageUtilizationWidget().render(colored, used(95), { ...DEFAULT_SETTINGS, colorLevel: 0 })).toBe('Overage: 95.0%');
         });
 
-        it('leaves the bar modes as they were', () => {
+        // A bar takes one color for its level, the percent after it too
+        it('colors the whole bar and its percent', () => {
             const widget = new ExtraUsageUtilizationWidget();
             const item = { ...colored, metadata: { ...colored.metadata, display: 'progress-short' } };
 
-            expect(render(widget, item, used(25))).toBe('Overage: [████░░░░░░░░░░░░] 25.0%');
-            expect(widget.colorsOnlyItsRuns(item)).toBe(false);
-            expect(widget.getCustomKeybinds(item).map(keybind => keybind.key)).not.toContain('v');
-            expect(widget.getEditorDisplay(item).modifierText).toBe('(block bar, medium, used)');
+            expect(render(widget, item, used(25))).toBe(`Overage: ${LOW_256}[████░░░░░░░░░░░░] 25.0%${FG_RESET}`);
+            expect(widget.colorsOnlyItsRuns(item)).toBe(true);
+            expect(widget.getCustomKeybinds(item).map(keybind => keybind.key)).toContain('v');
+            expect(widget.getEditorDisplay(item).modifierText).toBe('(block bar, medium, used, value colors)');
+        });
+
+        it('sets a saved bar gradient aside, and (g) turns value colors off', () => {
+            const widget = new ExtraUsageUtilizationWidget();
+            const item = { ...colored, rawValue: true, metadata: { ...colored.metadata, display: 'progress-short' } };
+            const both = { ...item, metadata: { ...item.metadata, gradient: 'thermal' } };
+
+            expect(widget.render(both, used(95), { ...DEFAULT_SETTINGS, colorLevel: 3 })).toBe(`${HIGH}[███████████████░] 95.0%${FG_RESET}`);
+            expect(widget.getEditorDisplay(both).modifierText).toBe('(block bar, medium, used, value colors)');
+
+            const withGradient = widget.handleEditorAction('cycle-gradient', item);
+            expect(withGradient?.metadata?.gradient).toBe('traffic');
+            expect(withGradient?.metadata?.valueColors).toBeUndefined();
         });
 
         it('previews 85% in its color', () => {

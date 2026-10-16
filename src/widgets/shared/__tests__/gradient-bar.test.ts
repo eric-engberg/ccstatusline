@@ -6,11 +6,16 @@ import {
 } from 'vitest';
 
 import { DEFAULT_SETTINGS } from '../../../types/Settings';
+import type { WidgetItem } from '../../../types/Widget';
 import {
     BAR_GRADIENT_PRESETS,
+    cycleGradientPreset,
     filterGradientKeybinds,
+    getGradientModifier,
+    getGradientPreset,
     noteGradientNeedsTruecolor,
     paintGradientBar,
+    paintWidgetBar,
     type BarGradientPreset
 } from '../gradient-bar';
 
@@ -96,5 +101,26 @@ describe('the line editor\'s truecolor rule', () => {
         expect(noteGradientNeedsTruecolor('(long bar, gradient: blue-orange)', { ...DEFAULT_SETTINGS, colorLevel: 3 })).toBe('(long bar, gradient: blue-orange)');
         expect(noteGradientNeedsTruecolor('(long bar)', color256)).toBe('(long bar)');
         expect(noteGradientNeedsTruecolor(undefined, color256)).toBeUndefined();
+    });
+});
+
+// Value colors give a bar one color for its level, so a bar gradient, which
+// colors each cell by where it sits, is never on with them
+describe('a bar gradient and value colors', () => {
+    const bar: WidgetItem = { id: 'b', type: 'context-bar' };
+
+    it('sets a saved preset aside while value colors are on', () => {
+        const both: WidgetItem = { ...bar, metadata: { gradient: 'thermal', valueColors: 'true' } };
+
+        expect(getGradientPreset(both)).toBeNull();
+        expect(getGradientModifier(both)).toBeNull();
+        expect(paintWidgetBar('▓▓░░', both, { ...DEFAULT_SETTINGS, colorLevel: 3 })).toBe('▓▓░░');
+    });
+
+    it('turns value colors off, keeping their settings, when (g) turns a preset on', () => {
+        const colored: WidgetItem = { ...bar, metadata: { valueColors: 'true', valueColorMode: 'gradient' } };
+
+        expect(cycleGradientPreset(colored).metadata).toEqual({ valueColorMode: 'gradient', gradient: 'traffic' });
+        expect(cycleGradientPreset({ ...bar, metadata: { gradient: 'traffic' } }).metadata).toEqual({ gradient: 'thermal' });
     });
 });
