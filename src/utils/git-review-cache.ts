@@ -407,52 +407,63 @@ function getEffectiveRemoteHost(url: string, host: string, deps: GitReviewCacheD
     }
 
     const resolvedHost = resolveSshHostAlias(normalizedHost, deps);
-    if (!getNamedForgeProvider(normalizedHost)) {
+    const hostProvider = getNamedForgeProvider(normalizedHost);
+    if (!hostProvider) {
         return resolvedHost;
     }
 
-    // A host naming a forge is either an alias (github-work, github.com-personal,
-    // gitlab-corp) or a self-hosted forge's own hostname (gitlab.corp.example),
-    // which its CLI is logged in to and which serves the repo over HTTPS. Take
-    // the resolved name when it is github.com or gitlab.com (or one of their
-    // transport endpoints), or when the host has no dot (an alias, not a
-    // hostname) and resolves to a host naming a forge. Otherwise keep the
-    // host's own name, even when SSH config sends it to an IP or to an
-    // SSH-only endpoint such as gitlab-ssh.corp.example.
     const canonicalHost = FORGE_TRANSPORT_HOSTS.get(resolvedHost) ?? resolvedHost;
     if (CANONICAL_FORGE_HOSTS.has(canonicalHost)) {
         return canonicalHost;
     }
-    const isAlias = !normalizedHost.includes('.');
-    return isAlias && getNamedForgeProvider(resolvedHost) ? resolvedHost : normalizedHost;
+    // Left as it is, or sent to an IP or to a host naming no forge, the host
+    // keeps its own name
+    const resolvedProvider = getNamedForgeProvider(resolvedHost);
+    if (resolvedHost === normalizedHost || !resolvedProvider) {
+        return normalizedHost;
+    }
+
+    // Both names name a forge. The host is an alias (github-work,
+    // github.com-work, gitlab-corp), or the forge's own hostname
+    // (gitlab.corp.example, or a short name such as gitlab reached through a
+    // DNS search domain) that SSH config sends to an SSH-only endpoint
+    // (gitlab-ssh.corp.example). Keep whichever name the forge's CLI is logged
+    // in to, which is the one serving the repo over HTTPS, trying the host's
+    // own name first. Logged in to neither, a host without a dot reads as an
+    // alias.
+    if (isCliAuthedForHost(hostProvider, normalizedHost, deps)) {
+        return normalizedHost;
+    }
+    if (isCliAuthedForHost(resolvedProvider, resolvedHost, deps)) {
+        return resolvedHost;
+    }
+    return normalizedHost.includes('.') ? normalizedHost : resolvedHost;
 }
 
-function getOriginHost(cwd: string, deps: GitReviewCacheDeps): string | null {
+interface OriginRemote {
+    // The host the forge's CLI knows origin by
+    host: string;
+    // origin's repo on that host, for `--repo`
+    repoRef: string;
+}
+
+// Worked out once per lookup: it can run `ssh -G` and `auth status` probes
+function getOriginRemote(cwd: string, deps: GitReviewCacheDeps): OriginRemote | null {
     const url = getOriginUrl(cwd, deps);
     if (!url) {
         return null;
     }
     const parsed = parseRemoteUrl(url);
-    return parsed ? getEffectiveRemoteHost(url, parsed.host, deps) : null;
-}
-
-function toHttpsRepoRef(url: string, deps: GitReviewCacheDeps): string | null {
-    const parsed = parseRemoteUrl(url);
     if (!parsed) {
         return null;
     }
-    return `https://${getEffectiveRemoteHost(url, parsed.host, deps)}/${parsed.owner}/${parsed.repo}`;
-}
-
-function getOriginRepoRef(cwd: string, deps: GitReviewCacheDeps): string | null {
-    const url = getOriginUrl(cwd, deps);
-    return url ? toHttpsRepoRef(url, deps) : null;
+    const host = getEffectiveRemoteHost(url, parsed.host, deps);
+    return { host, repoRef: `https://${host}/${parsed.owner}/${parsed.repo}` };
 }
 
 // Self-hosted hosts that name neither forge are resolved by probing each CLI's
 // `auth status --hostname <host>` and keeping those that are authed.
-function getProviderCandidates(cwd: string, deps: GitReviewCacheDeps): GitReviewProvider[] {
-    const host = getOriginHost(cwd, deps);
+function getProviderCandidates(host: string | null, deps: GitReviewCacheDeps): GitReviewProvider[] {
     if (!host) {
         return ['gh', 'glab'];
     }
@@ -744,10 +755,11 @@ export function fetchGitReviewData(
         && (!includeChecks || cached.checksQueried)) {
         return cached.data;
     }
-    const repoRef = getOriginRepoRef(cwd, deps);
-    // The auth probes for a self-hosted host each have their own timeout, so the
-    // lookup's budget starts after them
-    const providers = getProviderCandidates(cwd, deps);
+    // The auth probes that pick origin's host or its CLI each have their own
+    // timeout, so the lookup's budget starts after them
+    const origin = getOriginRemote(cwd, deps);
+    const repoRef = origin?.repoRef ?? null;
+    const providers = getProviderCandidates(origin?.host ?? null, deps);
     const deadline = deps.now() + CLI_TIMEOUT;
 
     for (const provider of providers) {
