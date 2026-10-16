@@ -37,9 +37,12 @@ vi.mock('node:child_process', () => ({
     spawnSync: vi.fn()
 }));
 
+type ExecFileSyncImpl = (command: string, args: string[], options: { maxBuffer?: number }) => string;
+
 const mockExecFileSync = execFileSync as unknown as {
     mock: { calls: unknown[][] };
-    mockImplementation: (impl: () => never) => void;
+    mockImplementation: (impl: ExecFileSyncImpl) => void;
+    mockImplementationOnce: (impl: ExecFileSyncImpl) => void;
     mockReturnValue: (value: string) => void;
     mockReturnValueOnce: (value: string) => void;
 };
@@ -860,6 +863,23 @@ describe('git utils', () => {
             expect(getGitFileStatusCounts({})).toEqual({
                 staged: 0,
                 unstaged: 2,
+                untracked: 0
+            });
+        });
+
+        // execFileSync fails once output passes its maxBuffer, 1 MiB unless set
+        it('counts a status listing larger than 1 MiB', () => {
+            const listing = 'A  packages/web/src/components/generated/Widget.tsx\0'.repeat(25_000);
+            mockExecFileSync.mockImplementation((_command, _args, options) => {
+                if (listing.length > (options.maxBuffer ?? 1024 * 1024)) {
+                    throw Object.assign(new Error('spawnSync git ENOBUFS'), { code: 'ENOBUFS' });
+                }
+                return listing;
+            });
+
+            expect(getGitFileStatusCounts({})).toEqual({
+                staged: 25_000,
+                unstaged: 0,
                 untracked: 0
             });
         });

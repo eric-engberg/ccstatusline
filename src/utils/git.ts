@@ -53,6 +53,11 @@ const GIT_CACHE_SCHEMA_VERSION = 1 as const;
 // and the widget renders empty instead.
 const GIT_COMMAND_TIMEOUT_MS = 5_000;
 
+// execFileSync fails once output passes its maxBuffer, 1 MiB unless set: about
+// 15,000 paths of `status --porcelain -z`, which a large change set passes. This
+// leaves the timeout above as the practical limit.
+const GIT_COMMAND_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
+
 // In-process cache keeps cwd in the key; the persistent cache uses one file
 // per (repo, cwd) pair, stores cwd once at the file level and keys entries by
 // command. Per-cwd files matter because some outputs are cwd-scoped (e.g.
@@ -199,6 +204,7 @@ function gitExecOptions(cwd: string | undefined) {
         stdio: ['pipe', 'pipe', 'ignore'] as ['pipe', 'pipe', 'ignore'],
         env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
         timeout: GIT_COMMAND_TIMEOUT_MS,
+        maxBuffer: GIT_COMMAND_MAX_BUFFER_BYTES,
         windowsHide: true,
         ...(cwd ? { cwd } : {})
     };
