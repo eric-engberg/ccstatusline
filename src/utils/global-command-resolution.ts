@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import * as path from 'node:path';
 
+import { findAllOnPosixPath } from './executable-path';
 import {
     getPackageManagerExecutable,
     getPackageManagerShellOptions
@@ -66,8 +67,11 @@ export function getCommandResolutionPaths(
             });
 
         return splitCommandOutput(output);
-    } catch {
-        return [];
+    } catch (error) {
+        // No `which` to ask: list what it would from PATH
+        return platform !== 'win32' && (error as NodeJS.ErrnoException).code === 'ENOENT'
+            ? findAllOnPosixPath(command)
+            : [];
     }
 }
 

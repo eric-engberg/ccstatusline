@@ -1,4 +1,7 @@
 import * as childProcess from 'node:child_process';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import {
     afterEach,
     describe,
@@ -16,13 +19,17 @@ import {
     getPackageManagerShellOptions
 } from '../package-manager-executable';
 
-function mockExecFileSync(responses: Record<string, string>) {
+function mockExecFileSync(responses: Record<string, string | Error>) {
     const spy = vi.spyOn(childProcess, 'execFileSync').mockImplementation((command, args) => {
         const key = `${command} ${(args as string[]).join(' ')}`;
         const response = responses[key];
 
         if (response === undefined) {
             throw new Error(`Unexpected command: ${key}`);
+        }
+
+        if (response instanceof Error) {
+            throw response;
         }
 
         return response;
@@ -35,6 +42,11 @@ function mockExecFileSync(responses: Record<string, string>) {
     spy.mockClear();
 
     return spy;
+}
+
+// What running a program that isn't installed throws
+function missingProgramError(command: string): Error {
+    return Object.assign(new Error(`spawnSync ${command} ENOENT`), { code: 'ENOENT' });
 }
 
 describe('global command resolution', () => {
@@ -77,6 +89,28 @@ describe('global command resolution', () => {
         expect(getCommandResolutionPaths('ccstatusline', { platform: 'linux' })).toEqual([
             '/home/alice/.bun/bin/ccstatusline'
         ]);
+    });
+
+    // Minimal Linux images (Fedora, UBI, Arch without the which package) have no `which`
+    it.skipIf(process.platform === 'win32')('looks through PATH itself when there is no which command', () => {
+        const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-path-'));
+        const originalPath = process.env.PATH;
+        try {
+            fs.writeFileSync(path.join(binDir, 'ccstatusline'), '#!/bin/sh\n', { mode: 0o755 });
+            process.env.PATH = `${path.join(binDir, 'missing')}:${binDir}`;
+            mockExecFileSync({
+                'which -a ccstatusline': missingProgramError('which'),
+                'bun pm bin -g': `${binDir}\n`
+            });
+
+            const resolution = inspectGlobalCommandResolution('bun', { platform: 'linux' });
+
+            expect(resolution.resolvedPaths).toEqual([path.join(binDir, 'ccstatusline')]);
+            expect(resolution.warning).toBeNull();
+        } finally {
+            process.env.PATH = originalPath;
+            fs.rmSync(binDir, { recursive: true, force: true });
+        }
     });
 
     it('silences child stderr on best-effort probes so failures cannot leak to the terminal', () => {
