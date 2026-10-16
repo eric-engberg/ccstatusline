@@ -659,6 +659,69 @@ describe('backup and error handling behavior', () => {
         expect(savedSettings.installation).toBeUndefined();
     });
 
+    it('uninstallStatusLine should keep hook entries it does not recognize', async () => {
+        const otherHooks = {
+            Stop: { type: 'command', command: 'not-a-list' },
+            PreToolUse: [
+                null,
+                'not-an-entry',
+                { matcher: 'Other', hooks: 'not-a-list' },
+                { matcher: 'Mixed', hooks: [null, { type: 'command', command: 'keep-me' }] }
+            ]
+        };
+        writeRawClaudeSettings(JSON.stringify({
+            statusLine: {
+                type: 'command',
+                command: CCSTATUSLINE_COMMANDS.NPM,
+                padding: 0
+            },
+            hooks: {
+                ...otherHooks,
+                PreToolUse: [
+                    ...otherHooks.PreToolUse,
+                    {
+                        _tag: 'ccstatusline-managed',
+                        hooks: [{ type: 'command', command: `${CCSTATUSLINE_COMMANDS.NPM} --hook` }]
+                    }
+                ]
+            }
+        }));
+
+        await uninstallStatusLine();
+
+        const updated = JSON.parse(fs.readFileSync(getClaudeSettingsPath(), 'utf-8')) as {
+            statusLine?: unknown;
+            hooks?: unknown;
+        };
+        expect(updated.statusLine).toBeUndefined();
+        expect(updated.hooks).toEqual(otherHooks);
+    });
+
+    it('uninstallStatusLine should back up the settings as they were before the uninstall', async () => {
+        const content = JSON.stringify({
+            statusLine: {
+                type: 'command',
+                command: CCSTATUSLINE_COMMANDS.NPM,
+                padding: 0
+            },
+            hooks: {
+                UserPromptSubmit: [
+                    {
+                        _tag: 'ccstatusline-managed',
+                        hooks: [{ type: 'command', command: `${CCSTATUSLINE_COMMANDS.NPM} --hook` }]
+                    }
+                ]
+            }
+        });
+        writeRawClaudeSettings(content);
+
+        await uninstallStatusLine();
+
+        const settingsPath = getClaudeSettingsPath();
+        expect(JSON.parse(fs.readFileSync(settingsPath, 'utf-8'))).toEqual({});
+        expect(fs.readFileSync(`${settingsPath}.bak`, 'utf-8')).toBe(content);
+    });
+
     it('getExistingStatusLine should return null when settings cannot be loaded', async () => {
         writeRawClaudeSettings('{ invalid json');
         const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);

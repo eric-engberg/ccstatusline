@@ -468,15 +468,16 @@ export async function uninstallStatusLine(): Promise<void> {
     // remove the global package that statusLine still runs.
     const settings = await loadClaudeSettingsForUpdate('uninstall again');
 
-    if (settings.statusLine) {
-        delete settings.statusLine;
+    // statusLine and the managed hooks go in one write. If it fails, both
+    // stay and the metadata isn't cleared, so the caller doesn't go on to
+    // remove the binary they run. With neither there, the file isn't written.
+    const { stripManagedHooksFromSettings } = await import('./hooks');
+    const hadStatusLine = Boolean(settings.statusLine);
+    delete settings.statusLine;
+    const hadManagedHooks = stripManagedHooksFromSettings(settings);
+    if (hadStatusLine || hadManagedHooks) {
         await saveClaudeSettings(settings);
     }
-
-    // A failure to remove the managed hooks rejects too, before the metadata
-    // is cleared: they'd be left running the binary the caller removes next.
-    const { removeManagedHooks } = await import('./hooks');
-    await removeManagedHooks();
 
     await saveInstallationMetadata(undefined);
 }
