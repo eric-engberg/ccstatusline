@@ -713,6 +713,16 @@ function replaceOwnUsageLock(ownContents: string, blockedUntil: number, error: U
     }
 }
 
+// How far ahead of now each kind of lock may be dated. Only a 429's
+// Retry-After outlasts LOCK_MAX_AGE. Any other lock still counts up to one
+// backoff beyond its own, since a concurrent render may have written it
+// after this one read the clock. Dated further ahead, it was written under a
+// clock since set back, and would block fetching for as long as the clock
+// had been fast.
+function getUsageLockHorizon(error: UsageLockError): number {
+    return error === 'rate-limited' ? MAX_LOCK_HORIZON : 2 * LOCK_MAX_AGE;
+}
+
 function readActiveUsageLock(now: number): { blockedUntil: number; error: UsageLockError } | null {
     let hasValidJsonLock = false;
 
@@ -720,13 +730,14 @@ function readActiveUsageLock(now: number): { blockedUntil: number; error: UsageL
         const parsed = parseJsonWithSchema(fs.readFileSync(LOCK_FILE, 'utf8'), UsageLockSchema);
         if (parsed) {
             hasValidJsonLock = true;
+            const error = parsed.error ?? 'timeout';
             // Past deadline, or one implausibly far ahead: treat as no lock and
             // fetch. The fetch rewrites the file with a sane deadline, so a
             // poisoned lock self-heals on the very next render.
-            if (parsed.blockedUntil > now && parsed.blockedUntil <= now + MAX_LOCK_HORIZON) {
+            if (parsed.blockedUntil > now && parsed.blockedUntil <= now + getUsageLockHorizon(error)) {
                 return {
                     blockedUntil: parsed.blockedUntil,
-                    error: parsed.error ?? 'timeout'
+                    error
                 };
             }
             return null;
@@ -743,7 +754,7 @@ function readActiveUsageLock(now: number): { blockedUntil: number; error: UsageL
         const lockStat = fs.statSync(LOCK_FILE);
         const lockMtime = Math.floor(lockStat.mtimeMs / 1000);
         const blockedUntil = lockMtime + LOCK_MAX_AGE;
-        if (blockedUntil > now) {
+        if (blockedUntil > now && blockedUntil <= now + getUsageLockHorizon('timeout')) {
             return {
                 blockedUntil,
                 error: 'timeout'

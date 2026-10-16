@@ -626,11 +626,12 @@ describe('fetchUsageData error handling', () => {
             expect(staleProxyResult.requestCount).toBe(0);
             expect(staleProxyResult.proxyAgentConfigured).toBe(false);
 
+            // Inside the backoff the stale-proxy render's failure started
             const cachedSuccessResult = harness.runProbe({
                 claudeConfigDir: successHome.claudeConfig,
                 home: successHome.home,
                 mode: 'unexpected',
-                nowMs,
+                nowMs: nowMs + 191000,
                 pathDir: successHome.bin
             });
 
@@ -1060,6 +1061,65 @@ describe('fetchUsageData error handling', () => {
             // The horizon must not undercut a genuine Retry-After backoff.
             expect(result.requestCount).toBe(0);
             expect(result.first).toEqual({ error: 'rate-limited' });
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('honors an in-flight lock that a concurrent render dated a moment ahead', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome('in-flight-lock-ahead');
+            const cacheDir = path.join(home.home, '.cache', 'ccstatusline');
+            fs.mkdirSync(cacheDir, { recursive: true });
+            // That render read the clock a second after this one did.
+            fs.writeFileSync(path.join(cacheDir, 'usage.lock'), JSON.stringify({
+                blockedUntil: Math.floor(nowMs / 1000) + 31,
+                error: 'timeout'
+            }));
+
+            const result = harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                mode: 'unexpected',
+                nowMs,
+                pathDir: home.bin
+            });
+
+            expect(result.requestCount).toBe(0);
+            expect(result.first).toEqual({ error: 'timeout' });
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it.each(['timeout', 'api-error', 'parse-error'])('ignores a lock of kind %s dated further ahead than its 30-second backoff', (error) => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome(`short-lock-ahead-${error}`);
+            const cacheDir = path.join(home.home, '.cache', 'ccstatusline');
+            fs.mkdirSync(cacheDir, { recursive: true });
+            // Written 30 seconds ahead of a clock that ran 3 hours fast and has
+            // since been set back.
+            fs.writeFileSync(path.join(cacheDir, 'usage.lock'), JSON.stringify({
+                blockedUntil: Math.floor(nowMs / 1000) + (3 * 60 * 60) + 30,
+                error
+            }));
+
+            const result = harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                mode: 'success',
+                nowMs,
+                pathDir: home.bin,
+                responseBody: successResponseBody
+            });
+
+            expect(result.requestCount).toBe(1);
+            expect(result.first).toMatchObject({ sessionUsage: 42, weeklyUsage: 17 });
+            expect(result.lockExists).toBe(false);
         } finally {
             harness.cleanup();
         }
@@ -1947,6 +2007,35 @@ describe('fetchUsageData error handling', () => {
             expect(result.first).toEqual({ error: 'timeout' });
             expect(result.second).toEqual({ error: 'timeout' });
             expect(result.requestCount).toBe(0);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('ignores a legacy empty lock file modified further ahead than its 30-second backoff', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome('legacy-lock-ahead');
+            const lockDir = path.join(home.home, '.cache', 'ccstatusline');
+            const lockFile = path.join(lockDir, 'usage.lock');
+
+            fs.mkdirSync(lockDir, { recursive: true });
+            fs.writeFileSync(lockFile, '');
+            const modifiedAt = new Date(nowMs + (3 * 60 * 60 * 1000));
+            fs.utimesSync(lockFile, modifiedAt, modifiedAt);
+
+            const result = harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                mode: 'success',
+                nowMs,
+                pathDir: home.bin,
+                responseBody: successResponseBody
+            });
+
+            expect(result.requestCount).toBe(1);
+            expect(result.first).toMatchObject({ sessionUsage: 42, weeklyUsage: 17 });
         } finally {
             harness.cleanup();
         }

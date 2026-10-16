@@ -76,7 +76,7 @@ Configuration exports snapshot the live TUI settings and add an `exportedBy` pac
 
 Usage-fetch tests spawn subprocess probes. Keep those probes sandboxed by setting `HOME`, `USERPROFILE`, `CLAUDE_CONFIG_DIR`, and proxy variables explicitly so tests cannot read or write a developer's live ccstatusline usage cache.
 
-Usage-lock deadlines more than 24 hours ahead are treated as poisoned and ignored, so mocked clocks, system clock jumps, or old test artifacts cannot suppress usage fetching indefinitely. Valid deadlines up to 24 hours ahead, including API `Retry-After` backoffs, remain active. Likewise, a `usage.json` modified more than its 180-second lifetime in the future counts as stale rather than fresh.
+Usage-lock deadlines further ahead than their kind of lock allows are treated as poisoned and ignored, so mocked clocks, system clock jumps, or old test artifacts cannot suppress usage fetching. Rate-limit locks stay active up to 24 hours ahead, which covers API `Retry-After` backoffs. Every other lock is written 30 seconds ahead and counts for up to a minute ahead, leaving room for a concurrent render that read the clock a moment later; one dated further ahead was written under a clock since set back. Likewise, a `usage.json` modified more than its 180-second lifetime in the future counts as stale rather than fresh.
 
 After a complete successful usage fetch, the process clears the lock only if its contents still match the in-flight record it wrote, preserving a concurrent render's newer rate-limit backoff. A request that fails without a 429 replaces that same in-flight record with a 30-second `api-error` lock, so renders inside the backoff report `[API Error]` rather than `[Timeout]`.
 
