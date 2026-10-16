@@ -7,6 +7,7 @@ import {
 import type { WidgetItem } from '../../../types/Widget';
 import {
     cycleUsageDisplayMode,
+    isAtSessionLimit,
     makeSliderBar
 } from '../usage-display';
 
@@ -88,5 +89,21 @@ describe('cycleUsageDisplayMode with slider', () => {
         expect(third.metadata?.cursor).toBe('true');
         expect(fourth.metadata?.cursor).toBe('true');
         expect(fifth.metadata?.cursor).toBeUndefined();
+    });
+});
+
+// Block Usage's at-limit and Block Reset Timer's under-limit states both read
+// this, so the two always swap at the same render
+describe('isAtSessionLimit', () => {
+    it.each([
+        ['under 100%', { sessionUsage: 60 }, false],
+        ['just under 100%, which a whole-number percent shows as 100%', { sessionUsage: 99.7 }, false],
+        ['at 100%', { sessionUsage: 100 }, true],
+        ['over 100%', { sessionUsage: 100.4 }, true],
+        ['unknown', {}, false],
+        ['the usage API at 100% while the payload lags', { sessionUsage: 97, apiSessionUsage: 100 }, true],
+        ['the usage API under 100% after the payload reached it', { sessionUsage: 100, apiSessionUsage: 2 }, false]
+    ])('is %s → %s', (_label, usageData, expected) => {
+        expect(isAtSessionLimit(usageData)).toBe(expected);
     });
 });
