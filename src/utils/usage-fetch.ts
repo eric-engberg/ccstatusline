@@ -6,6 +6,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { z } from 'zod';
 
+import { withCacheLock } from './cache-lock';
 import { getClaudeConfigDir } from './claude-settings';
 import { isExcludedFromProxy } from './no-proxy';
 import {
@@ -355,6 +356,10 @@ export function parseUsageApiResponse(rawJson: string): UsageData | null {
 
 // Memory caches
 let cachedUsageData: UsageData | null = null;
+// When the data fetchUsageData last returned came from the usage API, so a
+// cached or stale total is never taken for a fresh one.
+let cachedUsageFetchedAtMs: number | null = null;
+let lastUsageFetchedAtMs: number | null = null;
 let usageCacheTime = 0;
 let usageErrorCacheMaxAge = LOCK_MAX_AGE;
 
@@ -376,13 +381,19 @@ function ensureCacheDirExists(): void {
 function setCachedUsageError(error: UsageError, now: number, maxAge = LOCK_MAX_AGE): UsageData {
     const errorData: UsageData = { error };
     cachedUsageData = errorData;
+    cachedUsageFetchedAtMs = null;
+    lastUsageFetchedAtMs = null;
     usageCacheTime = now;
     usageErrorCacheMaxAge = maxAge;
     return errorData;
 }
 
-function cacheUsageData(data: UsageData, now: number): UsageData {
+// fetchedAtMs is when the usage API returned this data: now for a fresh fetch,
+// the cache file's write time for a cache hit or a stale fallback.
+function cacheUsageData(data: UsageData, now: number, fetchedAtMs: number): UsageData {
     cachedUsageData = data;
+    cachedUsageFetchedAtMs = fetchedAtMs;
+    lastUsageFetchedAtMs = fetchedAtMs;
     usageCacheTime = now;
     usageErrorCacheMaxAge = LOCK_MAX_AGE;
     return data;
@@ -423,8 +434,8 @@ function getStaleUsageOrError(
     requiredFields: readonly UsageDataField[] = []
 ): UsageData {
     const stale = readStaleUsageCache(cacheIdentity);
-    if (stale && !stale.error && hasRequiredUsageFields(stale, requiredFields)) {
-        return cacheUsageData(stale, now);
+    if (stale && !stale.data.error && hasRequiredUsageFields(stale.data, requiredFields)) {
+        return cacheUsageData(stale.data, now, stale.fetchedAtMs);
     }
 
     return setCachedUsageError(error, now, errorCacheMaxAge);
@@ -663,13 +674,14 @@ function getUsageCredentialsWithBackoff(now: number): UsageCredentials | null {
     return credentials;
 }
 
-function readStaleUsageCache(cacheIdentity: UsageCacheIdentity | null): UsageData | null {
+function readStaleUsageCache(cacheIdentity: UsageCacheIdentity | null): { data: UsageData; fetchedAtMs: number } | null {
     try {
         const rawCache = fs.readFileSync(CACHE_FILE, 'utf8');
         if (!tokenHashMatches(readCachedTokenHash(rawCache), cacheIdentity)) {
             return null;
         }
-        return parseCachedUsageData(rawCache);
+        const data = parseCachedUsageData(rawCache);
+        return data ? { data, fetchedAtMs: fs.statSync(CACHE_FILE).mtimeMs } : null;
     } catch {
         return null;
     }
@@ -766,6 +778,7 @@ function parseRetryAfterSeconds(headerValue: string | string[] | undefined, nowM
 
 const USAGE_API_HOST = 'api.anthropic.com';
 const USAGE_API_PATH = '/api/oauth/usage';
+const PROFILE_API_PATH = '/api/oauth/profile';
 const USAGE_API_TIMEOUT_MS = 5000;
 
 function getUsageApiProxyUrl(): string | null {
@@ -777,7 +790,7 @@ function getUsageApiProxyUrl(): string | null {
     return proxyUrl ?? null;
 }
 
-function getUsageApiRequest(token: string): { options: https.RequestOptions; proxy: ClosableProxyAgent | null } | null {
+function getUsageApiRequest(token: string, apiPath: string): { options: https.RequestOptions; proxy: ClosableProxyAgent | null } | null {
     const proxyUrl = getUsageApiProxyUrl();
 
     try {
@@ -785,7 +798,7 @@ function getUsageApiRequest(token: string): { options: https.RequestOptions; pro
         return {
             options: {
                 hostname: USAGE_API_HOST,
-                path: USAGE_API_PATH,
+                path: apiPath,
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -801,8 +814,8 @@ function getUsageApiRequest(token: string): { options: https.RequestOptions; pro
     }
 }
 
-async function fetchFromUsageApi(token: string, deadlineMs = USAGE_API_TIMEOUT_MS): Promise<UsageApiFetchResult> {
-    const usageRequest = getUsageApiRequest(token);
+async function fetchFromUsageApi(token: string, deadlineMs = USAGE_API_TIMEOUT_MS, apiPath = USAGE_API_PATH): Promise<UsageApiFetchResult> {
+    const usageRequest = getUsageApiRequest(token, apiPath);
     if (!usageRequest) {
         return { kind: 'error' };
     }
@@ -861,6 +874,22 @@ async function fetchFromUsageApi(token: string, deadlineMs = USAGE_API_TIMEOUT_M
     });
 }
 
+// The fingerprint of the login fetchUsageData last resolved, so per-login
+// state outside the usage cache (today's spend) stays with that login.
+let lastUsageAccountKey: string | null = null;
+// That login's credentials, which lookUpUsageAccount asks about.
+let lastUsageCredentials: UsageCredentials | null = null;
+
+/** The token fingerprint of the login the last usage fetch used, or null when none was found. */
+export function getUsageAccountKey(): string | null {
+    return lastUsageAccountKey;
+}
+
+/** When the usage API returned the data the last fetch returned (ms), or null when it returned an error. */
+export function getUsageFetchedAt(): number | null {
+    return lastUsageFetchedAtMs;
+}
+
 export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promise<UsageData> {
     const now = Math.floor(Date.now() / 1000);
     const requiredFields = options.requiredFields ?? [];
@@ -869,9 +898,11 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
     if (cachedUsageData) {
         const cacheAge = now - usageCacheTime;
         if (!cachedUsageData.error && cacheAge < CACHE_MAX_AGE && hasRequiredUsageFields(cachedUsageData, requiredFields)) {
+            lastUsageFetchedAtMs = cachedUsageFetchedAtMs;
             return cachedUsageData;
         }
         if (cachedUsageData.error && cacheAge < usageErrorCacheMaxAge) {
+            lastUsageFetchedAtMs = null;
             return cachedUsageData;
         }
     }
@@ -883,6 +914,8 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
     const credentials = getUsageCredentialsWithBackoff(now);
     const token = credentials?.accessToken ?? null;
     const cacheIdentity = credentials ? getUsageCacheIdentity(credentials) : null;
+    lastUsageAccountKey = cacheIdentity?.preferredHash ?? null;
+    lastUsageCredentials = credentials;
 
     // Check file cache
     try {
@@ -898,7 +931,7 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
             if (fileData && !fileData.error
                 && tokenHashMatches(readCachedTokenHash(rawCache), cacheIdentity)
                 && hasRequiredUsageFields(fileData, requiredFields)) {
-                return cacheUsageData(fileData, now);
+                return cacheUsageData(fileData, now, stat.mtimeMs);
             }
         }
     } catch {
@@ -962,9 +995,140 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
             clearOwnUsageLock(inFlightLock);
         }
 
-        return cacheUsageData(usageData, now);
+        return cacheUsageData(usageData, now, now * 1000);
     } catch {
         writeUsageLock(now + LOCK_MAX_AGE, 'parse-error');
         return getStaleUsageOrError('parse-error', now, cacheIdentity, LOCK_MAX_AGE, requiredFields);
     }
+}
+
+// Today's extra usage spend (daily-spend.ts) has to stay with a login for the
+// whole UTC day, and the token fingerprint doesn't: Claude Code saves a new
+// refresh token each time it refreshes the access token. The profile endpoint
+// names the account and organization the credentials belong to, which a
+// refresh doesn't change. Each fingerprint is looked up once and the answer
+// kept in usage-account.json; a failed lookup holds off that fingerprint only.
+const USAGE_ACCOUNT_CACHE_FILE = path.join(CACHE_DIR, 'usage-account.json');
+// Each token refresh adds a fingerprint, a few a day per login; this keeps a
+// few days of them for the logins used side by side.
+const MAX_CACHED_USAGE_ACCOUNTS = 32;
+
+// The fields Claude Code itself requires of this response.
+const ProfileApiResponseSchema = z.looseObject({
+    account: z.looseObject({ uuid: z.string().min(1) }),
+    organization: z.looseObject({ uuid: z.string().min(1) })
+});
+// Each entry names its fingerprint's account, or holds off that
+// fingerprint's lookup until blockedUntil.
+const UsageAccountEntriesSchema = z.array(z.object({
+    tokenHash: z.string(),
+    accountKey: z.string().min(1).optional(),
+    blockedUntil: z.number().optional()
+}));
+
+type UsageAccountEntry = z.infer<typeof UsageAccountEntriesSchema>[number];
+
+/** A login told apart by its account rather than its tokens. */
+export interface UsageAccount {
+    /** The same across token refreshes; another account or organization never has it. */
+    key: string;
+    /** The token fingerprints known to belong to it, newest first. */
+    fingerprints: string[];
+}
+
+function readUsageAccountEntries(): UsageAccountEntry[] {
+    try {
+        return parseJsonWithSchema(fs.readFileSync(USAGE_ACCOUNT_CACHE_FILE, 'utf8'), UsageAccountEntriesSchema) ?? [];
+    } catch {
+        return [];
+    }
+}
+
+function withUsageAccountEntry(entries: UsageAccountEntry[], entry: UsageAccountEntry): UsageAccountEntry[] {
+    return [entry, ...entries.filter(existing => existing.tokenHash !== entry.tokenHash)].slice(0, MAX_CACHED_USAGE_ACCOUNTS);
+}
+
+function findUsageAccount(tokenHash: string): UsageAccount | null {
+    const entries = readUsageAccountEntries();
+    const accountKey = entries.find(entry => entry.tokenHash === tokenHash)?.accountKey;
+    return accountKey === undefined
+        ? null
+        : { key: accountKey, fingerprints: entries.filter(entry => entry.accountKey === accountKey).map(entry => entry.tokenHash) };
+}
+
+// Bounded like the usage lock, so a deadline written under a wrong clock
+// can't stop lookups for good.
+function isUsageAccountLookupBlocked(entry: UsageAccountEntry | undefined, now: number): boolean {
+    return entry?.blockedUntil !== undefined && entry.blockedUntil > now && entry.blockedUntil <= now + MAX_LOCK_HORIZON;
+}
+
+// Holds the fingerprint off before its request is sent, under the lock, so
+// renders running side by side send one request between them. False when
+// it's already named or held off, or the hold-off can't be recorded.
+function claimUsageAccountLookup(tokenHash: string, now: number): boolean {
+    let claimed = false;
+    try {
+        ensureCacheDirExists();
+        withCacheLock(USAGE_ACCOUNT_CACHE_FILE, () => {
+            const entries = readUsageAccountEntries();
+            const entry = entries.find(existing => existing.tokenHash === tokenHash);
+            if (entry?.accountKey === undefined && !isUsageAccountLookupBlocked(entry, now)) {
+                fs.writeFileSync(USAGE_ACCOUNT_CACHE_FILE, JSON.stringify(withUsageAccountEntry(entries, { tokenHash, blockedUntil: now + LOCK_MAX_AGE })));
+                claimed = true;
+            }
+        });
+    } catch {
+        // Not recorded, so not sent either
+    }
+    return claimed;
+}
+
+function storeUsageAccountEntry(entry: UsageAccountEntry): void {
+    try {
+        withCacheLock(USAGE_ACCOUNT_CACHE_FILE, () => {
+            fs.writeFileSync(USAGE_ACCOUNT_CACHE_FILE, JSON.stringify(withUsageAccountEntry(readUsageAccountEntries(), entry)));
+        });
+    } catch {
+        // The hold-off from the claim stays, and the lookup is repeated after it
+    }
+}
+
+/**
+ * The account and organization the last usage fetch's credentials belong to,
+ * or null without credentials or while the lookup fails. Asks the profile
+ * endpoint at most once per token fingerprint per backoff: 30 seconds after a
+ * failure, or a 429's Retry-After, up to a day.
+ */
+export async function lookUpUsageAccount(): Promise<UsageAccount | null> {
+    const credentials = lastUsageCredentials;
+    const tokenHash = lastUsageAccountKey;
+    if (!credentials || tokenHash === null) {
+        return null;
+    }
+
+    const now = Math.floor(Date.now() / 1000);
+    const cached = findUsageAccount(tokenHash);
+    if (cached || !claimUsageAccountLookup(tokenHash, now)) {
+        // Another render may have just named it
+        return cached ?? findUsageAccount(tokenHash);
+    }
+
+    const response = await fetchFromUsageApi(credentials.accessToken, USAGE_API_TIMEOUT_MS, PROFILE_API_PATH)
+        .catch((): UsageApiFetchResult => ({ kind: 'error' }));
+    const profile = response.kind === 'success' ? parseJsonWithSchema(response.body, ProfileApiResponseSchema) : null;
+    if (!profile) {
+        // Kept within the horizon isUsageAccountLookupBlocked trusts, or a
+        // Retry-After further off would be read back as no backoff at all
+        storeUsageAccountEntry({
+            tokenHash,
+            blockedUntil: now + (response.kind === 'rate-limited' ? Math.min(response.retryAfterSeconds, MAX_LOCK_HORIZON) : LOCK_MAX_AGE)
+        });
+        return null;
+    }
+
+    // Fingerprinted like the tokens, so neither cache file names the account
+    const accountId = `${profile.organization.uuid}/${profile.account.uuid}`;
+    const accountKey = `account:${fingerprintUsageToken(accountId)}`;
+    storeUsageAccountEntry({ tokenHash, accountKey });
+    return findUsageAccount(tokenHash) ?? { key: accountKey, fingerprints: [tokenHash] };
 }
