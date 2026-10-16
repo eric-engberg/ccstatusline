@@ -36,11 +36,14 @@ export interface ColorMenuProps {
     widgets: WidgetItem[];
     lineIndex?: number;
     settings: Settings;
+    // False on a line that doesn't draw its widgets' backgrounds (plain while
+    // Powerline is on), so they aren't shown or edited here
+    showsBackgrounds?: boolean;
     onUpdate: (widgets: WidgetItem[]) => void;
     onBack: () => void;
 }
 
-export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settings, onUpdate, onBack }) => {
+export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settings, showsBackgrounds = true, onUpdate, onBack }) => {
     const [showSeparators, setShowSeparators] = useState(false);
     const [hexInputMode, setHexInputMode] = useState(false);
     const [hexInput, setHexInput] = useState('');
@@ -272,7 +275,7 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
                 }
             }
         } else if (shortcut === 'f' || shortcut === 'F') {
-            if (colorableWidgets.length > 0) {
+            if (colorableWidgets.length > 0 && showsBackgrounds) {
                 setEditingBackground(!editingBackground);
             }
         } else if (shortcut === 'b' || shortcut === 'B') {
@@ -295,10 +298,11 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
             }
         } else if (shortcut === 'r' || shortcut === 'R') {
             if (highlightedItemId && highlightedItemId !== 'back') {
-                // Reset all styling (color, background, and bold) for the highlighted item
+                // Reset the highlighted item's styling: color, bold, dim, and the
+                // background where the line shows it
                 const selectedWidget = colorableWidgets.find(widget => widget.id === highlightedItemId);
                 if (selectedWidget) {
-                    const newItems = resetWidgetStyling(widgets, selectedWidget.id);
+                    const newItems = resetWidgetStyling(widgets, selectedWidget.id, !showsBackgrounds);
                     onUpdate(newItems);
                 }
             }
@@ -372,7 +376,7 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
                 defaultColor = widgetImpl.getDefaultColor();
             }
         }
-        const styledLabel = applyColors(label, widget.color ?? defaultColor, widget.backgroundColor, widget.bold, level, widget.dim);
+        const styledLabel = applyColors(label, widget.color ?? defaultColor, showsBackgrounds ? widget.backgroundColor : undefined, widget.bold, level, widget.dim);
         return {
             label: styledLabel,
             value: widget.id
@@ -528,7 +532,7 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
                     <ConfirmDialog
                         inline={true}
                         onConfirm={() => {
-                            const newItems = clearAllWidgetStyling(widgets);
+                            const newItems = clearAllWidgetStyling(widgets, !showsBackgrounds);
                             onUpdate(newItems);
                             setShowClearConfirm(false);
                         }}
@@ -596,12 +600,16 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
                         ↑↓ to select, ←→ to cycle
                         {' '}
                         {editingBackground ? 'background' : 'foreground'}
-                        , (f) to toggle bg/fg, (b)old, (d)im,
+                        {showsBackgrounds ? ', (f) to toggle bg/fg' : ''}
+                        , (b)old, (d)im,
                         {settings.colorLevel === 3 ? ' (h)ex,' : settings.colorLevel === 2 ? ' (a)nsi256,' : ''}
                         {!editingBackground && settings.colorLevel >= 2 ? ' (g)radient,' : ''}
                         {' '}
                         (r)eset, (c)lear all, ESC to go back
                     </Text>
+                    {!showsBackgrounds && (
+                        <Text dimColor>{'This line is plain, so its backgrounds don\'t show while Powerline is on.'}</Text>
+                    )}
                     {!settings.powerline.enabled && !settings.defaultSeparator && (
                         <Text dimColor>
                             (s)how separators:
