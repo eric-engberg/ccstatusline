@@ -22,7 +22,6 @@ export interface GitChangeCounts {
 export interface GitFileStatusCounts {
     staged: number;
     unstaged: number;
-    untracked: number;
 }
 
 interface GitRepoMetadata {
@@ -83,6 +82,16 @@ const WHOLE_REPOSITORY_ARGS = new Map<string, string[]>([
 
 // `git config --get-regexp` exits with 1 when nothing matches
 const GIT_CONFIG_NO_MATCH_STATUS = 1;
+
+// Every untracked file in the repository, one by one, skipping what
+// .gitignore excludes as git status does
+const UNTRACKED_FILES_ARGS = ['ls-files', '--others', '--exclude-standard', '-z', '--', ':/'];
+// The listing runs to megabytes in a large tree that isn't ignored, such as a
+// node_modules made before its .gitignore entry, so the cache keeps the count
+const UNTRACKED_FILE_COUNT_CACHE_KEY = `count of ${UNTRACKED_FILES_ARGS.join(' ')}`;
+// Room for about a million paths of 60-odd bytes, as in a node_modules;
+// execFileSync's default of 1 MiB holds about 16,000
+const UNTRACKED_FILES_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
 
 function getCacheDir(): string {
     return path.join(os.homedir(), '.cache', 'ccstatusline');
@@ -199,7 +208,7 @@ function mayDefineFilters(gitDir: string): boolean {
     return /filter|include/i.test(configText);
 }
 
-function gitExecOptions(cwd: string | undefined) {
+function gitExecOptions(cwd: string | undefined, maxBuffer?: number) {
     // --no-optional-locks (or GIT_OPTIONAL_LOCKS=0) prevents read-only commands
     // (diff, status, rev-list, ...) from racing on .git/index.lock when another
     // git process is writing it.
@@ -212,7 +221,8 @@ function gitExecOptions(cwd: string | undefined) {
         env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
         timeout: GIT_COMMAND_TIMEOUT_MS,
         windowsHide: true,
-        ...(cwd ? { cwd } : {})
+        ...(cwd ? { cwd } : {}),
+        ...(maxBuffer === undefined ? {} : { maxBuffer })
     };
 }
 
@@ -272,9 +282,10 @@ function getRepositoryFilterOverrideArgs(cwd: string | undefined): string[] | nu
  * files, none of the repository's own filter drivers or external diff tools,
  * and with diff and ls-files covering the whole repository whatever
  * diff.relative or GIT_LITERAL_PATHSPECS says.
- * Throws when git fails, or when the repository's filters can't be turned off.
+ * Throws when git fails, prints more than maxBuffer bytes (1 MiB by default),
+ * or when the repository's filters can't be turned off.
  */
-export function execGit(args: string[], cwd: string | undefined): string {
+export function execGit(args: string[], cwd: string | undefined, maxBuffer?: number): string {
     const [subcommand = '', ...rest] = args;
     const workTreeArgs = WORK_TREE_COMMAND_ARGS.get(subcommand);
     const filterArgs = workTreeArgs ? getRepositoryFilterOverrideArgs(cwd) : [];
@@ -286,7 +297,7 @@ export function execGit(args: string[], cwd: string | undefined): string {
     return execFileSync(
         resolveExecutable('git'),
         [...GIT_HARDENING_ARGS, ...filterArgs, ...wholeRepositoryArgs, subcommand, ...(workTreeArgs ?? []), ...rest],
-        gitExecOptions(cwd)
+        gitExecOptions(cwd, maxBuffer)
     );
 }
 
@@ -530,8 +541,20 @@ export function runGit(command: string, context: RenderContext): string | null {
 }
 
 export function runGitArgs(args: string[], context: RenderContext, cacheCommand?: string): string | null {
+    return runCachedGit(context, cacheCommand ?? args.join('\0'), (cwd) => {
+        const output = execGit(args, cwd).trimEnd();
+        return output.length > 0 ? output : null;
+    });
+}
+
+// What run makes of git's output in the session's directory, kept under
+// cacheToken; null when git fails
+function runCachedGit(
+    context: RenderContext,
+    cacheToken: string,
+    run: (cwd: string | undefined) => string | null
+): string | null {
     const cwd = resolveGitCwd(context);
-    const cacheToken = cacheCommand ?? args.join('\0');
     const memoryCacheKey = `${cacheToken}|${cwd ?? ''}`;
     const persistentCacheKey = cacheToken;
     const metadata = getGitRepoMetadata(cwd);
@@ -557,9 +580,7 @@ export function runGitArgs(args: string[], context: RenderContext, cacheCommand?
     }
 
     try {
-        const output = execGit(args, cwd).trimEnd();
-
-        const result = output.length > 0 ? output : null;
+        const result = run(cwd);
         const entry = createCacheEntry(result, metadata, now);
         gitCommandCache.set(memoryCacheKey, entry);
         writePersistentCacheEntry(metadata, persistentCacheKey, cwd, entry);
@@ -659,12 +680,11 @@ export function getGitFileStatusCounts(context: RenderContext): GitFileStatusCou
     const output = runGit('status --porcelain -z', context);
 
     if (!output) {
-        return { staged: 0, unstaged: 0, untracked: 0 };
+        return { staged: 0, unstaged: 0 };
     }
 
     let staged = 0;
     let unstaged = 0;
-    let untracked = 0;
 
     const entries = output.split('\0');
 
@@ -673,21 +693,38 @@ export function getGitFileStatusCounts(context: RenderContext): GitFileStatusCou
         if (typeof line !== 'string' || line.length < 2)
             continue;
 
-        if (line.startsWith('??')) {
-            untracked += 1;
-        } else {
-            if (/^[MADRCTU]/.test(line))
-                staged += 1;
-            if (/^.[MADRCTU]/.test(line))
-                unstaged += 1;
-        }
+        if (/^[MADRCTU]/.test(line))
+            staged += 1;
+        if (/^.[MADRCTU]/.test(line))
+            unstaged += 1;
 
         if (hasRenameOrCopyStatus(line)) {
             index += 1;
         }
     }
 
-    return { staged, unstaged, untracked };
+    return { staged, unstaged };
+}
+
+function countNulTerminatedEntries(output: string): number {
+    let count = 0;
+    for (let end = output.indexOf('\0'); end !== -1; end = output.indexOf('\0', end + 1)) {
+        count += 1;
+    }
+    return count;
+}
+
+// Untracked files are listed one by one: git status lists a new directory as
+// one entry by default, and none under status.showUntrackedFiles=no. That walks
+// every new directory, so this call is its own, and the staged and unstaged
+// counts keep reading the git status Git Status shares.
+export function getGitUntrackedFileCount(context: RenderContext): number {
+    const count = runCachedGit(context, UNTRACKED_FILE_COUNT_CACHE_KEY, (cwd) => {
+        const output = execGit(UNTRACKED_FILES_ARGS, cwd, UNTRACKED_FILES_MAX_BUFFER_BYTES);
+        return `${countNulTerminatedEntries(output)}`;
+    });
+    const parsed = Number.parseInt(count ?? '', 10);
+    return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 export interface GitAheadBehind {

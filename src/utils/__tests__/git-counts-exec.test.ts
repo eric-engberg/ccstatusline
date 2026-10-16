@@ -120,4 +120,55 @@ describe.skipIf(process.platform === 'win32')('git counts across the whole repos
         expect(gitHelper('getGitConflictCount', dir, LITERAL_PATHSPECS_ENV)).toBe(2);
         expect(execFileSync('git', ['ls-files', '--unmerged', '--', ':/'], { cwd: dir, env: { ...env, ...LITERAL_PATHSPECS_ENV }, encoding: 'utf8' })).toBe('');
     });
+
+    // d/ is new, holding three files, next to one new file at the top
+    function makeUntrackedRepo(name: string): string {
+        const dir = makeRepo(name, { f: 'hi\n' });
+        for (const file of ['d/1', 'd/2', 'd/3', 'top']) {
+            write(path.join(dir, file), '');
+        }
+        return dir;
+    }
+
+    it('counts each untracked file in a new directory', () => {
+        const dir = makeUntrackedRepo('untracked');
+
+        for (const cwd of [dir, path.join(dir, 'd')]) {
+            expect(gitHelper('getGitUntrackedFileCount', cwd)).toBe(4);
+        }
+        expect(plainGit(dir, 'status', '--porcelain', '-z').split('\0').filter(Boolean)).toEqual(['?? d/', '?? top']);
+    });
+
+    it('counts untracked files with GIT_LITERAL_PATHSPECS set', () => {
+        const dir = makeUntrackedRepo('untracked-literal');
+
+        expect(gitHelper('getGitUntrackedFileCount', dir, LITERAL_PATHSPECS_ENV)).toBe(4);
+        expect(execFileSync('git', ['ls-files', '--others', '--exclude-standard', '-z', '--', ':/'], { cwd: dir, env: { ...env, ...LITERAL_PATHSPECS_ENV }, encoding: 'utf8' })).toBe('');
+    });
+
+    it('counts untracked files with status.showUntrackedFiles set to no', () => {
+        const dir = makeUntrackedRepo('untracked-hidden');
+        plainGit(dir, 'config', 'status.showUntrackedFiles', 'no');
+
+        expect(gitHelper('getGitUntrackedFileCount', dir)).toBe(4);
+        expect(plainGit(dir, 'status', '--porcelain', '-z')).toBe('');
+    });
+
+    it('counts files next to an untracked tree listed in more than 1 MiB', () => {
+        const dir = makeRepo('untracked-large', { staged: '1\n', unstaged: '1\n' });
+        write(path.join(dir, 'staged'), '2\n');
+        plainGit(dir, 'add', 'staged');
+        write(path.join(dir, 'unstaged'), '2\n');
+        // Long names keep the file count, and so the test's run time, low
+        const packages = path.join(dir, '.venv', 'lib', 'site-packages');
+        fs.mkdirSync(packages, { recursive: true });
+        for (let index = 0; index < 5000; index += 1) {
+            fs.writeFileSync(path.join(packages, `${'m'.repeat(200)}-${index}.py`), '');
+        }
+
+        expect(gitHelper('getGitFileStatusCounts', dir)).toEqual({ staged: 1, unstaged: 1 });
+        expect(gitHelper('getGitUntrackedFileCount', dir)).toBe(5000);
+        // execFileSync stops at 1 MiB unless told otherwise
+        expect(() => plainGit(dir, 'status', '--porcelain', '-z', '--untracked-files=all')).toThrow(/ENOBUFS/);
+    });
 });
