@@ -192,6 +192,21 @@ describe('value colors editor', () => {
         }
     });
 
+    // A terminal paste reaches Ink as one input chunk, line break and all
+    it('takes a pasted break point without saving it on the line break', async () => {
+        const editor = renderEditor(today);
+
+        try {
+            await editor.ready();
+            await editor.press(DOWN, DOWN, DOWN, DOWN, DOWN, '120\r');
+            expect(editor.takeOutput()).toContain('high above (percent, 1-999): 120');
+            await editor.press(ENTER, ENTER);
+            expect(editor.savedMetadata()).toEqual({ valueHighFrom: '120' });
+        } finally {
+            editor.cleanup();
+        }
+    });
+
     it('says what\'s wrong with a typed break point and lets ESC drop it', async () => {
         const editor = renderEditor(today);
 

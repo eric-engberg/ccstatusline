@@ -20,8 +20,8 @@ import {
     getColorDisplayName
 } from '../../utils/colors';
 import {
-    getPlainInput,
-    shouldInsertInput
+    getInsertableText,
+    getPlainInput
 } from '../../utils/input-guards';
 
 import { parseCustomColor } from './custom-color';
@@ -176,6 +176,7 @@ export function ColorListEditor<C extends string, X extends string = never>({ wi
 
     // Keys while a custom color or a number is being typed
     const handleTypedInput = (inputChar: string, key: Key, current: TypedInput) => {
+        const text = getInsertableText(inputChar, key);
         if (key.escape) {
             setInput(null);
         } else if (key.return) {
@@ -183,8 +184,8 @@ export function ColorListEditor<C extends string, X extends string = never>({ wi
             setInput(error === null ? null : { text: current.text, error });
         } else if (key.backspace || key.delete) {
             setInput({ text: current.text.slice(0, -1), error: null });
-        } else if (shouldInsertInput(inputChar, key)) {
-            setInput({ text: current.text + inputChar, error: null });
+        } else if (text) {
+            setInput({ text: current.text + text, error: null });
         }
     };
 
@@ -205,6 +206,8 @@ export function ColorListEditor<C extends string, X extends string = never>({ wi
         }
 
         const shortcut = getPlainInput(inputChar, key);
+        // A setting row's number starts with its digits, typed or pasted
+        const digits = getInsertableText(inputChar, key).trim();
 
         if (key.return) {
             onComplete(draft);
@@ -220,8 +223,8 @@ export function ColorListEditor<C extends string, X extends string = never>({ wi
             setDraft(config.setEnabled(draft, !enabled));
         } else if (shortcut === 'x' && selectedRow?.kind === 'color') {
             setInput({ text: '', error: null });
-        } else if (takesTypedNumber && /^\d$/.test(shortcut)) {
-            setInput({ text: shortcut, error: null });
+        } else if (takesTypedNumber && /^\d+$/.test(digits)) {
+            setInput({ text: digits, error: null });
         } else if (shortcut === 'd') {
             setDraft(config.resetColors(draft));
         }
