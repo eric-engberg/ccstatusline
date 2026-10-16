@@ -110,3 +110,27 @@ describe('getColorAnsiCode custom colors at ansi16 (Basic / No Color)', () => {
         expect(getColorAnsiCode('hex:0000FF', 'truecolor', true)).toBe('\x1b[48;2;0;0;255m');
     });
 });
+
+describe('getColorAnsiCode hex colors at ansi256 (256 Color)', () => {
+    it('maps a hex color to the nearest 256-color palette entry', () => {
+        expect(getColorAnsiCode('hex:FF8800', 'ansi256', false)).toBe('\x1b[38;5;208m');
+        expect(getColorAnsiCode('hex:FF8800', 'ansi256', true)).toBe('\x1b[48;5;208m');
+        expect(getColorAnsiCode('hex:4e9a06', 'ansi256', false)).toBe('\x1b[38;5;64m');
+        expect(getColorAnsiCode('hex:808080', 'ansi256', false)).toBe('\x1b[38;5;244m');
+    });
+
+    it('maps a hex color that is a palette entry to that entry', () => {
+        expect(getColorAnsiCode('hex:5f5f5f', 'ansi256', false)).toBe('\x1b[38;5;59m');
+        expect(getColorAnsiCode('hex:FF0000', 'ansi256', false)).toBe('\x1b[38;5;196m');
+    });
+
+    it('sends no truecolor escape for a hex foreground through applyColors', () => {
+        const out = applyColors('high', 'hex:ff8800', undefined, false, 'ansi256');
+        expect(out).toBe('\x1b[38;5;208mhigh\x1b[39m');
+        expect(countMatches(out, TRUECOLOR_CODE)).toBe(0);
+    });
+
+    it('keeps the exact hex color at truecolor', () => {
+        expect(getColorAnsiCode('hex:FF8800', 'truecolor', false)).toBe('\x1b[38;2;255;136;0m');
+    });
+});
