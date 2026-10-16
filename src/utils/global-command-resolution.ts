@@ -170,10 +170,13 @@ function getDirectoryName(filePath: string): string {
 
 // A directory with symlinks resolved, so two spellings of one, such as /bin and
 // /usr/bin where /bin links to usr/bin (merged /usr), count as one install
-// location. The path as given when it can't be resolved.
+// location. The path as given when it can't be resolved. The native call also
+// returns the letter case on disk where case is ignored (macOS), as Bun's
+// realpathSync does but Node's doesn't, so both runtimes count .../Bin and
+// .../bin as one.
 export function getRealDirectory(dir: string): string {
     try {
-        return fs.realpathSync(dir);
+        return fs.realpathSync.native(dir);
     } catch {
         return dir;
     }

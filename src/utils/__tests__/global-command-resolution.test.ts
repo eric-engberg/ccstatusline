@@ -12,6 +12,7 @@ import {
 
 import {
     getCommandResolutionPaths,
+    getRealDirectory,
     inspectGlobalCommandResolution
 } from '../global-command-resolution';
 import {
@@ -47,6 +48,17 @@ function mockExecFileSync(responses: Record<string, string | Error>) {
 // What running a program that isn't installed throws
 function missingProgramError(command: string): Error {
     return Object.assign(new Error(`spawnSync ${command} ENOENT`), { code: 'ENOENT' });
+}
+
+// macOS and Windows file systems ignore letter case by default; most Linux ones don't
+function tempFileSystemIgnoresCase(): boolean {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-case-'));
+    try {
+        fs.mkdirSync(path.join(dir, 'probe'));
+        return fs.existsSync(path.join(dir, 'PROBE'));
+    } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
 }
 
 describe('global command resolution', () => {
@@ -189,6 +201,18 @@ describe('global command resolution', () => {
             const resolution = inspectGlobalCommandResolution('npm', { platform: 'linux' });
 
             expect(resolution.warning).toBe(`⚠ Multiple ccstatusline binaries are on PATH. Claude Code will run the first match: ${root}/usr/bin/ccstatusline.\nOther matches: ${root}/.bun/bin/ccstatusline`);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
+    // Where letter case is ignored, PATH can spell one directory two ways
+    it.skipIf(!tempFileSystemIgnoresCase())('resolves a directory spelled in another letter case to one path', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-case-'));
+        try {
+            fs.mkdirSync(path.join(root, 'bin'));
+
+            expect(getRealDirectory(path.join(root, 'Bin'))).toBe(getRealDirectory(path.join(root, 'bin')));
         } finally {
             fs.rmSync(root, { recursive: true, force: true });
         }
