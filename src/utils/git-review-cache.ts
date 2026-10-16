@@ -340,13 +340,39 @@ function getNamedForgeProvider(host: string): GitReviewProvider | null {
     return null;
 }
 
+// The forges' own hosts. SSH config can route them through a transport
+// endpoint such as ssh.github.com, which serves no repositories over HTTPS.
+const CANONICAL_FORGE_HOSTS = new Set(['github.com', 'gitlab.com']);
+const FORGE_TRANSPORT_HOSTS = new Map([
+    ['ssh.github.com', 'github.com'],
+    ['altssh.gitlab.com', 'gitlab.com']
+]);
+
 function getEffectiveRemoteHost(url: string, host: string, deps: GitReviewCacheDeps): string {
     const normalizedHost = host.toLowerCase();
-    if (!isSshRemoteUrl(url) || getNamedForgeProvider(normalizedHost)) {
+    if (!isSshRemoteUrl(url) || CANONICAL_FORGE_HOSTS.has(normalizedHost)) {
         return normalizedHost;
     }
 
-    return resolveSshHostAlias(normalizedHost, deps);
+    const resolvedHost = resolveSshHostAlias(normalizedHost, deps);
+    if (!getNamedForgeProvider(normalizedHost)) {
+        return resolvedHost;
+    }
+
+    // A host naming a forge is either an alias (github-work, github.com-personal,
+    // gitlab-corp) or a self-hosted forge's own hostname (gitlab.corp.example),
+    // which its CLI is logged in to and which serves the repo over HTTPS. Take
+    // the resolved name when it is github.com or gitlab.com (or one of their
+    // transport endpoints), or when the host has no dot (an alias, not a
+    // hostname) and resolves to a host naming a forge. Otherwise keep the
+    // host's own name, even when SSH config sends it to an IP or to an
+    // SSH-only endpoint such as gitlab-ssh.corp.example.
+    const canonicalHost = FORGE_TRANSPORT_HOSTS.get(resolvedHost) ?? resolvedHost;
+    if (CANONICAL_FORGE_HOSTS.has(canonicalHost)) {
+        return canonicalHost;
+    }
+    const isAlias = !normalizedHost.includes('.');
+    return isAlias && getNamedForgeProvider(resolvedHost) ? resolvedHost : normalizedHost;
 }
 
 function getOriginHost(cwd: string, deps: GitReviewCacheDeps): string | null {

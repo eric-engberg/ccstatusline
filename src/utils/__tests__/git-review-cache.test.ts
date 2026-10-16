@@ -890,6 +890,196 @@ describe('git-review-cache', () => {
         expect(ghPrCalls[1]?.args).not.toContain('https://ssh.github.com/owner/repo');
     });
 
+    it('preserves canonical GitLab SSH hosts when SSH config points at a transport endpoint', () => {
+        const harness = createHarness();
+        harness.setOriginRemoteUrl('git@gitlab.com:owner/repo.git');
+        harness.setSshHostAlias('gitlab.com', 'altssh.gitlab.com');
+        harness.setGlabAvailable(true);
+        harness.glabResponses.push('');
+        harness.glabResponses.push(JSON.stringify({
+            iid: 78,
+            state: 'opened',
+            title: 'Canonical GitLab MR',
+            web_url: 'https://gitlab.com/owner/repo/-/merge_requests/78'
+        }));
+
+        expect(fetchGitReviewData('/tmp/repo', harness.deps)).toEqual({
+            number: 78,
+            provider: 'glab',
+            reviewDecision: '',
+            state: 'OPEN',
+            title: 'Canonical GitLab MR',
+            url: 'https://gitlab.com/owner/repo/-/merge_requests/78'
+        });
+
+        const sshCalls = harness.execCalls.filter(call => call.cmd === 'ssh');
+        expect(sshCalls).toHaveLength(0);
+
+        const glabMrCalls = harness.execCalls.filter(
+            call => call.cmd === 'glab' && call.args[0] === 'mr'
+        );
+        expect(glabMrCalls).toHaveLength(2);
+        expect(glabMrCalls[1]?.args).toContain('--repo');
+        expect(glabMrCalls[1]?.args).toContain('https://gitlab.com/owner/repo');
+        expect(glabMrCalls[1]?.args).not.toContain('https://altssh.gitlab.com/owner/repo');
+    });
+
+    // The usual way to use two GitHub accounts: `Host github-work` with
+    // `HostName github.com` in ~/.ssh/config
+    it('resolves SSH host aliases that name GitHub before pinning --repo', () => {
+        const harness = createHarness();
+        harness.setOriginRemoteUrl('git@github-work:owner/repo.git');
+        harness.setSshHostAlias('github-work', 'github.com');
+        harness.ghResponses.push('');
+        harness.ghResponses.push(JSON.stringify({
+            number: 1487,
+            reviewDecision: '',
+            state: 'OPEN',
+            title: 'Work account PR',
+            url: 'https://github.com/owner/repo/pull/1487'
+        }));
+
+        expect(fetchGitReviewData('/tmp/repo', harness.deps)?.number).toBe(1487);
+
+        const sshCalls = harness.execCalls.filter(call => call.cmd === 'ssh');
+        expect(sshCalls.length).toBeGreaterThan(0);
+        expect(sshCalls.every(call => call.args.join(' ') === '-G -- github-work')).toBe(true);
+
+        const ghAuthCalls = harness.execCalls.filter(
+            call => call.cmd === 'gh' && call.args[0] === 'auth'
+        );
+        expect(ghAuthCalls).toHaveLength(0);
+
+        const ghPrCalls = harness.execCalls.filter(
+            call => call.cmd === 'gh' && call.args[0] === 'pr'
+        );
+        expect(ghPrCalls).toHaveLength(2);
+        expect(ghPrCalls[1]?.args).toContain('--repo');
+        expect(ghPrCalls[1]?.args).toContain('https://github.com/owner/repo');
+    });
+
+    it('resolves SSH host aliases that name GitLab before pinning --repo', () => {
+        const harness = createHarness();
+        harness.setOriginRemoteUrl('git@gitlab-corp:team/repo.git');
+        harness.setSshHostAlias('gitlab-corp', 'gitlab.corp.example');
+        harness.setGlabAvailable(true);
+        harness.glabResponses.push('');
+        harness.glabResponses.push(JSON.stringify({
+            iid: 11,
+            state: 'opened',
+            title: 'Corp MR',
+            web_url: 'https://gitlab.corp.example/team/repo/-/merge_requests/11'
+        }));
+
+        expect(fetchGitReviewData('/tmp/repo', harness.deps)?.number).toBe(11);
+
+        expect(harness.execCalls.filter(call => call.args[0] === 'auth')).toHaveLength(0);
+        const glabMrCalls = harness.execCalls.filter(
+            call => call.cmd === 'glab' && call.args[0] === 'mr'
+        );
+        expect(glabMrCalls).toHaveLength(2);
+        expect(glabMrCalls[1]?.args).toContain('--repo');
+        expect(glabMrCalls[1]?.args).toContain('https://gitlab.corp.example/team/repo');
+    });
+
+    it('keeps a self-hosted forge host that SSH config routes to an address naming no forge', () => {
+        const harness = createHarness();
+        harness.setOriginRemoteUrl('git@gitlab.example.com:team/repo.git');
+        harness.setSshHostAlias('gitlab.example.com', '10.0.0.5');
+        harness.setGlabAvailable(true);
+        harness.glabResponses.push('');
+        harness.glabResponses.push(JSON.stringify({
+            iid: 12,
+            state: 'opened',
+            title: 'Self-hosted MR',
+            web_url: 'https://gitlab.example.com/team/repo/-/merge_requests/12'
+        }));
+
+        expect(fetchGitReviewData('/tmp/repo', harness.deps)?.provider).toBe('glab');
+
+        expect(harness.execCalls.filter(call => call.args[0] === 'auth')).toHaveLength(0);
+        const glabMrCalls = harness.execCalls.filter(
+            call => call.cmd === 'glab' && call.args[0] === 'mr'
+        );
+        expect(glabMrCalls).toHaveLength(2);
+        expect(glabMrCalls[1]?.args).toContain('https://gitlab.example.com/team/repo');
+    });
+
+    // HTTPS can sit behind a proxy that doesn't carry SSH, so SSH config sends
+    // the forge's hostname to a separate SSH-only endpoint
+    it('keeps a self-hosted GitLab host that SSH config routes to an SSH-only endpoint naming GitLab', () => {
+        const harness = createHarness();
+        harness.setOriginRemoteUrl('git@gitlab.corp.example:team/repo.git');
+        harness.setSshHostAlias('gitlab.corp.example', 'gitlab-ssh.corp.example');
+        harness.setGlabAvailable(true);
+        harness.glabResponses.push('');
+        harness.glabResponses.push(JSON.stringify({
+            iid: 42,
+            state: 'opened',
+            title: 'Proxied MR',
+            web_url: 'https://gitlab.corp.example/team/repo/-/merge_requests/42'
+        }));
+
+        expect(fetchGitReviewData('/tmp/repo', harness.deps)?.number).toBe(42);
+
+        expect(harness.execCalls.filter(call => call.args[0] === 'auth')).toHaveLength(0);
+        const glabMrCalls = harness.execCalls.filter(
+            call => call.cmd === 'glab' && call.args[0] === 'mr'
+        );
+        expect(glabMrCalls).toHaveLength(2);
+        expect(glabMrCalls[1]?.args).toContain('https://gitlab.corp.example/team/repo');
+        expect(glabMrCalls[1]?.args).not.toContain('https://gitlab-ssh.corp.example/team/repo');
+    });
+
+    it('keeps a GitHub Enterprise host that SSH config routes to an SSH-only endpoint naming GitHub', () => {
+        const harness = createHarness();
+        harness.setOriginRemoteUrl('git@github.corp.example:owner/repo.git');
+        harness.setSshHostAlias('github.corp.example', 'github-ssh.corp.example');
+        harness.ghResponses.push('');
+        harness.ghResponses.push(JSON.stringify({
+            number: 1488,
+            reviewDecision: '',
+            state: 'OPEN',
+            title: 'Enterprise PR',
+            url: 'https://github.corp.example/owner/repo/pull/1488'
+        }));
+
+        expect(fetchGitReviewData('/tmp/repo', harness.deps)?.number).toBe(1488);
+
+        expect(harness.execCalls.filter(call => call.args[0] === 'auth')).toHaveLength(0);
+        const ghPrCalls = harness.execCalls.filter(
+            call => call.cmd === 'gh' && call.args[0] === 'pr'
+        );
+        expect(ghPrCalls).toHaveLength(2);
+        expect(ghPrCalls[1]?.args).toContain('https://github.corp.example/owner/repo');
+        expect(ghPrCalls[1]?.args).not.toContain('https://github-ssh.corp.example/owner/repo');
+    });
+
+    // `Host github.com-personal` with `HostName ssh.github.com` and `Port 443`
+    // reaches GitHub through networks that block port 22
+    it('pins github.com for an SSH host alias that routes through GitHub\'s transport endpoint', () => {
+        const harness = createHarness();
+        harness.setOriginRemoteUrl('git@github.com-personal:owner/repo.git');
+        harness.setSshHostAlias('github.com-personal', 'ssh.github.com');
+        harness.ghResponses.push('');
+        harness.ghResponses.push(JSON.stringify({
+            number: 1489,
+            reviewDecision: '',
+            state: 'OPEN',
+            title: 'Personal account PR',
+            url: 'https://github.com/owner/repo/pull/1489'
+        }));
+
+        expect(fetchGitReviewData('/tmp/repo', harness.deps)?.number).toBe(1489);
+
+        const ghPrCalls = harness.execCalls.filter(
+            call => call.cmd === 'gh' && call.args[0] === 'pr'
+        );
+        expect(ghPrCalls).toHaveLength(2);
+        expect(ghPrCalls[1]?.args).toContain('--repo');
+        expect(ghPrCalls[1]?.args).toContain('https://github.com/owner/repo');
+    });
+
     it('falls back to --repo <origin> for forked GitLab repos when glab\'s default resolves elsewhere', () => {
         const harness = createHarness();
         harness.setOriginRemoteUrl('git@gitlab.com:fork-owner/example-fork.git');
