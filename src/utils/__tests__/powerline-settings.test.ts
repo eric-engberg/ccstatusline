@@ -40,6 +40,21 @@ describe('powerline settings helpers', () => {
         expect(updated.powerline.theme).toBe('catppuccin');
     });
 
+    // Custom is only ever picked on purpose, and the widget colors draw only under it
+    it('keeps a chosen Custom theme when enabling powerline', () => {
+        const settings = {
+            ...DEFAULT_SETTINGS,
+            powerline: {
+                ...DEFAULT_SETTINGS.powerline,
+                enabled: false,
+                theme: 'custom'
+            }
+        };
+
+        const updated = buildEnabledPowerlineSettings(settings, false);
+        expect(updated.powerline.theme).toBe('custom');
+    });
+
     it('removes manual separators while preserving flex separators when requested', () => {
         const line: WidgetItem[] = [
             { id: '1', type: 'model' },

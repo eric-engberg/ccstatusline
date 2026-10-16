@@ -181,6 +181,71 @@ describe('PowerlineSetup helpers', () => {
         }
     });
 
+    it('keeps a chosen Custom theme when (t) turns Powerline off and on again', async () => {
+        const stdin = createMockStdin();
+        const stdout = createMockStdout();
+        const stderr = createMockStdout();
+        // Each update is drawn again with the new settings, as the app does
+        const onUpdate = vi.fn<PowerlineSetupProps['onUpdate']>((settings) => {
+            instance.rerender(React.createElement(PowerlineSetup, { ...props, settings }));
+        });
+        const props: PowerlineSetupProps = {
+            settings: {
+                ...DEFAULT_SETTINGS,
+                lines: [[{ id: '1', type: 'model', color: 'red', backgroundColor: 'bgYellow' }]],
+                powerline: {
+                    ...DEFAULT_SETTINGS.powerline,
+                    enabled: true,
+                    theme: 'custom'
+                }
+            },
+            powerlineFontStatus: { installed: true },
+            onUpdate,
+            onBack: vi.fn(),
+            onInstallFonts: vi.fn(),
+            installingFonts: false,
+            fontInstallMessage: null,
+            onClearMessage: vi.fn()
+        };
+        const instance = render(
+            React.createElement(PowerlineSetup, props),
+            {
+                stdin,
+                stdout,
+                stderr,
+                debug: true,
+                exitOnCtrlC: false,
+                patchConsole: false
+            }
+        );
+
+        try {
+            await waitFor(() => {
+                expect(stdout.getOutput()).toContain('✓ Enabled');
+            });
+
+            stdin.write('t');
+            await waitFor(() => {
+                expect(stdout.getOutput()).toContain('✗ Disabled');
+            });
+
+            stdin.write('t');
+            await waitFor(() => {
+                expect(onUpdate).toHaveBeenCalledTimes(2);
+            });
+
+            const updatedSettings = onUpdate.mock.calls[1]?.[0];
+            expect(updatedSettings?.powerline.enabled).toBe(true);
+            expect(updatedSettings?.powerline.theme).toBe('custom');
+        } finally {
+            instance.unmount();
+            instance.cleanup();
+            stdin.destroy();
+            stdout.destroy();
+            stderr.destroy();
+        }
+    });
+
     it('warns when a global foreground override is active', async () => {
         const stdin = createMockStdin();
         const stdout = createMockStdout();

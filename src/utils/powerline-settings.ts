@@ -2,8 +2,10 @@ import type { Settings } from '../types/Settings';
 
 import { getDefaultPowerlineTheme } from './colors';
 
+// Only a theme never picked gets the default. Custom is picked on purpose, and
+// the widgets' own colors draw only under it
 function resolveEnabledPowerlineTheme(theme: string | undefined): string {
-    if (!theme || theme === 'custom') {
+    if (!theme) {
         return getDefaultPowerlineTheme();
     }
 
