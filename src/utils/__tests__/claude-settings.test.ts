@@ -414,10 +414,10 @@ describe('refreshInterval', () => {
         expect(settings.statusLine?.refreshInterval).toBeUndefined();
     });
 
-    it('setRefreshInterval should do nothing when no statusLine exists', async () => {
+    it('setRefreshInterval should reject without writing when no statusLine exists', async () => {
         await saveClaudeSettings({});
 
-        await setRefreshInterval(10);
+        await expect(setRefreshInterval(10)).rejects.toThrow(getClaudeSettingsPath());
 
         const settings = await loadClaudeSettings();
         expect(settings.statusLine).toBeUndefined();
@@ -431,13 +431,13 @@ describe('refreshInterval', () => {
         expect(consoleErrorSpy).not.toHaveBeenCalled();
     });
 
-    it('setRefreshInterval should leave unreadable settings untouched', async () => {
+    it('setRefreshInterval should reject and leave unreadable settings untouched', async () => {
         writeRawClaudeSettings('{ invalid json');
         const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-
-        await setRefreshInterval(10);
-
         const settingsPath = getClaudeSettingsPath();
+
+        await expect(setRefreshInterval(10)).rejects.toThrow(settingsPath);
+
         expect(fs.readFileSync(settingsPath, 'utf-8')).toBe('{ invalid json');
         expect(fs.existsSync(`${settingsPath}.bak`)).toBe(false);
         expect(consoleErrorSpy).not.toHaveBeenCalled();

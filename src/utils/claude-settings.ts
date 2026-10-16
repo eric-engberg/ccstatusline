@@ -502,16 +502,10 @@ export async function getRefreshInterval(): Promise<number | null> {
 }
 
 export async function setRefreshInterval(interval: number | null): Promise<void> {
-    let settings: ClaudeSettings;
-
-    try {
-        settings = await loadClaudeSettings({ logErrors: false });
-    } catch {
-        return;
-    }
+    const settings = await loadClaudeSettingsForUpdate('try again');
 
     if (!settings.statusLine) {
-        return;
+        throw new Error(`No status line is configured in ${getClaudeSettingsPath()}, so there is no refresh interval to set. Install ccstatusline to Claude Code again.`);
     }
 
     if (interval === null) {

@@ -728,4 +728,44 @@ describe('App when Claude settings.json breaks while the TUI is open', () => {
             rendered.cleanup();
         }
     });
+
+    const installedStatusLine = { type: 'command', command: 'npx -y ccstatusline@latest', padding: 0, refreshInterval: 10 };
+
+    it.each([
+        {
+            name: 'no longer parses',
+            content: `{ "statusLine": ${JSON.stringify(installedStatusLine)}, }`
+        },
+        {
+            name: 'has lost its statusLine',
+            content: JSON.stringify({ effortLevel: 'high' })
+        }
+    ])('keeps the refresh interval and reports the failed save when settings.json $name', async ({ content }) => {
+        fs.writeFileSync(claudeSettingsPath, JSON.stringify({ statusLine: installedStatusLine }));
+        vi.spyOn(claudeSettings, 'isClaudeCodeVersionAtLeast').mockReturnValue(true);
+        const rendered = renderApp();
+
+        try {
+            await waitFor(() => {
+                expect(rendered.getFrame()).toContain('🔌 Uninstall from Claude Code');
+            });
+            await pressKey(rendered, KEYS.down, '▶  🎨 Edit Colors');
+            await pressKey(rendered, KEYS.down, '▶  ⚡ Powerline Setup');
+            await pressKey(rendered, KEYS.down, '▶  💻 Terminal Options');
+            await pressKey(rendered, KEYS.down, '▶  🌐 Global Overrides');
+            await pressKey(rendered, KEYS.down, '▶  🔧 Configure Status Line');
+            await pressKey(rendered, KEYS.enter, '🔄 Refresh Interval (10s)');
+            fs.writeFileSync(claudeSettingsPath, content);
+
+            await pressKey(rendered, KEYS.enter, 'Enter refresh interval in seconds (1-60): 10s');
+            await pressKey(rendered, '\x7f', 'Enter refresh interval in seconds (1-60): 1s');
+            await pressKey(rendered, '5', 'Enter refresh interval in seconds (1-60): 15s');
+            await pressKey(rendered, KEYS.enter, '✗ Failed to save refresh interval');
+            expect(fs.readFileSync(claudeSettingsPath, 'utf-8')).toBe(content);
+
+            await pressKey(rendered, KEYS.enter, '🔄 Refresh Interval (10s)');
+        } finally {
+            rendered.cleanup();
+        }
+    });
 });
