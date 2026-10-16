@@ -1,4 +1,10 @@
-export { fetchUsageData } from './usage-fetch';
+export {
+    fetchUsageData,
+    getUsageAccountKey,
+    getUsageFetchedAt,
+    lookUpUsageAccount,
+    type UsageAccount
+} from './usage-fetch';
 export {
     formatUsageDuration,
     formatUsageResetAt,

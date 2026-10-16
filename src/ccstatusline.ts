@@ -15,6 +15,7 @@ import {
     loadSettings,
     saveSettings
 } from './utils/config';
+import { prefetchDailyCostIfNeeded } from './utils/daily-cost';
 import {
     GIT_REVIEW_REFRESH_FLAG,
     refreshGitReviewCacheFromCli
@@ -126,6 +127,7 @@ async function renderMultipleLines(data: StatusJSON) {
         prefetchClaudeStatusIfNeeded(lines)
     ]);
 
+    const dailyCost = prefetchDailyCostIfNeeded(lines, data);
     const tokenMetrics = transcriptAnalysis?.tokenMetrics ?? null;
     const sessionDuration = transcriptAnalysis?.sessionDuration ?? null;
     const speedMetrics = transcriptAnalysis?.speedMetricsCollection?.sessionAverage ?? null;
@@ -147,6 +149,7 @@ async function renderMultipleLines(data: StatusJSON) {
         speedMetrics,
         windowedSpeedMetrics,
         usageData,
+        dailyCost,
         claudeStatusData,
         sessionDuration,
         transcriptSessionName: hasSessionNameWidget
