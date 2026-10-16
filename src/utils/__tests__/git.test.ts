@@ -317,6 +317,47 @@ describe('git utils', () => {
             expect(mockExecFileSync.mock.calls).toHaveLength(1);
         });
 
+        it('keeps empty output, like any output, when TTL is zero and repo mtimes match', () => {
+            const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1000);
+            useTempHome();
+            const { root } = createGitRepo();
+            const context: RenderContext = { data: { cwd: root }, gitCacheTtlSeconds: 0 };
+            mockExecFileSync.mockReturnValueOnce('');
+
+            expect(runGit('status --porcelain -z', context, true)).toBe('');
+
+            clearGitCache();
+            nowSpy.mockReturnValue(600000);
+
+            expect(runGit('status --porcelain -z', context, true)).toBe('');
+            expect(mockExecFileSync.mock.calls).toHaveLength(1);
+        });
+
+        // A timeout, or git failing until it's reinstalled, has nothing to do
+        // with HEAD or the index
+        it('retries a failed command after the default TTL when TTL is zero', () => {
+            const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1000);
+            useTempHome();
+            const { root } = createGitRepo();
+            const context: RenderContext = { data: { cwd: root }, gitCacheTtlSeconds: 0 };
+            mockExecFileSync.mockImplementationOnce(() => { throw new Error('git timed out'); });
+
+            expect(isInsideGitWorkTree(context)).toBe(false);
+
+            clearGitCache();
+            nowSpy.mockReturnValue(4000);
+
+            expect(isInsideGitWorkTree(context)).toBe(false);
+            expect(mockExecFileSync.mock.calls).toHaveLength(1);
+
+            clearGitCache();
+            nowSpy.mockReturnValue(7000);
+            mockExecFileSync.mockReturnValueOnce('true\n');
+
+            expect(isInsideGitWorkTree(context)).toBe(true);
+            expect(mockExecFileSync.mock.calls).toHaveLength(2);
+        });
+
         it('invalidates cached output when HEAD or index mtimes change', () => {
             const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1000);
             useTempHome();

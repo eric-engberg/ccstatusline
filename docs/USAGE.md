@@ -171,7 +171,7 @@ The same menu controls these ccstatusline cache settings, saved with **Save & Ex
 
 | Setting | JSON key | Default | Range | Meaning of `0` |
 | --- | --- | --- | --- | --- |
-| Git Cache TTL | `gitCacheTtlSeconds` | 5 seconds | 0–60 seconds | Reuse until `.git/HEAD` or `.git/index` modification times change; no age-based expiry |
+| Git Cache TTL | `gitCacheTtlSeconds` | 5 seconds | 0–60 seconds | Reuse output until `.git/HEAD` or `.git/index` modification times change; no age-based expiry, though a failed command is retried after 5 seconds |
 | Custom Command Cache TTL | `customCommandCacheTtlSeconds` | 0 seconds | 0–60 seconds | Run commands on every render |
 | Terminal Width Cache TTL | `terminalWidthCacheTtlSeconds` | 5 seconds | 0–300 seconds | Re-probe on every render, even after no width was found |
 

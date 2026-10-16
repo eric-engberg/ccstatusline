@@ -383,7 +383,13 @@ function isCacheEntryFresh(
         }
     }
 
-    return ttlMs === 0 || now - entry.createdAt <= ttlMs;
+    // TTL 0 leaves output to HEAD and index changes alone. A failure (a
+    // timeout, git missing until it's reinstalled) has nothing to do with
+    // them, so it's still retried after the default TTL.
+    const maxAgeMs = ttlMs === 0 && entry.output === null
+        ? DEFAULT_GIT_CACHE_TTL_SECONDS * 1000
+        : ttlMs;
+    return maxAgeMs === 0 || now - entry.createdAt <= maxAgeMs;
 }
 
 function readPersistentCache(cachePath: string): PersistentGitCache | null {
