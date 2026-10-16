@@ -587,212 +587,250 @@ describe('git utils', () => {
             mockExecFileSync.mockReturnValueOnce('M  file.txt');
 
             const result = getGitStatus({});
-            expect(result.staged).toBe(true);
-            expect(result.unstaged).toBe(false);
-            expect(result.conflicts).toBe(false);
+            expect(result?.staged).toBe(true);
+            expect(result?.unstaged).toBe(false);
+            expect(result?.conflicts).toBe(false);
         });
 
         it('detects unstaged modification', () => {
             mockExecFileSync.mockReturnValueOnce(' M file.txt');
 
             const result = getGitStatus({});
-            expect(result.staged).toBe(false);
-            expect(result.unstaged).toBe(true);
-            expect(result.conflicts).toBe(false);
+            expect(result?.staged).toBe(false);
+            expect(result?.unstaged).toBe(true);
+            expect(result?.conflicts).toBe(false);
         });
 
         it('detects both staged and unstaged modification', () => {
             mockExecFileSync.mockReturnValueOnce('MM file.txt');
 
             const result = getGitStatus({});
-            expect(result.staged).toBe(true);
-            expect(result.unstaged).toBe(true);
-            expect(result.conflicts).toBe(false);
+            expect(result?.staged).toBe(true);
+            expect(result?.unstaged).toBe(true);
+            expect(result?.conflicts).toBe(false);
         });
 
         it('detects unstaged deletion', () => {
             mockExecFileSync.mockReturnValueOnce(' D file.txt');
 
             const result = getGitStatus({});
-            expect(result.staged).toBe(false);
-            expect(result.unstaged).toBe(true);
-            expect(result.conflicts).toBe(false);
+            expect(result?.staged).toBe(false);
+            expect(result?.unstaged).toBe(true);
+            expect(result?.conflicts).toBe(false);
         });
 
         it('detects staged deletion', () => {
             mockExecFileSync.mockReturnValueOnce('D  file.txt');
 
             const result = getGitStatus({});
-            expect(result.staged).toBe(true);
-            expect(result.unstaged).toBe(false);
-            expect(result.conflicts).toBe(false);
+            expect(result?.staged).toBe(true);
+            expect(result?.unstaged).toBe(false);
+            expect(result?.conflicts).toBe(false);
         });
 
         it('detects untracked files', () => {
             mockExecFileSync.mockReturnValueOnce('?? newfile.txt');
 
             const result = getGitStatus({});
-            expect(result.untracked).toBe(true);
-            expect(result.staged).toBe(false);
-            expect(result.unstaged).toBe(false);
-            expect(result.conflicts).toBe(false);
+            expect(result?.untracked).toBe(true);
+            expect(result?.staged).toBe(false);
+            expect(result?.unstaged).toBe(false);
+            expect(result?.conflicts).toBe(false);
         });
 
         it('detects merge conflict: both modified (UU)', () => {
             mockExecFileSync.mockReturnValueOnce('UU file.txt');
 
             const result = getGitStatus({});
-            expect(result.conflicts).toBe(true);
-            expect(result.staged).toBe(true);
-            expect(result.unstaged).toBe(true);
+            expect(result?.conflicts).toBe(true);
+            expect(result?.staged).toBe(true);
+            expect(result?.unstaged).toBe(true);
         });
 
         it('detects merge conflict: added by us (AU)', () => {
             mockExecFileSync.mockReturnValueOnce('AU file.txt');
 
             const result = getGitStatus({});
-            expect(result.conflicts).toBe(true);
-            expect(result.staged).toBe(true);
-            expect(result.unstaged).toBe(true);
+            expect(result?.conflicts).toBe(true);
+            expect(result?.staged).toBe(true);
+            expect(result?.unstaged).toBe(true);
         });
 
         it('detects merge conflict: deleted by us (DU)', () => {
             mockExecFileSync.mockReturnValueOnce('DU file.txt');
 
             const result = getGitStatus({});
-            expect(result.conflicts).toBe(true);
-            expect(result.staged).toBe(true);
-            expect(result.unstaged).toBe(true);
+            expect(result?.conflicts).toBe(true);
+            expect(result?.staged).toBe(true);
+            expect(result?.unstaged).toBe(true);
         });
 
         it('detects merge conflict: both added (AA)', () => {
             mockExecFileSync.mockReturnValueOnce('AA file.txt');
 
             const result = getGitStatus({});
-            expect(result.conflicts).toBe(true);
-            expect(result.staged).toBe(true);
-            expect(result.unstaged).toBe(true);
+            expect(result?.conflicts).toBe(true);
+            expect(result?.staged).toBe(true);
+            expect(result?.unstaged).toBe(true);
         });
 
         it('detects merge conflict: added by them (UA)', () => {
             mockExecFileSync.mockReturnValueOnce('UA file.txt');
 
             const result = getGitStatus({});
-            expect(result.conflicts).toBe(true);
-            expect(result.staged).toBe(true);
-            expect(result.unstaged).toBe(true);
+            expect(result?.conflicts).toBe(true);
+            expect(result?.staged).toBe(true);
+            expect(result?.unstaged).toBe(true);
         });
 
         it('detects merge conflict: deleted by them (UD)', () => {
             mockExecFileSync.mockReturnValueOnce('UD file.txt');
 
             const result = getGitStatus({});
-            expect(result.conflicts).toBe(true);
-            expect(result.staged).toBe(true);
-            expect(result.unstaged).toBe(true);
+            expect(result?.conflicts).toBe(true);
+            expect(result?.staged).toBe(true);
+            expect(result?.unstaged).toBe(true);
         });
 
         it('detects merge conflict: both deleted (DD)', () => {
             mockExecFileSync.mockReturnValueOnce('DD file.txt');
 
             const result = getGitStatus({});
-            expect(result.conflicts).toBe(true);
-            expect(result.staged).toBe(true);
-            expect(result.unstaged).toBe(true);
+            expect(result?.conflicts).toBe(true);
+            expect(result?.staged).toBe(true);
+            expect(result?.unstaged).toBe(true);
         });
 
         it('detects renamed file in index (staged)', () => {
             mockExecFileSync.mockReturnValueOnce('R  oldname.txt -> newname.txt');
 
             const result = getGitStatus({});
-            expect(result.staged).toBe(true);
-            expect(result.unstaged).toBe(false);
-            expect(result.conflicts).toBe(false);
+            expect(result?.staged).toBe(true);
+            expect(result?.unstaged).toBe(false);
+            expect(result?.conflicts).toBe(false);
         });
 
         it('detects copied file in index (staged)', () => {
             mockExecFileSync.mockReturnValueOnce('C  original.txt -> copy.txt');
 
             const result = getGitStatus({});
-            expect(result.staged).toBe(true);
-            expect(result.unstaged).toBe(false);
-            expect(result.conflicts).toBe(false);
+            expect(result?.staged).toBe(true);
+            expect(result?.unstaged).toBe(false);
+            expect(result?.conflicts).toBe(false);
         });
 
         it('ignores rename source path in porcelain -z output', () => {
             mockExecFileSync.mockReturnValueOnce('R  new-name.txt\0DUCK.txt\0');
 
             const result = getGitStatus({});
-            expect(result.staged).toBe(true);
-            expect(result.unstaged).toBe(false);
-            expect(result.conflicts).toBe(false);
+            expect(result?.staged).toBe(true);
+            expect(result?.unstaged).toBe(false);
+            expect(result?.conflicts).toBe(false);
         });
 
         it('ignores copy source path in porcelain -z output', () => {
             mockExecFileSync.mockReturnValueOnce('C  copy.txt\0MOUSE.txt\0');
 
             const result = getGitStatus({});
-            expect(result.staged).toBe(true);
-            expect(result.unstaged).toBe(false);
-            expect(result.conflicts).toBe(false);
+            expect(result?.staged).toBe(true);
+            expect(result?.unstaged).toBe(false);
+            expect(result?.conflicts).toBe(false);
         });
 
         it('ignores unstaged rename source path in porcelain -z output', () => {
             mockExecFileSync.mockReturnValueOnce(' R new-name.txt\0ANT.txt\0');
 
             const result = getGitStatus({});
-            expect(result.staged).toBe(false);
-            expect(result.unstaged).toBe(true);
-            expect(result.conflicts).toBe(false);
+            expect(result?.staged).toBe(false);
+            expect(result?.unstaged).toBe(true);
+            expect(result?.conflicts).toBe(false);
         });
 
         it('ignores unstaged copy source path in porcelain -z output', () => {
             mockExecFileSync.mockReturnValueOnce(' C copy.txt\0MOUSE.txt\0');
 
             const result = getGitStatus({});
-            expect(result.staged).toBe(false);
-            expect(result.unstaged).toBe(true);
-            expect(result.conflicts).toBe(false);
+            expect(result?.staged).toBe(false);
+            expect(result?.unstaged).toBe(true);
+            expect(result?.conflicts).toBe(false);
         });
 
         it('detects type changed file in index (staged)', () => {
             mockExecFileSync.mockReturnValueOnce('T  file.txt');
 
             const result = getGitStatus({});
-            expect(result.staged).toBe(true);
-            expect(result.unstaged).toBe(false);
-            expect(result.conflicts).toBe(false);
+            expect(result?.staged).toBe(true);
+            expect(result?.unstaged).toBe(false);
+            expect(result?.conflicts).toBe(false);
         });
 
         it('detects mixed status with multiple files', () => {
             mockExecFileSync.mockReturnValueOnce('M  staged.txt\0 M unstaged.txt\0?? untracked.txt');
 
             const result = getGitStatus({});
-            expect(result.staged).toBe(true);
-            expect(result.unstaged).toBe(true);
-            expect(result.untracked).toBe(true);
-            expect(result.conflicts).toBe(false);
+            expect(result?.staged).toBe(true);
+            expect(result?.unstaged).toBe(true);
+            expect(result?.untracked).toBe(true);
+            expect(result?.conflicts).toBe(false);
         });
 
         it('detects mixed status with conflicts', () => {
             mockExecFileSync.mockReturnValueOnce('UU conflict.txt\0M  staged.txt\0 M unstaged.txt\0?? untracked.txt');
 
             const result = getGitStatus({});
-            expect(result.conflicts).toBe(true);
-            expect(result.staged).toBe(true);
-            expect(result.unstaged).toBe(true);
-            expect(result.untracked).toBe(true);
+            expect(result?.conflicts).toBe(true);
+            expect(result?.staged).toBe(true);
+            expect(result?.unstaged).toBe(true);
+            expect(result?.untracked).toBe(true);
         });
 
-        it('handles git command failure', () => {
-            mockExecFileSync.mockImplementation(() => { throw new Error('git failed'); });
+        it('returns null, not a clean tree, when git status fails', () => {
+            mockExecFileSync.mockImplementation(() => { throw new Error('fatal: index file smaller than expected'); });
 
-            expect(getGitStatus({})).toEqual({
-                staged: false,
-                unstaged: false,
-                untracked: false,
-                conflicts: false
-            });
+            expect(getGitStatus({})).toBeNull();
+        });
+
+        it('keeps a failed status and a clean one apart in the persistent cache', () => {
+            vi.spyOn(Date, 'now').mockReturnValue(1000);
+            useTempHome();
+            const failed = createGitRepo();
+            const clean = createGitRepo();
+            const failedContext: RenderContext = { data: { cwd: failed.root }, gitCacheTtlSeconds: 5 };
+            const cleanContext: RenderContext = { data: { cwd: clean.root }, gitCacheTtlSeconds: 5 };
+            mockExecFileSync.mockImplementationOnce(() => { throw new Error('git timed out'); });
+            mockExecFileSync.mockReturnValueOnce('');
+
+            expect(getGitStatus(failedContext)).toBeNull();
+            expect(getGitStatus(cleanContext)).toEqual({ staged: false, unstaged: false, untracked: false, conflicts: false });
+
+            clearGitCache();
+            expect(getGitStatus(failedContext)).toBeNull();
+            expect(getGitStatus(cleanContext)).toEqual({ staged: false, unstaged: false, untracked: false, conflicts: false });
+            expect(mockExecFileSync.mock.calls).toHaveLength(2);
+        });
+
+        it('ignores cache files from versions that stored empty output as null', () => {
+            vi.spyOn(Date, 'now').mockReturnValue(1000);
+            const home = useTempHome();
+            const { root } = createGitRepo();
+            const context: RenderContext = { data: { cwd: root }, gitCacheTtlSeconds: 5 };
+            mockExecFileSync.mockReturnValueOnce('true\n');
+            expect(isInsideGitWorkTree(context)).toBe(true);
+            // How an older version cached a clean status
+            const cachePath = getOnlyGitCachePath(home);
+            const cache = readGitCacheJson(home);
+            const entry = cache.entries?.['rev-parse --is-inside-work-tree'] as Record<string, unknown>;
+            fs.writeFileSync(cachePath, JSON.stringify({
+                version: 1,
+                cwd: root,
+                entries: { 'status --porcelain -z': { ...entry, output: null } }
+            }), 'utf-8');
+
+            clearGitCache();
+            mockExecFileSync.mockReturnValueOnce('');
+
+            expect(getGitStatus(context)).toEqual({ staged: false, unstaged: false, untracked: false, conflicts: false });
+            expect(mockExecFileSync.mock.calls).toHaveLength(2);
         });
     });
 
@@ -884,14 +922,10 @@ describe('git utils', () => {
             });
         });
 
-        it('returns zero counts when git commands fail', () => {
+        it('returns null, not zero counts, when git status fails', () => {
             mockExecFileSync.mockImplementation(() => { throw new Error('git failed'); });
 
-            expect(getGitFileStatusCounts({})).toEqual({
-                staged: 0,
-                unstaged: 0,
-                untracked: 0
-            });
+            expect(getGitFileStatusCounts({})).toBeNull();
         });
     });
 });

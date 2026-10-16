@@ -39,13 +39,14 @@ interface GitCacheEntry {
 }
 
 interface PersistentGitCache {
-    version: 1;
+    version: typeof GIT_CACHE_SCHEMA_VERSION;
     cwd: string | null;
     entries: Record<string, GitCacheEntry>;
 }
 
 const DEFAULT_GIT_CACHE_TTL_SECONDS = 5;
-const GIT_CACHE_SCHEMA_VERSION = 1 as const;
+// 2: empty output is stored as '', so null only ever means the command failed
+const GIT_CACHE_SCHEMA_VERSION = 2 as const;
 
 // Matches the timeout used by every other external CLI call site: a git
 // invocation that blocks (slow network filesystem, hung credential helper)
@@ -515,12 +516,20 @@ export function resolveGitCwd(context: RenderContext): string | undefined {
     return undefined;
 }
 
-export function runGit(command: string, context: RenderContext): string | null {
+export function runGit(command: string, context: RenderContext, allowEmpty = false): string | null {
     const args = command.trim().split(/\s+/).filter(Boolean);
-    return runGitArgs(args, context, command);
+    return runGitArgs(args, context, command, allowEmpty);
 }
 
-export function runGitArgs(args: string[], context: RenderContext, cacheCommand?: string): string | null {
+// What git printed, trimmed; null when it failed, and also when it printed
+// nothing unless allowEmpty is set
+export function runGitArgs(args: string[], context: RenderContext, cacheCommand?: string, allowEmpty = false): string | null {
+    const output = runCachedGitArgs(args, context, cacheCommand);
+    return output === '' && !allowEmpty ? null : output;
+}
+
+// Cached as printed: '' when git printed nothing, null when it failed
+function runCachedGitArgs(args: string[], context: RenderContext, cacheCommand: string | undefined): string | null {
     const cwd = resolveGitCwd(context);
     const cacheToken = cacheCommand ?? args.join('\0');
     const memoryCacheKey = `${cacheToken}|${cwd ?? ''}`;
@@ -548,9 +557,7 @@ export function runGitArgs(args: string[], context: RenderContext, cacheCommand?
     }
 
     try {
-        const output = execGit(args, cwd).trimEnd();
-
-        const result = output.length > 0 ? output : null;
+        const result = execGit(args, cwd).trimEnd();
         const entry = createCacheEntry(result, metadata, now);
         gitCommandCache.set(memoryCacheKey, entry);
         writePersistentCacheEntry(metadata, persistentCacheKey, cwd, entry);
@@ -608,11 +615,12 @@ export interface GitStatus {
     conflicts: boolean;
 }
 
-export function getGitStatus(context: RenderContext): GitStatus {
-    const output = runGit('status --porcelain -z', context);
+// null when git status fails or times out, which says nothing about the tree
+export function getGitStatus(context: RenderContext): GitStatus | null {
+    const output = runGit('status --porcelain -z', context, true);
 
-    if (!output) {
-        return { staged: false, unstaged: false, untracked: false, conflicts: false };
+    if (output === null) {
+        return null;
     }
 
     let staged = false;
@@ -646,11 +654,12 @@ export function getGitStatus(context: RenderContext): GitStatus {
     return { staged, unstaged, untracked, conflicts };
 }
 
-export function getGitFileStatusCounts(context: RenderContext): GitFileStatusCounts {
-    const output = runGit('status --porcelain -z', context);
+// null when git status fails or times out
+export function getGitFileStatusCounts(context: RenderContext): GitFileStatusCounts | null {
+    const output = runGit('status --porcelain -z', context, true);
 
-    if (!output) {
-        return { staged: 0, unstaged: 0, untracked: 0 };
+    if (output === null) {
+        return null;
     }
 
     let staged = 0;
