@@ -11,7 +11,7 @@ import { formatUsageDuration } from '../../utils/usage';
 import { formatRawOrLabeledValue } from './raw-or-labeled';
 import {
     getUsageCompactKeybind,
-    getUsageDisplayModifierText,
+    getUsageTextModifierText,
     isUsageCompact,
     toggleUsageCompact
 } from './usage-display';
@@ -40,7 +40,7 @@ export abstract class LimitTimerWidget implements Widget {
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         return {
             displayText: this.getDisplayName(),
-            modifierText: getUsageDisplayModifierText(item, { includeCompact: true })
+            modifierText: getUsageTextModifierText(item, { includeCompact: true })
         };
     }
 
