@@ -823,19 +823,27 @@ function isTransientUsageApiStatus(statusCode: number | undefined): boolean {
 // A server certificate the runtime can't verify, or one issued for another
 // host. Behind a proxy or firewall that intercepts TLS with a certificate the
 // runtime doesn't trust, every request fails this way until the runtime is
-// set up to trust it. Node and Bun report the same codes, directly and
-// through a proxy's tunnel: a self-signed certificate, one from an unknown CA
-// (alone, with its root, or with an intermediate but not the root), an
-// expired or not-yet-valid one, and one for another host. Every other request
-// error is a network failure that may clear up by the next render.
+// set up to trust it. Node and Bun report these codes, directly and through a
+// proxy's tunnel: a self-signed certificate, one from an unknown CA (alone,
+// with its root, or with an intermediate but not the root), one whose
+// intermediate is trusted but not its root, one signed by a certificate that
+// isn't a CA, an expired or not-yet-valid one, and one for another host.
+// UNSPECIFIED is both runtimes' code for a certificate that fails
+// verification for a reason with no name of its own, and they give it to
+// nothing else. Node reports it for a CA whose key usage leaves out signing
+// certificates, a leaf key that's too weak and a SHA-1 signature. Every other
+// request error is a network failure that may clear up by the next render.
 const LASTING_REQUEST_ERROR_CODES = new Set([
     'DEPTH_ZERO_SELF_SIGNED_CERT',
     'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
     'SELF_SIGNED_CERT_IN_CHAIN',
     'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+    'UNABLE_TO_GET_ISSUER_CERT',
+    'INVALID_PURPOSE',
     'CERT_HAS_EXPIRED',
     'CERT_NOT_YET_VALID',
-    'ERR_TLS_CERT_ALTNAME_INVALID'
+    'ERR_TLS_CERT_ALTNAME_INVALID',
+    'UNSPECIFIED'
 ]);
 
 function isLastingRequestError(error: NodeJS.ErrnoException | undefined): boolean {

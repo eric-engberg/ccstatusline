@@ -16,6 +16,8 @@ export interface TestCertificateOptions {
     isCa?: boolean;
     // Self-signed without one
     issuer?: TestCertificate;
+    // A CA whose key usage allows signing data but not certificates
+    keyUsageWithoutCertSign?: boolean;
     notAfter?: Date;
     notBefore?: Date;
 }
@@ -72,9 +74,13 @@ export function createTestCertificate(options: TestCertificateOptions): TestCert
     const notBefore = options.notBefore ?? new Date(Date.now() - DAY_MS);
     const notAfter = options.notAfter ?? new Date(Date.now() + DAY_MS);
     const ecdsaWithSha256 = sequence(objectId('1.2.840.10045.4.3.2'));
-    const extension = options.isCa
-        ? sequence(objectId('2.5.29.19'), TRUE, der(0x04, sequence(TRUE)))
-        : sequence(objectId('2.5.29.17'), der(0x04, sequence(...(options.hosts ?? []).map(host => der(0x82, Buffer.from(host))))));
+    const basicConstraints = sequence(objectId('2.5.29.19'), TRUE, der(0x04, sequence(TRUE)));
+    // digitalSignature alone: the first bit, with the other seven unused
+    const digitalSignatureOnly = sequence(objectId('2.5.29.15'), TRUE, der(0x04, der(0x03, Buffer.from([7, 0x80]))));
+    const subjectAltName = sequence(objectId('2.5.29.17'), der(0x04, sequence(...(options.hosts ?? []).map(host => der(0x82, Buffer.from(host))))));
+    const extensions = options.isCa
+        ? [basicConstraints, ...(options.keyUsageWithoutCertSign ? [digitalSignatureOnly] : [])]
+        : [subjectAltName];
     // A positive serial with no leading zero byte
     const serial = Buffer.concat([Buffer.from([64 + crypto.randomInt(64)]), crypto.randomBytes(7)]);
 
@@ -86,7 +92,7 @@ export function createTestCertificate(options: TestCertificateOptions): TestCert
         sequence(utcTime(notBefore), utcTime(notAfter)),
         distinguishedName(options.commonName),
         publicKey.export({ type: 'spki', format: 'der' }),
-        der(0xa3, sequence(extension))
+        der(0xa3, sequence(...extensions))
     );
     const signature = crypto.sign('sha256', toBeSigned, options.issuer?.privateKey ?? privateKey);
     const certificate = sequence(toBeSigned, ecdsaWithSha256, der(0x03, Buffer.from([0]), signature));

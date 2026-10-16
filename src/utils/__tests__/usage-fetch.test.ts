@@ -1996,15 +1996,21 @@ describe('fetchUsageData error handling', () => {
     // the same way on every request, so the reset timers show the error. These
     // are the codes Node and Bun report for a self-signed certificate, one
     // from an unknown CA (alone, with its root, or with an intermediate but no
-    // root), an expired or not-yet-valid one, and one for another host.
+    // root), one whose intermediate is trusted but not its root, one signed by
+    // a certificate that isn't a CA, an expired or not-yet-valid one, and one
+    // for another host, and Node's UNSPECIFIED for a failure it has no name
+    // for, such as a CA whose key usage leaves out signing certificates.
     it.each([
         'DEPTH_ZERO_SELF_SIGNED_CERT',
         'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
         'SELF_SIGNED_CERT_IN_CHAIN',
         'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+        'UNABLE_TO_GET_ISSUER_CERT',
+        'INVALID_PURPOSE',
         'CERT_HAS_EXPIRED',
         'CERT_NOT_YET_VALID',
-        'ERR_TLS_CERT_ALTNAME_INVALID'
+        'ERR_TLS_CERT_ALTNAME_INVALID',
+        'UNSPECIFIED'
     ])('keeps a request failing with %s a lasting API error, across its backoff', (errorCode) => {
         const harness = createProbeHarness();
 
@@ -2406,6 +2412,8 @@ describe('usage API request behind a proxy that refuses CONNECT', () => {
 describe('usage API request through a proxy to a server whose certificate does not verify', () => {
     const root = createTestCertificate({ commonName: 'Test Root CA', isCa: true });
     const intermediate = createTestCertificate({ commonName: 'Test Intermediate CA', isCa: true, issuer: root });
+    const nonCaIssuer = createTestCertificate({ commonName: 'Test Issuer', hosts: ['issuer.test'], issuer: root });
+    const nonSigningCa = createTestCertificate({ commonName: 'Test Signing CA', isCa: true, issuer: root, keyUsageWithoutCertSign: true });
     const createLeaf = (options: Partial<TestCertificateOptions> = {}) => createTestCertificate({
         commonName: 'api.anthropic.com',
         hosts: ['api.anthropic.com'],
@@ -2437,14 +2445,18 @@ describe('usage API request through a proxy to a server whose certificate does n
 
     // The proxy opens the tunnel to a local server whose certificate the
     // runtime doesn't trust, as a proxy or firewall that intercepts TLS does.
-    // Every request fails the same way until the runtime trusts it. Node names
-    // the expired and the not-yet-valid certificate by their dates, Bun by
-    // their unknown CA.
+    // Every request fails the same way until the runtime trusts it or the
+    // certificates change. Node names the expired and the not-yet-valid
+    // certificate by their dates, Bun by their unknown CA. Node has no name
+    // for a CA whose key usage leaves out signing certificates and reports
+    // UNSPECIFIED, where Bun finds no issuer for the leaf.
     it.each([
         { chain: () => [createLeaf({ issuer: undefined })], name: 'a self-signed certificate' },
         { chain: () => [createLeaf()], name: 'a certificate from an unknown CA' },
         { chain: () => [createLeaf(), root], name: 'a chain up to an unknown root' },
         { chain: () => [createLeaf({ issuer: intermediate }), intermediate], name: 'a chain to an unknown root\'s intermediate' },
+        { chain: () => [createLeaf({ issuer: nonCaIssuer }), nonCaIssuer], name: 'a chain through an issuer that is not a CA' },
+        { chain: () => [createLeaf({ issuer: nonSigningCa }), nonSigningCa], name: 'a chain through a CA that may not sign certificates' },
         { chain: () => [createLeaf({ notAfter: new Date('2021-01-01'), notBefore: new Date('2020-01-01') })], name: 'an expired certificate' },
         { chain: () => [createLeaf({ notAfter: new Date('2041-01-01'), notBefore: new Date('2040-01-01') })], name: 'a certificate not valid yet' }
     ])('reports $name as a lasting API error', async ({ chain }) => {
