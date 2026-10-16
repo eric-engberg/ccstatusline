@@ -24,6 +24,7 @@ import {
 } from '../../utils/colors';
 import { GRADIENT_PRESET_NAMES } from '../../utils/gradient';
 import {
+    getInsertableText,
     getPlainInput,
     shouldInsertInput
 } from '../../utils/input-guards';
@@ -94,6 +95,7 @@ export const GlobalOverridesMenu: React.FC<GlobalOverridesMenuProps> = ({ settin
 
     useInput((input, key) => {
         const shortcut = getPlainInput(input, key);
+        const text = getInsertableText(input, key);
         if (editingPadding) {
             if (key.return) {
                 const updatedSettings = {
@@ -109,8 +111,8 @@ export const GlobalOverridesMenu: React.FC<GlobalOverridesMenuProps> = ({ settin
                 setPaddingInput(paddingInput.slice(0, -1));
             } else if (key.delete) {
                 // For simple text inputs without cursor, forward delete does nothing
-            } else if (shouldInsertInput(input, key)) {
-                setPaddingInput(paddingInput + input);
+            } else if (text) {
+                setPaddingInput(paddingInput + text);
             }
         } else if (editingSeparator) {
             if (key.return) {
@@ -138,8 +140,8 @@ export const GlobalOverridesMenu: React.FC<GlobalOverridesMenuProps> = ({ settin
                 setSeparatorInput(separatorInput.slice(0, -1));
             } else if (key.delete) {
                 // For simple text inputs without cursor, forward delete does nothing
-            } else if (shouldInsertInput(input, key)) {
-                setSeparatorInput(separatorInput + input);
+            } else if (text) {
+                setSeparatorInput(separatorInput + text);
             }
         } else if (confirmingSeparator) {
             // Skip input handling when confirmation is active - let ConfirmDialog handle it

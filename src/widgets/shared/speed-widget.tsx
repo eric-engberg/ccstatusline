@@ -15,7 +15,7 @@ import type {
     WidgetEditorProps,
     WidgetItem
 } from '../../types/Widget';
-import { shouldInsertInput } from '../../utils/input-guards';
+import { getInsertableText } from '../../utils/input-guards';
 import { resolveNumberFormat } from '../../utils/number-format';
 import {
     calculateInputSpeed,
@@ -189,8 +189,9 @@ const SpeedWindowEditor: React.FC<WidgetEditorProps> = ({ widget, onComplete, on
             return;
         }
 
-        if (shouldInsertInput(input, key) && /\d/.test(input)) {
-            setWindowInput(windowInput + input);
+        const text = getInsertableText(input, key);
+        if (/\d/.test(text)) {
+            setWindowInput(windowInput + text);
         }
     });
 

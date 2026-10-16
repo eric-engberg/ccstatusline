@@ -1,8 +1,11 @@
+import { render } from 'ink';
 import type { SpawnSyncReturns } from 'node:child_process';
 import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { PassThrough } from 'node:stream';
+import stripAnsi from 'strip-ansi';
 import {
     afterEach,
     beforeEach,
@@ -12,6 +15,7 @@ import {
     vi
 } from 'vitest';
 
+import { waitFor } from '../../tui/__tests__/helpers/wait-for-ink';
 import type { RenderContext } from '../../types/RenderContext';
 import type { Settings } from '../../types/Settings';
 import type { WidgetItem } from '../../types/Widget';
@@ -77,6 +81,45 @@ function useTempHome(): void {
     process.env.HOME = home;
     process.env.USERPROFILE = home;
     vi.spyOn(os, 'homedir').mockReturnValue(home);
+}
+
+class MockTtyStream extends PassThrough {
+    isTTY = true;
+    columns = 120;
+    rows = 40;
+
+    setRawMode() {
+        return this;
+    }
+
+    ref() {
+        return this;
+    }
+
+    unref() {
+        return this;
+    }
+}
+
+interface CapturedWriteStream extends NodeJS.WriteStream { getOutput: () => string }
+
+function createMockStdin(): NodeJS.ReadStream {
+    return new MockTtyStream() as unknown as NodeJS.ReadStream;
+}
+
+function createMockStdout(): CapturedWriteStream {
+    const stream = new MockTtyStream();
+    const chunks: string[] = [];
+
+    stream.on('data', (chunk: Buffer | string) => {
+        chunks.push(chunk.toString());
+    });
+
+    return Object.assign(stream as unknown as NodeJS.WriteStream, {
+        getOutput() {
+            return chunks.join('');
+        }
+    });
 }
 
 describe('CustomCommandWidget', () => {
@@ -253,6 +296,73 @@ describe('CustomCommandWidget', () => {
 
         it('still truncates plain output with an ellipsis', () => {
             expect(renderWith('feature/login-refactor', { maxWidth: 20 })).toBe('feature/login-ref...');
+        });
+    });
+
+    describe('command editor', () => {
+        function renderCommandEditor() {
+            const stdin = createMockStdin();
+            const stdout = createMockStdout();
+            const stderr = createMockStdout();
+            const onComplete = vi.fn();
+            const instance = render(
+                widget.renderEditor({
+                    widget: { id: 'test', type: 'custom-command' },
+                    onComplete,
+                    onCancel: vi.fn(),
+                    action: 'edit-command'
+                }),
+                {
+                    stdin,
+                    stdout,
+                    stderr,
+                    debug: true,
+                    exitOnCtrlC: false,
+                    patchConsole: false
+                }
+            );
+
+            return {
+                stdin,
+                onComplete,
+                output: () => stripAnsi(stdout.getOutput()),
+                cleanup: () => {
+                    instance.unmount();
+                    instance.cleanup();
+                    stdin.destroy();
+                    stdout.destroy();
+                    stderr.destroy();
+                }
+            };
+        }
+
+        // A terminal paste reaches Ink as one input chunk, so a command copied
+        // with its line ending, or with a tab in it, arrives with that in it
+        it.each([
+            ['with a trailing line break', 'npx ccusage statusline\r', 'npx ccusage statusline'],
+            ['with a tab', 'echo\thi', 'echo hi']
+        ])('inserts a command pasted %s', async (_case, paste, expected) => {
+            const editor = renderCommandEditor();
+
+            try {
+                await waitFor(() => {
+                    expect(editor.output()).toContain('Enter command path:');
+                });
+
+                editor.stdin.write(paste);
+                await waitFor(() => {
+                    expect(editor.output()).toContain(`Enter command path: ${expected}`);
+                });
+                // The pasted line break doesn't save the command; Enter does
+                expect(editor.onComplete).not.toHaveBeenCalled();
+                editor.stdin.write('\r');
+                await waitFor(() => {
+                    expect(editor.onComplete).toHaveBeenCalledTimes(1);
+                });
+                expect(editor.onComplete.mock.calls[0]?.[0]).toMatchObject({ commandPath: expected });
+            } finally {
+                editor.cleanup();
+            }
         });
     });
 });
