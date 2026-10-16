@@ -1127,7 +1127,8 @@ export async function lookUpUsageAccount(): Promise<UsageAccount | null> {
     }
 
     // Fingerprinted like the tokens, so neither cache file names the account
-    const accountKey = `account:${fingerprintUsageToken(`${profile.organization.uuid}/${profile.account.uuid}`)}`;
+    const accountId = `${profile.organization.uuid}/${profile.account.uuid}`;
+    const accountKey = `account:${fingerprintUsageToken(accountId)}`;
     storeUsageAccountEntry({ tokenHash, accountKey });
     return findUsageAccount(tokenHash) ?? { key: accountKey, fingerprints: [tokenHash] };
 }
