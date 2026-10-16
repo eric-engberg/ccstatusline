@@ -27,7 +27,8 @@ import type { UsageWindowMetrics } from '../../utils/usage-types';
 
 import {
     CYCLE_GRADIENT_ACTION,
-    cycleGradientPreset
+    cycleGradientPreset,
+    paintsBarGradient
 } from './gradient-bar';
 import { isHidden } from './hideable';
 import { formatRawOrLabeledValue } from './raw-or-labeled';
@@ -39,6 +40,7 @@ import {
     getUsagePercentCustomKeybinds,
     isUsageCursorEnabled,
     isUsageInverted,
+    showsUsageBar,
     toggleUsageCursor,
     toggleUsageInverted
 } from './usage-display';
@@ -258,6 +260,11 @@ export class UsagePercentWidget implements Widget {
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
         return getUsagePercentCustomKeybinds(item, hasUsageWindow(this.kind));
+    }
+
+    // A gradient preset paints only the bar, so the renderer colors the rest
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
+        return paintsBarGradient(item, showsUsageBar(item));
     }
 
     supportsRawValue(): boolean { return true; }
