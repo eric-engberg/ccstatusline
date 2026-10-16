@@ -342,6 +342,31 @@ describe('usage prefetch', () => {
         ]);
     });
 
+    it('returns no usage data while another render is still fetching for reset-only lines', async () => {
+        mockFetchUsageData.mockResolvedValue({ error: 'timeout' });
+
+        const lines = makeLines(
+            [{ id: '1', type: 'weekly-reset-timer' }]
+        );
+
+        await expect(prefetchUsageDataIfNeeded(lines, {})).resolves.toBeNull();
+    });
+
+    // A missing login, a rejected token or an unreadable response won't clear
+    // up on a later render, so the timers would otherwise show [Loading] forever
+    it.each(['no-credentials', 'api-error', 'parse-error'] as const)('keeps the %s error for reset-only fetches', async (error) => {
+        mockFetchUsageData.mockResolvedValue({ error });
+
+        const lines = makeLines(
+            [{ id: '1', type: 'weekly-reset-timer' }],
+            [{ id: '2', type: 'reset-timer' }]
+        );
+
+        const usageData = await prefetchUsageDataIfNeeded(lines, { rate_limits: { seven_day: { used_percentage: 15 } } });
+
+        expect(usageData).toEqual({ weeklyUsage: 15, error });
+    });
+
     it('keeps statusline usage when cursor metadata requires a missing reset and API has no credentials', async () => {
         mockFetchUsageData.mockResolvedValue({ error: 'no-credentials' });
 
