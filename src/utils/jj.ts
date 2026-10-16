@@ -50,6 +50,9 @@ function parseDiffStat(stat: string): JjChangeCounts {
     };
 }
 
-export function getJjChangeCounts(context: RenderContext): JjChangeCounts {
-    return parseDiffStat(runJjArgs(['diff', '--stat'], context) ?? '');
+// null when `jj diff --stat` fails (a stale working copy, a slow snapshot),
+// which says nothing about the changes
+export function getJjChangeCounts(context: RenderContext): JjChangeCounts | null {
+    const stat = runJjArgs(['diff', '--stat'], context, true);
+    return stat === null ? null : parseDiffStat(stat);
 }

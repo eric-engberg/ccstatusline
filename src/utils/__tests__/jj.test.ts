@@ -168,13 +168,10 @@ describe('jj utils', () => {
             });
         });
 
-        it('returns zero counts when jj diff command fails', () => {
+        it('returns null, not zero counts, when jj diff --stat fails', () => {
             mockExecFileSync.mockImplementation(() => { throw new Error('jj failed'); });
 
-            expect(getJjChangeCounts({})).toEqual({
-                insertions: 0,
-                deletions: 0
-            });
+            expect(getJjChangeCounts({})).toBeNull();
         });
     });
 });

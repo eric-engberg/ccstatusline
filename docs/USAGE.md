@@ -49,7 +49,7 @@ ccstatusline --version
 ### Jujutsu (JJ)
 
 - **JJ Revision** / **JJ Bookmarks** / **JJ Workspace** - Show the current change ID, bookmarks, or workspace name, with customizable prefix glyphs through `g`.
-- **JJ Changes** / **JJ Insertions** / **JJ Deletions** - Show combined or separate insertion/deletion counts, with customizable signs through `g`.
+- **JJ Changes** / **JJ Insertions** / **JJ Deletions** - Show combined or separate insertion/deletion counts, with customizable signs through `g`. When `jj diff --stat` fails or times out, as in a stale workspace, they show `(no jj)` instead of zero counts.
 - **JJ Root Dir** / **JJ Description** - Show the repository root directory name or current change description.
 
 ### Tokens, Usage & Context
@@ -327,7 +327,7 @@ appear in the editor as `(hide: no-git, zero)`.
 Supported states by widget family:
 - **Git widgets**: `no-git` hides the `(no git)` placeholder outside a repo
 - **Git count widgets** (`Git Changes`, `Git Insertions`, `Git Deletions`, `Git Staged/Unstaged/Untracked Files`, `Git Conflicts`): `zero` hides the widget while its count is zero
-- **JJ widgets**: `no-jj` hides the `(no jj)` placeholder outside a jj repo
+- **JJ widgets**: `no-jj` hides the `(no jj)` placeholder outside a jj repo, and the placeholder a widget shows when its jj command fails
 - **Git Origin widgets**: `no-remote` hides the `no remote` placeholder
 - **Git Upstream widgets / Git Ahead/Behind**: `no-upstream` hides the `no upstream` placeholder
 - **Git Ahead/Behind**: `zero` hides `↑0↓0` when the branch is not diverged (enabled by default; uncheck it to show zeros)
