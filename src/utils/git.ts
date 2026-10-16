@@ -69,6 +69,13 @@ const WORK_TREE_COMMAND_ARGS = new Map<string, string[]>([
     ['diff', ['--no-ext-diff', '--no-textconv', '--ignore-submodules=dirty']]
 ]);
 
+// Options set ahead of a command so it reports on the whole repository.
+// diff.relative (git 2.28 and later) limits diff to the current directory; git
+// before 2.28 ignores the setting, where it would reject --no-relative.
+const WHOLE_REPOSITORY_ARGS = new Map<string, string[]>([
+    ['diff', ['-c', 'diff.relative=false']]
+]);
+
 // `git config --get-regexp` exits with 1 when nothing matches
 const GIT_CONFIG_NO_MATCH_STATUS = 1;
 
@@ -257,7 +264,8 @@ function getRepositoryFilterOverrideArgs(cwd: string | undefined): string[] | nu
 /**
  * Runs git as every status line call should: with fsmonitor off, no bare
  * repository found by searching upward, and, for commands that re-read work tree
- * files, none of the repository's own filter drivers or external diff tools.
+ * files, none of the repository's own filter drivers or external diff tools,
+ * and with diff covering the whole repository whatever diff.relative says.
  * Throws when git fails, or when the repository's filters can't be turned off.
  */
 export function execGit(args: string[], cwd: string | undefined): string {
@@ -267,10 +275,11 @@ export function execGit(args: string[], cwd: string | undefined): string {
     if (filterArgs === null) {
         throw new Error('The repository\'s filter drivers could not be turned off');
     }
+    const wholeRepositoryArgs = WHOLE_REPOSITORY_ARGS.get(subcommand) ?? [];
 
     return execFileSync(
         resolveExecutable('git'),
-        [...GIT_HARDENING_ARGS, ...filterArgs, subcommand, ...(workTreeArgs ?? []), ...rest],
+        [...GIT_HARDENING_ARGS, ...filterArgs, ...wholeRepositoryArgs, subcommand, ...(workTreeArgs ?? []), ...rest],
         gitExecOptions(cwd)
     );
 }

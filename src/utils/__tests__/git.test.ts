@@ -196,6 +196,24 @@ describe('git utils', () => {
                 '--ignore-submodules=dirty'
             ]));
         });
+
+        it('sets diff.relative back to false for diff, so it covers the whole repository', () => {
+            const { root } = createGitRepo();
+            mockExecFileSync.mockReturnValueOnce(' 1 file changed, 1 insertion(+)\n');
+
+            expect(execGit(['diff', '--shortstat'], root)).toBe(' 1 file changed, 1 insertion(+)\n');
+
+            expect(mockExecFileSync.mock.calls[0]?.[1]).toEqual([
+                ...GIT_HARDENING_ARGS,
+                '-c',
+                'diff.relative=false',
+                'diff',
+                '--no-ext-diff',
+                '--no-textconv',
+                '--ignore-submodules=dirty',
+                '--shortstat'
+            ]);
+        });
     });
 
     describe('runGit', () => {
