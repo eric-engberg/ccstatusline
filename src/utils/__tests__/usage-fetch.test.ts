@@ -1999,7 +1999,8 @@ describe('fetchUsageData error handling', () => {
     // root), one whose intermediate is trusted but not its root, one signed by
     // a certificate that isn't a CA, an expired or not-yet-valid one, and one
     // for another host, and Node's UNSPECIFIED for a failure it has no name
-    // for, such as a CA whose key usage leaves out signing certificates.
+    // for, such as a CA whose key usage leaves out signing certificates. The
+    // rest are the other verification error names both runtimes can report.
     it.each([
         'DEPTH_ZERO_SELF_SIGNED_CERT',
         'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
@@ -2010,7 +2011,26 @@ describe('fetchUsageData error handling', () => {
         'CERT_HAS_EXPIRED',
         'CERT_NOT_YET_VALID',
         'ERR_TLS_CERT_ALTNAME_INVALID',
-        'UNSPECIFIED'
+        'UNSPECIFIED',
+        'UNABLE_TO_GET_CRL',
+        'UNABLE_TO_DECRYPT_CERT_SIGNATURE',
+        'UNABLE_TO_DECRYPT_CRL_SIGNATURE',
+        'UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY',
+        'CERT_SIGNATURE_FAILURE',
+        'CRL_SIGNATURE_FAILURE',
+        'CRL_NOT_YET_VALID',
+        'CRL_HAS_EXPIRED',
+        'ERROR_IN_CERT_NOT_BEFORE_FIELD',
+        'ERROR_IN_CERT_NOT_AFTER_FIELD',
+        'ERROR_IN_CRL_LAST_UPDATE_FIELD',
+        'ERROR_IN_CRL_NEXT_UPDATE_FIELD',
+        'CERT_CHAIN_TOO_LONG',
+        'CERT_REVOKED',
+        'INVALID_CA',
+        'PATH_LENGTH_EXCEEDED',
+        'CERT_UNTRUSTED',
+        'CERT_REJECTED',
+        'HOSTNAME_MISMATCH'
     ])('keeps a request failing with %s a lasting API error, across its backoff', (errorCode) => {
         const harness = createProbeHarness();
 

@@ -831,8 +831,10 @@ function isTransientUsageApiStatus(statusCode: number | undefined): boolean {
 // UNSPECIFIED is both runtimes' code for a certificate that fails
 // verification for a reason with no name of its own, and they give it to
 // nothing else. Node reports it for a CA whose key usage leaves out signing
-// certificates, a leaf key that's too weak and a SHA-1 signature. Every other
-// request error is a network failure that may clear up by the next render.
+// certificates, a leaf key that's too weak and a SHA-1 signature. The rest of
+// the verification error names both runtimes can report are here too, except
+// OUT_OF_MEM, which isn't about the certificate. Every other request error is
+// a network failure that may clear up by the next render.
 const LASTING_REQUEST_ERROR_CODES = new Set([
     'DEPTH_ZERO_SELF_SIGNED_CERT',
     'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
@@ -843,7 +845,26 @@ const LASTING_REQUEST_ERROR_CODES = new Set([
     'CERT_HAS_EXPIRED',
     'CERT_NOT_YET_VALID',
     'ERR_TLS_CERT_ALTNAME_INVALID',
-    'UNSPECIFIED'
+    'UNSPECIFIED',
+    'UNABLE_TO_GET_CRL',
+    'UNABLE_TO_DECRYPT_CERT_SIGNATURE',
+    'UNABLE_TO_DECRYPT_CRL_SIGNATURE',
+    'UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY',
+    'CERT_SIGNATURE_FAILURE',
+    'CRL_SIGNATURE_FAILURE',
+    'CRL_NOT_YET_VALID',
+    'CRL_HAS_EXPIRED',
+    'ERROR_IN_CERT_NOT_BEFORE_FIELD',
+    'ERROR_IN_CERT_NOT_AFTER_FIELD',
+    'ERROR_IN_CRL_LAST_UPDATE_FIELD',
+    'ERROR_IN_CRL_NEXT_UPDATE_FIELD',
+    'CERT_CHAIN_TOO_LONG',
+    'CERT_REVOKED',
+    'INVALID_CA',
+    'PATH_LENGTH_EXCEEDED',
+    'CERT_UNTRUSTED',
+    'CERT_REJECTED',
+    'HOSTNAME_MISMATCH'
 ]);
 
 function isLastingRequestError(error: NodeJS.ErrnoException | undefined): boolean {
