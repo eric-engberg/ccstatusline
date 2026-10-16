@@ -518,6 +518,7 @@ export const App: React.FC = () => {
     const [supportsRefreshInterval] = useState(() => isClaudeCodeVersionAtLeast('2.1.97'));
     const [commandAvailability] = useState(() => getPackageCommandAvailability());
     const [updateCheckerState, setUpdateCheckerState] = useState<UpdateCheckerState>({ status: 'checking' });
+    const [updateRecheckPending, setUpdateRecheckPending] = useState(false);
     const [flowNotice, setFlowNotice] = useState<FlowNoticeState | null>(null);
     const [globalPackageInstallations, setGlobalPackageInstallations] = useState<GlobalPackageInstallation[]>([]);
     const [updatesReturnScreen, setUpdatesReturnScreen] = useState<'main' | 'manageInstallation'>('main');
@@ -777,6 +778,15 @@ export const App: React.FC = () => {
         }).then(setUpdateCheckerState);
     }, [commandAvailability, existingStatusLine, isClaudeInstalled, settings]);
 
+    // A finished global update asks for this, so the check runs once the new
+    // installation metadata is in `settings`, not with the settings from before
+    useEffect(() => {
+        if (updateRecheckPending) {
+            setUpdateRecheckPending(false);
+            handleUpdateCheck();
+        }
+    }, [updateRecheckPending, handleUpdateCheck]);
+
     const handleRunUpdateAction = useCallback((action: UpdateAction) => {
         setConfirmDialog({
             message: `Run global update command?\n\n${action.command}\n\nClaude settings will not be changed.`,
@@ -798,6 +808,8 @@ export const App: React.FC = () => {
                     setOriginalSettings(prev => prev
                         ? { ...prev, installation }
                         : prev);
+                    // The Updates screen still shows the result from before the update
+                    setUpdateRecheckPending(true);
                     const resolutionWarning = getGlobalResolutionWarning(action.packageManager);
 
                     if (resolutionWarning) {
