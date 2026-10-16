@@ -29,6 +29,7 @@ const { execFileSync: realExecFileSync } = require('node:child_process') as { ex
 
 interface UsageProbeResult {
     first: Record<string, unknown>;
+    firstElapsedMs: number;
     second: Record<string, unknown>;
     lockExists: boolean;
     cacheExists: boolean;
@@ -52,7 +53,7 @@ interface ProbeOptions {
     lockWrittenDuringRequest?: string;
     lowercaseHttpsProxy?: string;
     noProxy?: string;
-    mode?: 'error' | 'status' | 'success' | 'unexpected';
+    mode?: 'error' | 'response-aborted' | 'response-error' | 'status' | 'success' | 'unexpected';
     nowMs: number;
     pathDir?: string;
     requiredFields?: string[];
@@ -145,6 +146,16 @@ https.request = (...args) => {
                 }
             }
 
+            // The connection drops mid-body: the response never ends
+            if (mode === 'response-aborted' || mode === 'response-error') {
+                const event = mode === 'response-aborted' ? 'aborted' : 'error';
+                const handlers = responseHandlers.get(event) || [];
+                for (const handler of handlers) {
+                    handler(new Error('aborted'));
+                }
+                return;
+            }
+
             const endHandlers = responseHandlers.get('end') || [];
             for (const handler of endHandlers) {
                 handler();
@@ -163,10 +174,13 @@ const nowMs = Number(process.env.TEST_NOW_MS || Date.now());
 const requiredFields = JSON.parse(process.env.TEST_REQUIRED_FIELDS_JSON || '[]');
 Date.now = () => nowMs;
 
+const startedAt = performance.now();
 const first = await fetchUsageData({ requiredFields });
+const firstElapsedMs = performance.now() - startedAt;
 const second = await fetchUsageData({ requiredFields });
 process.stdout.write(JSON.stringify({
     first,
+    firstElapsedMs,
     second,
     lockExists: fs.existsSync(lockFile),
     cacheExists: fs.existsSync(cacheFile),
@@ -1778,6 +1792,31 @@ describe('fetchUsageData error handling', () => {
             expect(activeLockResult.first).toEqual({ error: 'api-error' });
             expect(activeLockResult.second).toEqual({ error: 'api-error' });
             expect(activeLockResult.requestCount).toBe(0);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it.each(['response-aborted', 'response-error'] as const)('gives up as soon as the response stream fails (%s)', (mode) => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome(mode);
+            const result = harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                mode,
+                nowMs,
+                pathDir: home.bin,
+                responseBody: successResponseBody.slice(0, 20),
+                statusCode: 200
+            });
+
+            // Nothing more can arrive once the connection drops mid-body, and
+            // waiting out the five-second deadline would hold the status line.
+            expect(result.first).toEqual({ error: 'api-error' });
+            expect(result.requestCount).toBe(1);
+            expect(result.firstElapsedMs).toBeLessThan(2500);
         } finally {
             harness.cleanup();
         }

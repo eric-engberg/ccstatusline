@@ -867,6 +867,10 @@ async function fetchFromUsageApi(token: string, deadlineMs = USAGE_API_TIMEOUT_M
 
                 finish({ kind: 'error' });
             });
+            // A connection dropped mid-body ends neither the response nor the
+            // request, and the idle timeout can't fire on a closed socket
+            response.on('aborted', () => { finish({ kind: 'error' }); });
+            response.on('error', () => { finish({ kind: 'error' }); });
         });
 
         request.on('error', () => { finish({ kind: 'error' }); });
