@@ -43,3 +43,35 @@ export async function startStalledProxy(): Promise<StalledProxy> {
         })
     };
 }
+
+export interface RefusingProxy {
+    url: string;
+    // How many connections reached the proxy so far
+    connectionCount: () => number;
+    stop: () => Promise<void>;
+}
+
+// A local proxy that drops every connection as soon as it arrives
+export async function startRefusingProxy(): Promise<RefusingProxy> {
+    let connections = 0;
+    const server = net.createServer((socket) => {
+        connections += 1;
+        socket.on('error', () => undefined);
+        socket.destroy();
+    });
+
+    await new Promise<void>((resolve) => {
+        server.listen(0, '127.0.0.1', resolve);
+    });
+    const { port } = server.address() as net.AddressInfo;
+
+    return {
+        url: `http://127.0.0.1:${port}`,
+        connectionCount: () => connections,
+        stop: () => new Promise<void>((resolve) => {
+            server.close(() => {
+                resolve();
+            });
+        })
+    };
+}

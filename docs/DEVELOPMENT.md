@@ -60,6 +60,8 @@ bun run docs
 - `~/.cache/ccstatusline/claude-status.json` and `~/.cache/ccstatusline/claude-status.lock` - Claude service-status cache and failed-fetch backoff lock
 - `~/.cache/ccstatusline/skills/skills-<sessionId>.jsonl` - skill hook records; session IDs must contain only ASCII letters, digits, `-`, or `_`
 
+When `~/.cache/ccstatusline` can't be created or written, the usage and Claude Status files move to `ccstatusline-<uid>` in the system temp folder (`ccstatusline` on Windows), so their fetch backoff still holds between renders. That folder is used only while it is a real folder owned by the current account that no other account can write to.
+
 If you use a custom Claude config location, set `CLAUDE_CONFIG_DIR` and ccstatusline will read/write that path instead of `~/.claude`.
 
 On macOS, usage credentials for a custom profile come from `Claude Code-credentials-<sha256(configDir)[:8]>`, then that profile's `.credentials.json`; the lookup does not fall back to another profile's Keychain entry. The hash uses the raw `CLAUDE_CONFIG_DIR` value normalized to NFC, without path resolution. `CLAUDE_SECURESTORAGE_CONFIG_DIR` overrides that hash input, including an empty value to force the default service lookup. Default lookup tries the plain service, discovered suffixed services, then the credentials file. Other platforms use the credentials file directly. Each Keychain subprocess has a five-second timeout; a missing OAuth login triggers a profile-specific 30-second lookup backoff.
@@ -74,7 +76,7 @@ Configuration exports snapshot the live TUI settings and add an `exportedBy` pac
 
 `ImportPreviewDialog` compares the selected mode's effective Custom Command strings with the current settings, lists new commands without duplicates, and requires confirmation with Cancel selected by default before applying them. Imports without new commands keep the direct apply flow. Preview paths, values, and commands escape C0/C1 controls as visible `\uXXXX` text.
 
-Usage-fetch tests spawn subprocess probes. Keep those probes sandboxed by setting `HOME`, `USERPROFILE`, `CLAUDE_CONFIG_DIR`, and proxy variables explicitly so tests cannot read or write a developer's live ccstatusline usage cache.
+Usage-fetch tests spawn subprocess probes. Keep those probes sandboxed by setting `HOME`, `USERPROFILE`, `CLAUDE_CONFIG_DIR`, the temp-folder variables (`TMPDIR`, `TMP`, `TEMP`), and proxy variables explicitly so tests cannot read or write a developer's live ccstatusline usage cache.
 
 Usage-lock deadlines further ahead than their kind of lock allows are treated as poisoned and ignored, so mocked clocks, system clock jumps, or old test artifacts cannot suppress usage fetching. Rate-limit locks stay active up to 24 hours ahead, which covers API `Retry-After` backoffs. Every other lock is written 30 seconds ahead and counts for up to a minute ahead, leaving room for a concurrent render that read the clock a moment later; one dated further ahead was written under a clock since set back. Likewise, a `usage.json` modified more than its 180-second lifetime in the future counts as stale rather than fresh.
 

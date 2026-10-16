@@ -2,10 +2,10 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as https from 'node:https';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { z } from 'zod';
 
+import { getWritableCacheDir } from './cache-dir';
 import { getClaudeConfigDir } from './claude-settings';
 import { isExcludedFromProxy } from './no-proxy';
 import {
@@ -24,9 +24,6 @@ import {
 } from './usage-types';
 
 // Cache configuration
-const CACHE_DIR = path.join(os.homedir(), '.cache', 'ccstatusline');
-const CACHE_FILE = path.join(CACHE_DIR, 'usage.json');
-const LOCK_FILE = path.join(CACHE_DIR, 'usage.lock');
 const CACHE_MAX_AGE = 180; // seconds
 const LOCK_MAX_AGE = 30;   // rate limit: only try API once per 30 seconds
 const DEFAULT_RATE_LIMIT_BACKOFF = 300; // seconds
@@ -367,9 +364,18 @@ interface MacKeychainCredentialCandidate {
     service: string;
 }
 
+function getCacheFile(): string {
+    return path.join(getWritableCacheDir(), 'usage.json');
+}
+
+function getLockFile(): string {
+    return path.join(getWritableCacheDir(), 'usage.lock');
+}
+
 function ensureCacheDirExists(): void {
-    if (!fs.existsSync(CACHE_DIR)) {
-        fs.mkdirSync(CACHE_DIR, { recursive: true });
+    const cacheDir = getWritableCacheDir();
+    if (!fs.existsSync(cacheDir)) {
+        fs.mkdirSync(cacheDir, { recursive: true });
     }
 }
 
@@ -627,7 +633,10 @@ export function getUsageToken(): string | null {
 // process: on macOS the default profile's lookup runs `security` twice, once
 // for a full keychain dump. The record names the credential stores it
 // covers, so one profile's miss never suppresses another profile's lookup.
-const NO_CREDENTIALS_LOCK_FILE = path.join(CACHE_DIR, 'usage-credentials.lock');
+function getNoCredentialsLockFile(): string {
+    return path.join(getWritableCacheDir(), 'usage-credentials.lock');
+}
+
 const NoCredentialsLockSchema = z.object({
     blockedUntil: z.number(),
     source: z.string()
@@ -640,7 +649,7 @@ function getUsageCredentialsSource(): string {
 function getUsageCredentialsWithBackoff(now: number): UsageCredentials | null {
     const source = getUsageCredentialsSource();
     try {
-        const lock = parseJsonWithSchema(fs.readFileSync(NO_CREDENTIALS_LOCK_FILE, 'utf8'), NoCredentialsLockSchema);
+        const lock = parseJsonWithSchema(fs.readFileSync(getNoCredentialsLockFile(), 'utf8'), NoCredentialsLockSchema);
         // Bounded like the usage lock, so a deadline written before the clock
         // was set back cannot stretch the backoff.
         if (lock?.source === source && lock.blockedUntil > now && lock.blockedUntil <= now + LOCK_MAX_AGE) {
@@ -654,7 +663,7 @@ function getUsageCredentialsWithBackoff(now: number): UsageCredentials | null {
     if (!credentials) {
         try {
             ensureCacheDirExists();
-            fs.writeFileSync(NO_CREDENTIALS_LOCK_FILE, JSON.stringify({ blockedUntil: now + LOCK_MAX_AGE, source }));
+            fs.writeFileSync(getNoCredentialsLockFile(), JSON.stringify({ blockedUntil: now + LOCK_MAX_AGE, source }));
         } catch {
             // Ignore lock file errors
         }
@@ -665,7 +674,7 @@ function getUsageCredentialsWithBackoff(now: number): UsageCredentials | null {
 
 function readStaleUsageCache(cacheIdentity: UsageCacheIdentity | null): UsageData | null {
     try {
-        const rawCache = fs.readFileSync(CACHE_FILE, 'utf8');
+        const rawCache = fs.readFileSync(getCacheFile(), 'utf8');
         if (!tokenHashMatches(readCachedTokenHash(rawCache), cacheIdentity)) {
             return null;
         }
@@ -679,7 +688,7 @@ function writeUsageLock(blockedUntil: number, error: UsageLockError): string {
     const contents = JSON.stringify({ blockedUntil, error });
     try {
         ensureCacheDirExists();
-        fs.writeFileSync(LOCK_FILE, contents);
+        fs.writeFileSync(getLockFile(), contents);
     } catch {
         // Ignore lock file errors
     }
@@ -692,8 +701,8 @@ function writeUsageLock(blockedUntil: number, error: UsageLockError): string {
 // server's backoff window.
 function clearOwnUsageLock(ownContents: string): void {
     try {
-        if (fs.readFileSync(LOCK_FILE, 'utf8') === ownContents) {
-            fs.rmSync(LOCK_FILE, { force: true });
+        if (fs.readFileSync(getLockFile(), 'utf8') === ownContents) {
+            fs.rmSync(getLockFile(), { force: true });
         }
     } catch {
         // Ignore lock file errors
@@ -705,7 +714,7 @@ function clearOwnUsageLock(ownContents: string): void {
 // above, a concurrent render's newer lock is left in place.
 function replaceOwnUsageLock(ownContents: string, blockedUntil: number, error: UsageLockError): void {
     try {
-        if (fs.readFileSync(LOCK_FILE, 'utf8') === ownContents) {
+        if (fs.readFileSync(getLockFile(), 'utf8') === ownContents) {
             writeUsageLock(blockedUntil, error);
         }
     } catch {
@@ -727,7 +736,7 @@ function readActiveUsageLock(now: number): { blockedUntil: number; error: UsageL
     let hasValidJsonLock = false;
 
     try {
-        const parsed = parseJsonWithSchema(fs.readFileSync(LOCK_FILE, 'utf8'), UsageLockSchema);
+        const parsed = parseJsonWithSchema(fs.readFileSync(getLockFile(), 'utf8'), UsageLockSchema);
         if (parsed) {
             hasValidJsonLock = true;
             const error = parsed.error ?? 'timeout';
@@ -751,7 +760,7 @@ function readActiveUsageLock(now: number): { blockedUntil: number; error: UsageL
     }
 
     try {
-        const lockStat = fs.statSync(LOCK_FILE);
+        const lockStat = fs.statSync(getLockFile());
         const lockMtime = Math.floor(lockStat.mtimeMs / 1000);
         const blockedUntil = lockMtime + LOCK_MAX_AGE;
         if (blockedUntil > now && blockedUntil <= now + getUsageLockHorizon('timeout')) {
@@ -914,14 +923,14 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
 
     // Check file cache
     try {
-        const stat = fs.statSync(CACHE_FILE);
+        const stat = fs.statSync(getCacheFile());
         const fileAge = now - Math.floor(stat.mtimeMs / 1000);
         // A file dated ahead of now still counts within one cache lifetime: a
         // concurrent render may have written it after this one read the clock.
         // Further ahead, it was written under a clock since set back, and
         // trusting it would keep that data on screen until real time caught up.
         if (Math.abs(fileAge) < CACHE_MAX_AGE) {
-            const rawCache = fs.readFileSync(CACHE_FILE, 'utf8');
+            const rawCache = fs.readFileSync(getCacheFile(), 'utf8');
             const fileData = parseCachedUsageData(rawCache);
             if (fileData && !fileData.error
                 && tokenHashMatches(readCachedTokenHash(rawCache), cacheIdentity)
@@ -979,7 +988,7 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
         // Save to cache
         try {
             ensureCacheDirExists();
-            fs.writeFileSync(CACHE_FILE, JSON.stringify({ ...usageData, tokenHash: cacheIdentity?.preferredHash }));
+            fs.writeFileSync(getCacheFile(), JSON.stringify({ ...usageData, tokenHash: cacheIdentity?.preferredHash }));
         } catch {
             // Ignore cache write errors
         }

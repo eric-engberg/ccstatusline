@@ -65,6 +65,8 @@ interface ProbeOptions {
 function createProbeHarness() {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-usage-test-'));
     const probeScriptPath = path.join(tempRoot, 'probe-usage.mjs');
+    const probeTmpDir = path.join(tempRoot, 'tmp');
+    fs.mkdirSync(probeTmpDir);
     const usageModulePath = fileURLToPath(new URL('../usage.ts', import.meta.url));
 
     const probeScript = `
@@ -239,6 +241,11 @@ process.stdout.write(JSON.stringify({
             // real one lets the probe escape into the user's actual home
             // and read/write the live ~/.cache/ccstatusline
             USERPROFILE: options.home,
+            // The usage cache falls back to the system temp folder when the
+            // home's cache folder can't be written
+            TMPDIR: probeTmpDir,
+            TMP: probeTmpDir,
+            TEMP: probeTmpDir,
             PATH: options.pathDir ?? '/nonexistent',
             TEST_REQUIRED_FIELDS_JSON: JSON.stringify(options.requiredFields ?? []),
             TEST_NOW_MS: String(options.nowMs),
@@ -290,6 +297,7 @@ process.stdout.write(JSON.stringify({
         cleanup,
         createEmptyHome,
         createTokenHome,
+        probeTmpDir,
         runProbe
     };
 }
@@ -1011,6 +1019,47 @@ describe('fetchUsageData error handling', () => {
             expect(result.requestCount).toBe(1);
             expect(result.lockContents).toBe(rateLimitedLock);
         } finally {
+            harness.cleanup();
+        }
+    });
+
+    // Every render is a new process, so the lock file is all that keeps the
+    // next render from calling the API again. Root can write anywhere, and
+    // Windows ignores the read-only mode on folders.
+    it.skipIf(process.platform === 'win32' || process.getuid?.() === 0).each([
+        { error: 'rate-limited', failure: { mode: 'status', responseBody: rateLimitedResponseBody, responseHeaders: { 'retry-after': '600' }, statusCode: 429 } },
+        { error: 'api-error', failure: { mode: 'error' } }
+    ] as const)('keeps the $error backoff across renders when ~/.cache cannot be written', ({ error, failure }) => {
+        const harness = createProbeHarness();
+        const home = harness.createTokenHome(`read-only-cache-${error}`);
+        const userCacheDir = path.join(home.home, '.cache');
+        fs.mkdirSync(userCacheDir);
+        fs.chmodSync(userCacheDir, 0o555);
+
+        try {
+            const failed = harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                nowMs,
+                pathDir: home.bin,
+                ...failure
+            });
+            expect(failed.first).toEqual({ error });
+            expect(failed.requestCount).toBe(1);
+
+            const backedOff = harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                mode: 'unexpected',
+                nowMs: nowMs + 10000,
+                pathDir: home.bin
+            });
+            expect(backedOff.first).toEqual({ error });
+            expect(backedOff.requestCount).toBe(0);
+            expect(fs.readdirSync(userCacheDir)).toEqual([]);
+            expect(fs.existsSync(path.join(harness.probeTmpDir, `ccstatusline-${process.getuid?.()}`, 'usage.lock'))).toBe(true);
+        } finally {
+            fs.chmodSync(userCacheDir, 0o755);
             harness.cleanup();
         }
     });
