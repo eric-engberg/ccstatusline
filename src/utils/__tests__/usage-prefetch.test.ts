@@ -657,6 +657,10 @@ describe('today\'s extra usage spend', () => {
         mock: { calls: unknown[][] };
         mockReturnValue: (value: number | undefined) => void;
     };
+    let mockLookUpAccount: {
+        mock: { calls: unknown[][] };
+        mockResolvedValue: (value: usage.UsageAccount | null) => void;
+    };
 
     beforeEach(() => {
         vi.restoreAllMocks();
@@ -664,6 +668,10 @@ describe('today\'s extra usage spend', () => {
         mockFetchUsageData.mockResolvedValue({ extraUsageEnabled: true, extraUsageUsed: 12345 });
         mockObserveSpend = vi.spyOn(dailySpend, 'observeExtraUsageSpend');
         mockObserveSpend.mockReturnValue(825);
+        // Until a test names the account, the profile lookup has no answer
+        // and today's spend stays under the login's token fingerprint.
+        mockLookUpAccount = vi.spyOn(usage, 'lookUpUsageAccount');
+        mockLookUpAccount.mockResolvedValue(null);
     });
 
     afterEach(() => {
@@ -724,6 +732,37 @@ describe('today\'s extra usage spend', () => {
         await prefetchUsageDataIfNeeded(makeLines([{ id: '1', type: 'extra-usage-used' }]), {});
 
         expect(mockObserveSpend.mock.calls).toEqual([]);
+    });
+
+    // The token fingerprint changes each time Claude Code refreshes its
+    // tokens; the account the profile lookup names doesn't. Records kept
+    // under the account's fingerprints move over to it.
+    it('keeps today\'s spend under the account the profile lookup names', async () => {
+        vi.spyOn(usage, 'getUsageAccountKey').mockReturnValue('work-login');
+        vi.spyOn(usage, 'getUsageFetchedAt').mockReturnValue(FETCHED_AT);
+        mockLookUpAccount.mockResolvedValue({ key: 'account:work', fingerprints: ['work-login', 'earlier-work-login'] });
+
+        const usageData = await prefetchUsageDataIfNeeded(makeLines([{ id: '1', type: 'extra-usage-today' }]), {});
+
+        expect(usageData).toEqual({
+            extraUsageEnabled: true,
+            extraUsageUsed: 12345,
+            extraUsageUsedToday: 825
+        });
+        expect(mockObserveSpend.mock.calls).toEqual([
+            ['account:work', 12345, FETCHED_AT, undefined, ['work-login', 'earlier-work-login']]
+        ]);
+    });
+
+    it('only looks up the account when it records today\'s spend', async () => {
+        vi.spyOn(usage, 'getUsageFetchedAt').mockReturnValue(FETCHED_AT);
+        const accountKey = vi.spyOn(usage, 'getUsageAccountKey').mockReturnValue('work-login');
+
+        await prefetchUsageDataIfNeeded(makeLines([{ id: '1', type: 'extra-usage-used' }]), {});
+        accountKey.mockReturnValue(null);
+        await prefetchUsageDataIfNeeded(makeLines([{ id: '1', type: 'extra-usage-today' }]), {});
+
+        expect(mockLookUpAccount.mock.calls).toEqual([]);
     });
 });
 
