@@ -21,15 +21,21 @@ import {
 } from './utils/git-review-cache';
 import { handleHookInput } from './utils/hook-handler';
 import { getTranscriptAnalysis } from './utils/jsonl';
-import { advanceGlobalPowerlineThemeIndex } from './utils/powerline-theme-index';
+import {
+    START_LINE_COUNTERS,
+    advanceLineCounters
+} from './utils/line-counters';
+import {
+    getAutoAlignLines,
+    getLineRenderItems,
+    getLineSettings
+} from './utils/powerline-lines';
 import {
     buildConfigWarningBadge,
     calculateMaxWidthsFromPreRendered,
-    countPowerlineStartCapSlots,
     preRenderAllWidgets,
     renderStatusLine
 } from './utils/renderer';
-import { advanceGlobalSeparatorIndex } from './utils/separator-index';
 import { getSkillsMetrics } from './utils/skills';
 import {
     getWidgetSpeedWindowSeconds,
@@ -174,12 +180,10 @@ async function renderMultipleLines(data: StatusJSON) {
 
     // Always pre-render all widgets once (for efficiency)
     const preRenderedLines = preRenderAllWidgets(lines, settings, context);
-    const preCalculatedMaxWidths = calculateMaxWidthsFromPreRendered(preRenderedLines, settings);
+    const preCalculatedMaxWidths = calculateMaxWidthsFromPreRendered(getAutoAlignLines(settings, preRenderedLines), settings);
 
-    // Render each line using pre-rendered content
-    let globalSeparatorIndex = 0;
-    let globalPowerlineThemeIndex = 0;
-    let globalPowerlineStartCapIndex = 0;
+    // Render each line using pre-rendered content, each in its own mode
+    let counters = START_LINE_COUNTERS;
     let configBadgePrepended = false;
     for (let i = 0; i < lines.length; i++) {
         const lineItems = lines[i];
@@ -188,11 +192,11 @@ async function renderMultipleLines(data: StatusJSON) {
             const lineContext = {
                 ...context,
                 lineIndex: i,
-                globalSeparatorIndex,
-                globalPowerlineThemeIndex,
-                globalPowerlineStartCapIndex
+                globalSeparatorIndex: counters.separator,
+                globalPowerlineThemeIndex: counters.theme,
+                globalPowerlineStartCapIndex: counters.startCap
             };
-            let line = renderStatusLine(lineItems, settings, lineContext, preRenderedWidgets, preCalculatedMaxWidths);
+            let line = renderStatusLine(getLineRenderItems(settings, i, lineItems), getLineSettings(settings, i), lineContext, preRenderedWidgets, preCalculatedMaxWidths);
 
             // Only output the line if it has content (not just ANSI codes)
             // Strip ANSI codes to check if there's actual text
@@ -213,13 +217,7 @@ async function renderMultipleLines(data: StatusJSON) {
                 outputLine = '\x1b[0m' + outputLine;
                 console.log(outputLine);
 
-                globalSeparatorIndex = advanceGlobalSeparatorIndex(globalSeparatorIndex, lineItems, preRenderedWidgets);
-                if (settings.powerline.enabled) {
-                    globalPowerlineStartCapIndex += countPowerlineStartCapSlots(lineItems, preRenderedWidgets);
-                }
-                if (settings.powerline.enabled && settings.powerline.continueThemeAcrossLines) {
-                    globalPowerlineThemeIndex = advanceGlobalPowerlineThemeIndex(globalPowerlineThemeIndex, preRenderedWidgets);
-                }
+                counters = advanceLineCounters(counters, settings, i, lineItems, preRenderedWidgets);
             }
         }
     }
