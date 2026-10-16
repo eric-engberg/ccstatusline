@@ -146,12 +146,16 @@ describe.skipIf(process.platform === 'win32')('git counts across the whole repos
         expect(execFileSync('git', ['ls-files', '--others', '--exclude-standard', '-z', '--', ':/'], { cwd: dir, env: { ...env, ...LITERAL_PATHSPECS_ENV }, encoding: 'utf8' })).toBe('');
     });
 
-    it('counts untracked files with status.showUntrackedFiles set to no', () => {
+    it('counts no untracked files with status.showUntrackedFiles set to no, as git status lists none', () => {
         const dir = makeUntrackedRepo('untracked-hidden');
         plainGit(dir, 'config', 'status.showUntrackedFiles', 'no');
 
-        expect(gitHelper('getGitUntrackedFileCount', dir)).toBe(4);
+        expect(gitHelper('getGitUntrackedFileCount', dir)).toBe(0);
         expect(plainGit(dir, 'status', '--porcelain', '-z')).toBe('');
+        expect(plainGit(dir, 'ls-files', '--others', '--exclude-standard', '-z').split('\0').filter(Boolean)).toHaveLength(4);
+
+        plainGit(dir, 'config', 'status.showUntrackedFiles', 'normal');
+        expect(gitHelper('getGitUntrackedFileCount', dir)).toBe(4);
     });
 
     it('counts files next to an untracked tree listed in more than 1 MiB', () => {

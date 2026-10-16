@@ -714,11 +714,17 @@ function countNulTerminatedEntries(output: string): number {
     return count;
 }
 
-// Untracked files are listed one by one: git status lists a new directory as
-// one entry by default, and none under status.showUntrackedFiles=no. That walks
-// every new directory, so this call is its own, and the staged and unstaged
-// counts keep reading the git status Git Status shares.
+// Untracked files are listed one by one, as git status lists a new directory
+// as one entry by default. The listing walks every new directory, so it runs
+// only when the git status Git Status and the other file counts share lists
+// something untracked. Otherwise the count is 0, as git status says, which
+// under status.showUntrackedFiles=no lists no untracked files at all.
 export function getGitUntrackedFileCount(context: RenderContext): number {
+    const status = getGitStatus(context);
+    if (!status.untracked) {
+        return 0;
+    }
+
     const count = runCachedGit(context, UNTRACKED_FILE_COUNT_CACHE_KEY, (cwd) => {
         const output = execGit(UNTRACKED_FILES_ARGS, cwd, UNTRACKED_FILES_MAX_BUFFER_BYTES);
         return `${countNulTerminatedEntries(output)}`;
