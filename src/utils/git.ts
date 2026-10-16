@@ -621,6 +621,19 @@ export interface GitStatus {
     conflicts: boolean;
 }
 
+// Sets each flag that one `status --porcelain` entry shows
+function markEntryStatus(status: GitStatus, line: string): void {
+    // Conflict detection: DD, AU, UD, UA, DU, AA, UU
+    if (/^(DD|AU|UD|UA|DU|AA|UU)/.test(line))
+        status.conflicts = true;
+    if (/^[MADRCTU]/.test(line))
+        status.staged = true;
+    if (/^.[MADRCTU]/.test(line))
+        status.unstaged = true;
+    if (line.startsWith('??'))
+        status.untracked = true;
+}
+
 // null when git status fails or times out, which says nothing about the tree
 export function getGitStatus(context: RenderContext): GitStatus | null {
     const output = runGit('status --porcelain -z', context, true);
@@ -629,10 +642,7 @@ export function getGitStatus(context: RenderContext): GitStatus | null {
         return null;
     }
 
-    let staged = false;
-    let unstaged = false;
-    let untracked = false;
-    let conflicts = false;
+    const status: GitStatus = { staged: false, unstaged: false, untracked: false, conflicts: false };
 
     const entries = output.split('\0');
 
@@ -640,16 +650,8 @@ export function getGitStatus(context: RenderContext): GitStatus | null {
         const line = entries[index];
         if (typeof line !== 'string' || line.length < 2)
             continue;
-        // Conflict detection: DD, AU, UD, UA, DU, AA, UU
-        if (!conflicts && /^(DD|AU|UD|UA|DU|AA|UU)/.test(line))
-            conflicts = true;
-        if (!staged && /^[MADRCTU]/.test(line))
-            staged = true;
-        if (!unstaged && /^.[MADRCTU]/.test(line))
-            unstaged = true;
-        if (!untracked && line.startsWith('??'))
-            untracked = true;
-        if (staged && unstaged && untracked && conflicts)
+        markEntryStatus(status, line);
+        if (status.staged && status.unstaged && status.untracked && status.conflicts)
             break;
 
         if (hasRenameOrCopyStatus(line)) {
@@ -657,7 +659,7 @@ export function getGitStatus(context: RenderContext): GitStatus | null {
         }
     }
 
-    return { staged, unstaged, untracked, conflicts };
+    return status;
 }
 
 // null when git status fails or times out
