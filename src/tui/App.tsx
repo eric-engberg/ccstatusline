@@ -423,6 +423,25 @@ export function getPathInferredInstallation(
     return installation;
 }
 
+// The version Check for Updates compares with the latest release: the global
+// package Claude Code runs when its version is known, since this TUI may be a
+// different copy (npx, bunx), else this TUI's own version
+function getUpdateCheckVersion(
+    installation: ResolvedInstallationMetadata,
+    activeCommand: ActiveGlobalCommandResolution | null,
+    runningVersion: string
+): string {
+    if (installation.method === 'pinned' && installation.installedVersion) {
+        return installation.installedVersion;
+    }
+
+    if (installation.method === 'self-managed' && activeCommand?.version) {
+        return activeCommand.version;
+    }
+
+    return runningVersion;
+}
+
 export function getConfirmCancelScreen(confirmDialog: ConfirmDialogState | null): Exclude<AppScreen, 'confirm'> {
     return confirmDialog?.cancelScreen ?? 'main';
 }
@@ -749,12 +768,9 @@ export const App: React.FC = () => {
             ? inspectActiveGlobalCommand({ commandAvailability })
             : null;
         const effectiveUpdateInstallation = getPathInferredInstallation(installation, activeCommand);
-        const currentUpdateVersion = effectiveUpdateInstallation.method === 'pinned' && effectiveUpdateInstallation.installedVersion
-            ? effectiveUpdateInstallation.installedVersion
-            : getPackageVersion();
 
         void checkForUpdates({
-            currentVersion: currentUpdateVersion,
+            currentVersion: getUpdateCheckVersion(effectiveUpdateInstallation, activeCommand, getPackageVersion()),
             installedCommand: existingStatusLine,
             installationMetadata: effectiveUpdateInstallation,
             commandAvailability

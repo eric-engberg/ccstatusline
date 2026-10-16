@@ -661,3 +661,73 @@ describe('App while an install or update runs', () => {
         }
     });
 });
+
+describe('App Check for Updates', () => {
+    let sandbox: AppSandbox;
+
+    beforeEach(() => {
+        sandbox = setUpAppSandbox();
+    });
+
+    afterEach(() => {
+        sandbox.restore();
+    });
+
+    // The real check, against a registry whose latest release is `latestVersion`
+    function stubLatestRelease(latestVersion: string) {
+        const realCheckForUpdates = updateChecker.checkForUpdates;
+        return vi.spyOn(updateChecker, 'checkForUpdates').mockImplementation(options => realCheckForUpdates({
+            ...options,
+            latestVersionFetcher: () => Promise.resolve(latestVersion)
+        }));
+    }
+
+    function stubNpmGlobalInstall(getVersion: () => string) {
+        vi.spyOn(globalPackageManager, 'inspectActiveGlobalCommand').mockImplementation(() => ({
+            packageManager: 'npm',
+            resolvedPath: '/usr/local/bin/ccstatusline',
+            resolvedPaths: ['/usr/local/bin/ccstatusline'],
+            binDir: '/usr/local/bin',
+            version: getVersion(),
+            warning: null
+        }));
+    }
+
+    async function openCheckForUpdates(rendered: ReturnType<typeof renderApp>, expectedText: string): Promise<void> {
+        await waitFor(() => {
+            expect(rendered.getFrame()).toContain('Main Menu');
+        });
+        await pressKey(rendered, KEYS.up, '▶  ⭐ Like ccstatusline?');
+        await pressKey(rendered, KEYS.up, '▶  🚪 Exit');
+        await pressKey(rendered, KEYS.up, '▶  🧰 Manage Installation');
+        await pressKey(rendered, KEYS.enter, '▶  🔄 Check for Updates');
+        await pressKey(rendered, KEYS.enter, expectedText);
+    }
+
+    // Started through npx or bunx, the TUI can be a different version from the
+    // global package that Claude Code's `ccstatusline` command runs
+    it.each([
+        ['offers the update to a global install older than the latest release', '2.0.0', getPackageVersion(), 'An update is available.'],
+        ['reports a global install already at the latest release as up to date', '99.0.0', '99.0.0', 'ccstatusline is up to date.']
+    ])('on a self-managed global install, %s', async (_label, globalVersion, latestVersion, expectedResult) => {
+        vi.spyOn(claudeStatus, 'loadClaudeStatusLineState').mockResolvedValue({ existingStatusLine: 'ccstatusline', refreshInterval: null });
+        vi.spyOn(claudeSettings, 'isInstalled').mockResolvedValue(true);
+        stubNpmGlobalInstall(() => globalVersion);
+        stubLatestRelease(latestVersion);
+        const rendered = renderApp();
+
+        try {
+            await openCheckForUpdates(rendered, expectedResult);
+            expect(rendered.getFrame()).toContain(`Current: ${globalVersion}`);
+            expect(rendered.getFrame()).toContain(`Latest: ${latestVersion}`);
+            expect(rendered.getFrame()).toContain('Install: Self-managed/global install');
+            if (globalVersion === latestVersion) {
+                expect(rendered.getFrame()).not.toContain('Run npm install -g');
+            } else {
+                expect(rendered.getFrame()).toContain(`Run npm install -g ccstatusline@${latestVersion}`);
+            }
+        } finally {
+            rendered.cleanup();
+        }
+    });
+});
