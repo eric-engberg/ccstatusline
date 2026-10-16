@@ -7,7 +7,6 @@ export interface InputKeyLike {
 
 const CONTROL_CHAR_REGEX = /[\u0000-\u001F\u007F]/u;
 const LINE_BREAKS_REGEX = /[\r\n]+/u;
-const TAB_REGEX = /\t/gu;
 // How a copied code can start: #FF8800, 0xE0B4, U+E0B4
 const HEX_PREFIX_REGEX = /^(?:#|0x|u\+)/iu;
 const HEX_DIGITS_REGEX = /^[0-9a-f]+$/iu;
@@ -34,7 +33,7 @@ export function getInsertableText(input: string, key: InputKeyLike): string {
         .split(LINE_BREAKS_REGEX)
         .filter(line => line !== '')
         .join(' ')
-        .replace(TAB_REGEX, ' ');
+        .replaceAll('\t', ' ');
     return CONTROL_CHAR_REGEX.test(text) ? '' : text;
 }
 

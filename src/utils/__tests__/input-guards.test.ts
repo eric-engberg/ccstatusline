@@ -58,6 +58,7 @@ describe('getInsertableText', () => {
         expect(getInsertableText('line1\rline2', {})).toBe('line1 line2');
         expect(getInsertableText('line1\r\n\r\nline2', {})).toBe('line1 line2');
         expect(getInsertableText('echo\thi', {})).toBe('echo hi');
+        expect(getInsertableText('a\tb\t\tc', {})).toBe('a b  c');
     });
 
     it('inserts nothing for a lone line break or a paste with other control characters', () => {

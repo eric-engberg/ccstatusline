@@ -457,6 +457,75 @@ describe('GlobalOverridesMenu', () => {
         }
     });
 
+    // A value copied with its line ending arrives in the same input chunk
+    it.each([
+        {
+            field: 'padding',
+            shortcut: 'p',
+            paste: ' \n',
+            shown: 'Enter default padding (applied per the Padding Side setting): " "',
+            saved: { defaultPadding: ' ' }
+        },
+        {
+            field: 'separator',
+            shortcut: 's',
+            paste: ' | \r',
+            shown: 'Enter default separator (placed between widgets): " | "',
+            saved: { defaultSeparator: ' | ' }
+        }
+    ])('takes a pasted default $field', async ({ shortcut, paste, shown, saved }) => {
+        const stdin = createMockStdin();
+        const stdout = createMockStdout();
+        const stderr = createMockStdout();
+        const onUpdate = vi.fn();
+        const onBack = vi.fn();
+        const output = () => stripAnsi(stdout.getOutput());
+
+        const instance = render(
+            React.createElement(GlobalOverridesMenu, {
+                // No manual separators, so a new default separator saves without a confirmation
+                settings: { ...DEFAULT_SETTINGS, lines: [[]] },
+                onUpdate,
+                onBack
+            }),
+            {
+                stdin,
+                stdout,
+                stderr,
+                debug: true,
+                exitOnCtrlC: false,
+                patchConsole: false
+            }
+        );
+
+        try {
+            await waitFor(() => {
+                expect(output()).toContain('Minimalist Mode:');
+            });
+            stdin.write(shortcut);
+            await waitFor(() => {
+                expect(output()).toContain('Press Enter to save, ESC to cancel');
+            });
+
+            stdin.write(paste);
+            await waitFor(() => {
+                expect(output()).toContain(shown);
+            });
+            // The pasted line break doesn't save the value; Enter does
+            expect(onUpdate).not.toHaveBeenCalled();
+            stdin.write('\r');
+            await waitFor(() => {
+                expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining(saved));
+            });
+        } finally {
+            instance.unmount();
+            instance.cleanup();
+            stdin.destroy();
+            stdout.destroy();
+            stderr.destroy();
+        }
+    });
+
     it('clears the foreground override when (x) is pressed', async () => {
         const stdin = createMockStdin();
         const stdout = createMockStdout();
