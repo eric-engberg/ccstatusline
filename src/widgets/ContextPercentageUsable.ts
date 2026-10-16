@@ -9,7 +9,7 @@ import { ContextPercentageWidgetBase } from './shared/context-percentage-widget-
 
 export class ContextPercentageUsableWidget extends ContextPercentageWidgetBase {
     protected readonly labelPrefix = 'Ctx(u)';
-    protected readonly previewUsedPercent = 11.6;
+    protected readonly previewUsedPercent = 90;
 
     getDefaultColor(): string { return 'green'; }
     getDescription(): string { return 'Shows percentage of usable context window used or remaining (80% of max before auto-compact)'; }
