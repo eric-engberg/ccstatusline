@@ -59,7 +59,7 @@ function createMockStdout(): CapturedWriteStream {
     });
 }
 
-function renderColorMenu(widgets: WidgetItem[]) {
+function renderColorMenu(widgets: WidgetItem[], props: Pick<ColorMenuProps, 'showsBackgrounds'> = {}) {
     const stdin = createMockStdin();
     const stdout = createMockStdout();
     const stderr = createMockStdout();
@@ -69,6 +69,7 @@ function renderColorMenu(widgets: WidgetItem[]) {
         React.createElement(ColorMenu, {
             widgets,
             settings: DEFAULT_SETTINGS,
+            ...props,
             onUpdate,
             onBack
         }),
@@ -233,6 +234,46 @@ describe('ColorMenu', () => {
                 expect(menu.onUpdate).toHaveBeenCalled();
             });
             expect(menu.onUpdate.mock.calls[0]?.[0]?.[0]).toMatchObject({ id: '1', bold: true });
+        } finally {
+            menu.cleanup();
+        }
+    });
+
+    // A line set to plain while Powerline is on hides its widgets' backgrounds,
+    // which show again once the line is Powerline
+    it('keeps the backgrounds a plain line does not show when styling is reset or cleared', async () => {
+        const widgets: WidgetItem[] = [
+            { id: '1', type: 'model', color: 'red', backgroundColor: 'bgBlue', bold: true },
+            { id: '2', type: 'version', color: 'green', backgroundColor: 'bgMagenta' }
+        ];
+        const menu = renderColorMenu(widgets, { showsBackgrounds: false });
+
+        try {
+            await waitFor(() => {
+                expect(menu.latestFrame()).toContain('▶  1: Model');
+            });
+
+            menu.stdin.write('r');
+            await waitFor(() => {
+                expect(menu.onUpdate).toHaveBeenCalledTimes(1);
+            });
+            expect(menu.onUpdate.mock.calls[0]?.[0]).toEqual([
+                { id: '1', type: 'model', backgroundColor: 'bgBlue' },
+                widgets[1]
+            ]);
+
+            menu.stdin.write('c');
+            await waitFor(() => {
+                expect(menu.latestFrame()).toContain('Confirm Clear All Colors');
+            });
+            menu.stdin.write('\r');
+            await waitFor(() => {
+                expect(menu.onUpdate).toHaveBeenCalledTimes(2);
+            });
+            expect(menu.onUpdate.mock.calls[1]?.[0]).toEqual([
+                { id: '1', type: 'model', backgroundColor: 'bgBlue' },
+                { id: '2', type: 'version', backgroundColor: 'bgMagenta' }
+            ]);
         } finally {
             menu.cleanup();
         }

@@ -78,6 +78,7 @@ import {
     drawsWidgetBackgrounds,
     getLineSettings
 } from '../utils/powerline-lines';
+import { buildLinesUpdateSettings } from '../utils/powerline-settings';
 import { getPackageVersion } from '../utils/terminal';
 import {
     checkForUpdates,
@@ -1206,7 +1207,7 @@ export const App: React.FC = () => {
 
     // Lines and their Powerline modes change together: they move and are deleted together
     const updateLines = (newLines: WidgetItem[][], lineEnabled: (boolean | null)[] | undefined) => {
-        setSettings({ ...settings, lines: newLines, powerline: { ...settings.powerline, lineEnabled } });
+        setSettings(buildLinesUpdateSettings(settings, newLines, lineEnabled));
     };
 
     const handleLineSelect = (lineIndex: number) => {

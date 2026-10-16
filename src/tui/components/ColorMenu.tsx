@@ -309,10 +309,11 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
             }
         } else if (shortcut === 'r' || shortcut === 'R') {
             if (highlightedItemId && highlightedItemId !== 'back') {
-                // Reset all styling (color, background, and bold) for the highlighted item
+                // Reset the highlighted item's styling: color, bold, dim, and the
+                // background where the line shows it
                 const selectedWidget = colorableWidgets.find(widget => widget.id === highlightedItemId);
                 if (selectedWidget) {
-                    const newItems = resetWidgetStyling(widgets, selectedWidget.id);
+                    const newItems = resetWidgetStyling(widgets, selectedWidget.id, !showsBackgrounds);
                     onUpdate(newItems);
                 }
             }
@@ -558,7 +559,7 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
                     <ConfirmDialog
                         inline={true}
                         onConfirm={() => {
-                            const newItems = clearAllWidgetStyling(widgets);
+                            const newItems = clearAllWidgetStyling(widgets, !showsBackgrounds);
                             onUpdate(newItems);
                             setShowClearConfirm(false);
                         }}

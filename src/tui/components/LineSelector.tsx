@@ -134,6 +134,16 @@ const LineSelector: React.FC<LineSelectorProps> = ({
     const themeManagesPowerlineLines = blockIfPowerlineActive && powerlineTheme !== '' && powerlineTheme !== 'custom';
     const isThemeManaged = themeManagesPowerlineLines && localLines.every((_, index) => isLinePowerline(index));
     const showsLineModes = allowEditing && localLines.some((_, index) => isLinePowerline(index));
+    // Turning Powerline mode off frees a Powerline line that follows it, but not
+    // one (p) set to Powerline itself. The warning offers it only where it frees
+    // the line picked, or with every line Powerline, any line
+    const freedByPowerlineOff = (index: number) => settings.powerline.enabled && localLineEnabled?.[index] !== true;
+    const powerlineOffFrees = isThemeManaged
+        ? localLines.some((_, index) => freedByPowerlineOff(index))
+        : freedByPowerlineOff(selectedIndex);
+    const plainLineAdvice = isThemeManaged
+        ? 'Set lines to plain with (p) in Edit Lines'
+        : 'Set this line to plain with (p) in Edit Lines';
 
     // Handle keyboard input
     useInput((input, key) => {
@@ -214,7 +224,9 @@ const LineSelector: React.FC<LineSelectorProps> = ({
                 </Box>
                 <Box marginLeft={2}>
                     <Text dimColor>
-                        • Disable Powerline mode in Powerline Configuration
+                        •
+                        {' '}
+                        {powerlineOffFrees ? 'Disable Powerline mode in Powerline Configuration' : plainLineAdvice}
                     </Text>
                 </Box>
                 <Box marginTop={2}>
