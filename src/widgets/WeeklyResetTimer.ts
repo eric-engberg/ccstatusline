@@ -23,7 +23,8 @@ import { makeModifierText } from './shared/editor-display';
 import {
     CYCLE_GRADIENT_ACTION,
     cycleGradientPreset,
-    getGradientModifier
+    getGradientModifier,
+    paintsBarGradient
 } from './shared/gradient-bar';
 import { isHidden } from './shared/hideable';
 import {
@@ -56,6 +57,7 @@ import {
     isUsageProgressMode,
     isUsageSliderMode,
     isUsageWeekdayEnabled,
+    showsUsageBar,
     toggleUsageCompact,
     toggleUsageDateMode,
     toggleUsageHourFormat,
@@ -279,6 +281,11 @@ export class WeeklyResetTimerWidget implements Widget {
         }
 
         return null;
+    }
+
+    // A gradient preset paints only the bar, so the renderer colors the rest
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
+        return paintsBarGradient(item, showsUsageBar(item));
     }
 
     supportsRawValue(): boolean { return true; }

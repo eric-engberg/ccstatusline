@@ -38,7 +38,8 @@ import {
     cycleGradientPreset,
     getGradientKeybinds,
     getGradientModifier,
-    paintWidgetBar
+    paintWidgetBar,
+    paintsBarGradient
 } from './shared/gradient-bar';
 import { makeSliderBar } from './shared/usage-display';
 import {
@@ -167,10 +168,11 @@ export class ContextBarWidget implements Widget {
         });
     }
 
-    // Value colors paint only the bar and its numbers (or the whole text), so
-    // the renderer colors the rest with the theme or widget color
+    // Value colors paint only the bar and its numbers (or the whole text), and
+    // a gradient preset only the bar, so the renderer colors the rest with the
+    // theme or widget color
     colorsOnlyItsRuns(item: WidgetItem): boolean {
-        return isValueColorsEnabled(item);
+        return isValueColorsEnabled(item) || paintsBarGradient(item, true);
     }
 
     supportsRawValue(): boolean { return true; }

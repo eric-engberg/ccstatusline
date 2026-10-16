@@ -20,6 +20,10 @@ import { describeValueColorsOnTheLine } from './helpers/value-colors-line';
 const LOW = '\x1b[38;2;0;255;0m';
 const MID = '\x1b[38;2;255;255;0m';
 const HIGH = '\x1b[38;2;255;0;0m';
+// At the default 256 Color level these hex colors map to palette entries
+const LOW_256 = '\x1b[38;5;46m';
+const MID_256 = '\x1b[38;5;226m';
+const HIGH_256 = '\x1b[38;5;196m';
 const FG_RESET = '\x1b[39m';
 // Custom colors, so the escape codes don't depend on the terminal's color support
 const colored = (type: string): WidgetItem => ({
@@ -54,8 +58,8 @@ describe.each(['free-memory', 'extra-usage-remaining', 'cache-hit-rate'])('%s va
 it('colors Memory Usage by how much memory is used', () => {
     const widget = getWidget('free-memory');
 
-    expect(widget?.render(colored('free-memory'), { isPreview: true }, DEFAULT_SETTINGS)).toBe(`${MID}12.4G/16.0G${FG_RESET}`);
-    expect(widget?.render({ ...colored('free-memory'), rawValue: false }, { isPreview: true }, DEFAULT_SETTINGS)).toBe(`Mem: ${MID}12.4G/16.0G${FG_RESET}`);
+    expect(widget?.render(colored('free-memory'), { isPreview: true }, DEFAULT_SETTINGS)).toBe(`${MID_256}12.4G/16.0G${FG_RESET}`);
+    expect(widget?.render({ ...colored('free-memory'), rawValue: false }, { isPreview: true }, DEFAULT_SETTINGS)).toBe(`Mem: ${MID_256}12.4G/16.0G${FG_RESET}`);
 });
 
 // Unlabeled and uncolored, with the band colors on
@@ -79,9 +83,9 @@ describe('extra-usage-remaining value colors', () => {
     const render = (context: RenderContext) => widget?.render(colored('extra-usage-remaining'), context, DEFAULT_SETTINGS);
 
     it('colors what\'s left by the share of the limit used', () => {
-        expect(render(spent(10000))).toBe(`${LOW}$400.00${FG_RESET}`);
-        expect(render(spent(35000))).toBe(`${MID}$150.00${FG_RESET}`);
-        expect(render(spent(45000))).toBe(`${HIGH}$50.00${FG_RESET}`);
+        expect(render(spent(10000))).toBe(`${LOW_256}$400.00${FG_RESET}`);
+        expect(render(spent(35000))).toBe(`${MID_256}$150.00${FG_RESET}`);
+        expect(render(spent(45000))).toBe(`${HIGH_256}$50.00${FG_RESET}`);
     });
 
     it('leaves what\'s left to the renderer with a zero limit', () => {
@@ -93,10 +97,10 @@ describe('extra-usage-remaining value colors', () => {
         const whole = { ...colored('extra-usage-remaining'), rawValue: false, metadata: { ...colored('extra-usage-remaining').metadata, valueColorScope: 'widget' } };
 
         // $150.00 left is 70% used, yellow
-        expect(widget?.render(whole, spent(35000), DEFAULT_SETTINGS)).toBe(`${MID}Overage Left: $150.00${FG_RESET}`);
+        expect(widget?.render(whole, spent(35000), DEFAULT_SETTINGS)).toBe(`${MID_256}Overage Left: $150.00${FG_RESET}`);
         for (const [item, sample, coloredValue] of [
-            [colored('extra-usage-remaining'), 'Sample: 65% 30% 10% 0% of the limit left', `${MID}30%`],
-            [whole, 'Sample: Overage Left: 65%  Overage Left: 30%  Overage Left: 10%  Overage Left: 0% of the limit left', `${MID}Overage Left: 30%`]
+            [colored('extra-usage-remaining'), 'Sample: 65% 30% 10% 0% of the limit left', `${MID_256}30%`],
+            [whole, 'Sample: Overage Left: 65%  Overage Left: 30%  Overage Left: 10%  Overage Left: 0% of the limit left', `${MID_256}Overage Left: 30%`]
         ] as const) {
             const editor = renderWidgetEditor(
                 (props: WidgetEditorProps) => widget?.renderEditor?.({ ...props, action: 'edit-value-colors' }) ?? React.createElement(React.Fragment),
@@ -137,9 +141,9 @@ describe('cache-hit-rate value colors', () => {
     const render = (context: RenderContext) => widget?.render(colored('cache-hit-rate'), context, DEFAULT_SETTINGS);
 
     it('colors the hit rate red below 50%, yellow below 80% and green from 80%', () => {
-        expect(render(cache(4900, 5100))).toBe(`${LOW}49.0%${FG_RESET}`);
-        expect(render(cache(5000, 5000))).toBe(`${MID}50.0%${FG_RESET}`);
-        expect(render(cache(8000, 2000))).toBe(`${HIGH}80.0%${FG_RESET}`);
+        expect(render(cache(4900, 5100))).toBe(`${LOW_256}49.0%${FG_RESET}`);
+        expect(render(cache(5000, 5000))).toBe(`${MID_256}50.0%${FG_RESET}`);
+        expect(render(cache(8000, 2000))).toBe(`${HIGH_256}80.0%${FG_RESET}`);
     });
 
     // No cache data, and a request with no cache reads or writes

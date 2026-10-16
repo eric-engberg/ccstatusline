@@ -273,8 +273,11 @@ export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike & { g
 
     describe('value colors', () => {
         const LOW = '\x1b[38;2;0;255;0m';
-        const MID = '\x1b[38;2;255;255;0m';
         const HIGH = '\x1b[38;2;255;0;0m';
+        // At the default 256 Color level these hex colors map to palette entries
+        const LOW_256 = '\x1b[38;5;46m';
+        const MID_256 = '\x1b[38;5;226m';
+        const HIGH_256 = '\x1b[38;5;196m';
         const FG_RESET = '\x1b[39m';
         // Custom colors, so the escape codes don't depend on the terminal's color support
         const colored: WidgetItem = {
@@ -293,20 +296,20 @@ export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike & { g
         it('colors the percent green below 70% used, yellow below 90% and red from 90%', () => {
             const widget = config.createWidget();
 
-            expect(config.render(widget, colored, used(69.9))).toBe(`${LOW}69.9%${FG_RESET}`);
-            expect(config.render(widget, colored, used(70))).toBe(`${MID}70.0%${FG_RESET}`);
-            expect(config.render(widget, colored, used(89.9))).toBe(`${MID}89.9%${FG_RESET}`);
-            expect(config.render(widget, colored, used(90))).toBe(`${HIGH}90.0%${FG_RESET}`);
+            expect(config.render(widget, colored, used(69.9))).toBe(`${LOW_256}69.9%${FG_RESET}`);
+            expect(config.render(widget, colored, used(70))).toBe(`${MID_256}70.0%${FG_RESET}`);
+            expect(config.render(widget, colored, used(89.9))).toBe(`${MID_256}89.9%${FG_RESET}`);
+            expect(config.render(widget, colored, used(90))).toBe(`${HIGH_256}90.0%${FG_RESET}`);
         });
 
         it('colors by the used percent while showing what\'s left, and paints only the percent', () => {
             const widget = config.createWidget();
             const remaining = { ...colored, metadata: { ...colored.metadata, invert: 'true' } };
 
-            expect(config.render(widget, remaining, used(95))).toBe(`${HIGH}5.0%${FG_RESET}`);
+            expect(config.render(widget, remaining, used(95))).toBe(`${HIGH_256}5.0%${FG_RESET}`);
             const labeled = config.render(widget, { ...colored, rawValue: false }, used(25)) ?? '';
-            const label = labeled.slice(0, labeled.indexOf(LOW));
-            expect(labeled.endsWith(`${LOW}25.0%${FG_RESET}`)).toBe(true);
+            const label = labeled.slice(0, labeled.indexOf(LOW_256));
+            expect(labeled.endsWith(`${LOW_256}25.0%${FG_RESET}`)).toBe(true);
             expect(label.endsWith(': ')).toBe(true);
             expect(label).not.toContain('\x1b');
         });
@@ -319,8 +322,8 @@ export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike & { g
             const whole = { ...remaining, metadata: { ...remaining.metadata, valueColorScope: 'widget' } };
 
             for (const [item, sample, coloredValue] of [
-                [remaining, 'Sample: 65% 30% 10% 0% left', `${MID}30%`],
-                [whole, `Sample: ${label}65%  ${label}30%  ${label}10%  ${label}0% left`, `${MID}${label}30%`]
+                [remaining, 'Sample: 65% 30% 10% 0% left', `${MID_256}30%`],
+                [whole, `Sample: ${label}65%  ${label}30%  ${label}10%  ${label}0% left`, `${MID_256}${label}30%`]
             ] as const) {
                 const editor = renderWidgetEditor(props => widget.renderEditor?.({ ...props, action: 'edit-value-colors' }) as React.ReactElement, item);
                 try {
@@ -339,9 +342,9 @@ export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike & { g
             const whole = { ...colored, rawValue: false, metadata: { ...colored.metadata, valueColorScope: 'widget' } };
             const output = config.render(widget, whole, used(95)) ?? '';
 
-            expect(output.startsWith(HIGH)).toBe(true);
+            expect(output.startsWith(HIGH_256)).toBe(true);
             expect(output.endsWith(`95.0%${FG_RESET}`)).toBe(true);
-            expect(output.slice(HIGH.length, -FG_RESET.length)).not.toContain('\x1b');
+            expect(output.slice(HIGH_256.length, -FG_RESET.length)).not.toContain('\x1b');
         });
 
         // A bar takes one color for its level, the percent after it too
@@ -350,10 +353,10 @@ export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike & { g
             const bar = { ...colored, metadata: { ...colored.metadata, display } };
             const high = config.render(widget, bar, used(95)) ?? '';
 
-            expect(high.startsWith(HIGH)).toBe(true);
+            expect(high.startsWith(HIGH_256)).toBe(true);
             expect(high.endsWith(` 95.0%${FG_RESET}`)).toBe(true);
-            expect(high.slice(HIGH.length, -FG_RESET.length)).not.toContain('\x1b');
-            expect(config.render(widget, bar, used(25))?.startsWith(LOW)).toBe(true);
+            expect(high.slice(HIGH_256.length, -FG_RESET.length)).not.toContain('\x1b');
+            expect(config.render(widget, bar, used(25))?.startsWith(LOW_256)).toBe(true);
             expect(widget.getCustomKeybinds(bar).map(keybind => keybind.key)).toContain('v');
             expect(widget.colorsOnlyItsRuns?.(bar)).toBe(true);
             expect(widget.getEditorDisplay(bar).modifierText).toContain('value colors');

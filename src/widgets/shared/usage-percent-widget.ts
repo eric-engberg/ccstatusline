@@ -30,7 +30,8 @@ import type { UsageWindowMetrics } from '../../utils/usage-types';
 
 import {
     CYCLE_GRADIENT_ACTION,
-    cycleGradientPreset
+    cycleGradientPreset,
+    paintsBarGradient
 } from './gradient-bar';
 import { isHidden } from './hideable';
 import {
@@ -47,6 +48,7 @@ import {
     getUsagePercentCustomKeybinds,
     isUsageCursorEnabled,
     isUsageInverted,
+    showsUsageBar,
     toggleUsageCursor,
     toggleUsageInverted
 } from './usage-display';
@@ -309,10 +311,11 @@ export class UsagePercentWidget implements Widget {
         });
     }
 
-    // Value colors paint only the value or bar (or the whole text), so the
-    // renderer colors the rest with the theme or widget color
+    // Value colors paint only the value or bar (or the whole text), and a gradient
+    // preset only the bar, so the renderer colors the rest with the theme
+    // or widget color
     colorsOnlyItsRuns(item: WidgetItem): boolean {
-        return isValueColorsEnabled(item) && !isLevelGlyphMode(item);
+        return (isValueColorsEnabled(item) && !isLevelGlyphMode(item)) || paintsBarGradient(item, showsUsageBar(item));
     }
 
     supportsRawValue(): boolean { return true; }

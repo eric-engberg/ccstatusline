@@ -20,7 +20,8 @@ import {
 
 import {
     CYCLE_GRADIENT_ACTION,
-    cycleGradientPreset
+    cycleGradientPreset,
+    paintsBarGradient
 } from './shared/gradient-bar';
 import { isHidden } from './shared/hideable';
 import {
@@ -47,6 +48,7 @@ import {
     isUsageInverted,
     isUsageProgressMode,
     isUsageSliderMode,
+    showsUsageBar,
     toggleUsageCompact,
     toggleUsageDateMode,
     toggleUsageHourFormat,
@@ -188,6 +190,11 @@ export class BlockResetTimerWidget implements Widget {
         }
 
         return null;
+    }
+
+    // A gradient preset paints only the bar, so the renderer colors the rest
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
+        return paintsBarGradient(item, showsUsageBar(item));
     }
 
     supportsRawValue(): boolean { return true; }

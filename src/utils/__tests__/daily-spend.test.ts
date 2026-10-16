@@ -150,6 +150,68 @@ describe('observeExtraUsageSpend', () => {
         });
     });
 
+    // A record is kept under the login's token fingerprint until the profile
+    // lookup names its account, and builds before that lookup only ever kept
+    // it there. The token fingerprint changes with every token refresh, so
+    // once the account is known, the record moves over to it.
+    it('carries a record over from the login\'s token fingerprint to its account, once', () => {
+        const deps = makeDeps({
+            version: 1,
+            spend: {
+                'refresh-a': seen('2026-10-05', 10000, 11500, Date.parse('2026-10-05T13:00:00Z')),
+                'personal': seen('2026-10-05', 300, 300)
+            }
+        });
+
+        expect(observeExtraUsageSpend('account:work', 13500, NOW, deps, ['refresh-b', 'refresh-a'])).toBe(3500);
+        expect(readDailyState(deps).spend).toEqual({
+            'account:work': seen('2026-10-05', 10000, 13500, NOW),
+            'personal': seen('2026-10-05', 300, 300)
+        });
+
+        const writes = deps.writes;
+        expect(observeExtraUsageSpend('account:work', 13500, NOW, deps, ['refresh-b', 'refresh-a'])).toBe(3500);
+        expect(deps.writes).toBe(writes);
+    });
+
+    it('starts today from the last total a fingerprint record saw yesterday', () => {
+        const deps = makeDeps({ version: 1, spend: { 'refresh-a': seen('2026-10-04', 5000, 9000) } });
+
+        expect(observeExtraUsageSpend('account:work', 12345, NOW, deps, ['refresh-a'])).toBe(3345);
+    });
+
+    // A render that couldn't look up the account (the lookup failed, or
+    // another render's was in flight) started a record of its own under the
+    // new fingerprint; the account's record keeps the day's starting point.
+    it('keeps the account\'s starting point over a fingerprint record started later', () => {
+        const deps = makeDeps({
+            version: 1,
+            spend: {
+                'account:work': seen('2026-10-05', 10000, 11500, Date.parse('2026-10-05T13:00:00Z')),
+                'refresh-b': seen('2026-10-05', 13500, 13500, Date.parse('2026-10-05T14:00:00Z'))
+            }
+        });
+
+        expect(observeExtraUsageSpend('account:work', 14500, NOW, deps, ['refresh-b'])).toBe(4500);
+        expect(readDailyState(deps).spend).toEqual({ 'account:work': seen('2026-10-05', 10000, 14500, NOW) });
+    });
+
+    // A fingerprint record seen while the clock ran ahead is dropped, as it
+    // would be under its own key; carried over, it would take the account's
+    // starting point down with it.
+    it('drops a fingerprint record from a clock that ran ahead, keeping the account\'s starting point', () => {
+        const deps = makeDeps({
+            version: 1,
+            spend: {
+                'account:work': seen('2026-10-05', 10000, 11500, Date.parse('2026-10-05T13:00:00Z')),
+                'refresh-b': seen('2026-10-05', 12000, 12000, NOW + 60 * 60 * 1000)
+            }
+        });
+
+        expect(observeExtraUsageSpend('account:work', 13500, NOW, deps, ['refresh-b'])).toBe(3500);
+        expect(readDailyState(deps).spend).toEqual({ 'account:work': seen('2026-10-05', 10000, 13500, NOW) });
+    });
+
     it('writes nothing when the same fetch is observed again', () => {
         const deps = makeDeps({ version: 1, spend: { work: seen('2026-10-05', 9000, 12345, NOW) } });
 

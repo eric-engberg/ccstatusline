@@ -17,8 +17,10 @@ import { ContextWindowWidget } from '../ContextWindow';
 
 import { describeValueColorsOnTheLine } from './helpers/value-colors-line';
 
-const LOW = '\x1b[38;2;0;255;0m';
 const HIGH = '\x1b[38;2;255;0;0m';
+// At the default 256 Color level these hex colors map to palette entries
+const LOW_256 = '\x1b[38;5;46m';
+const HIGH_256 = '\x1b[38;5;196m';
 const FG_RESET = '\x1b[39m';
 const BAND_COLORS = {
     'valueColors': 'true',
@@ -230,9 +232,9 @@ describe('ContextBarWidget', () => {
             const widget = new ContextBarWidget();
             const quarter: RenderContext = { data: { context_window: { context_window_size: 200000, current_usage: { input_tokens: 50000, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } } };
 
-            expect(widget.render(colored, preview, DEFAULT_SETTINGS)).toBe(`${HIGH}[bar:90.0:16] 180k/200k (90%)${FG_RESET}`);
-            expect(widget.render(colored, quarter, DEFAULT_SETTINGS)).toBe(`${LOW}[bar:25.0:16] 50k/200k (25%)${FG_RESET}`);
-            expect(widget.render({ ...colored, rawValue: false }, preview, DEFAULT_SETTINGS)).toBe(`Context: ${HIGH}[bar:90.0:16] 180k/200k (90%)${FG_RESET}`);
+            expect(widget.render(colored, preview, DEFAULT_SETTINGS)).toBe(`${HIGH_256}[bar:90.0:16] 180k/200k (90%)${FG_RESET}`);
+            expect(widget.render(colored, quarter, DEFAULT_SETTINGS)).toBe(`${LOW_256}[bar:25.0:16] 50k/200k (25%)${FG_RESET}`);
+            expect(widget.render({ ...colored, rawValue: false }, preview, DEFAULT_SETTINGS)).toBe(`Context: ${HIGH_256}[bar:90.0:16] 180k/200k (90%)${FG_RESET}`);
             expect(widget.render({ id: 'bar', type: 'context-bar', rawValue: true }, preview, DEFAULT_SETTINGS)).toBe('[bar:90.0:16] 180k/200k (90%)');
         });
 

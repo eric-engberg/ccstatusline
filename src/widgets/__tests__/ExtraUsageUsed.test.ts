@@ -153,8 +153,10 @@ describe('ExtraUsageUsedWidget', () => {
 
     describe('value colors', () => {
         const LOW = '\x1b[38;2;0;255;0m';
-        const MID = '\x1b[38;2;255;255;0m';
-        const HIGH = '\x1b[38;2;255;0;0m';
+        // At the default 256 Color level these hex colors map to palette entries
+        const LOW_256 = '\x1b[38;5;46m';
+        const MID_256 = '\x1b[38;5;226m';
+        const HIGH_256 = '\x1b[38;5;196m';
         const FG_RESET = '\x1b[39m';
         const widget = new ExtraUsageUsedWidget();
         const item: WidgetItem = { id: 'extra', type: 'extra-usage-used' };
@@ -179,14 +181,14 @@ describe('ExtraUsageUsedWidget', () => {
         }
 
         it('colors the spend green below 70% of the limit, yellow below 90% and red from 90%', () => {
-            expect(render(widget, colored, used(34999))).toBe(`${LOW}$349.99${FG_RESET}`);
-            expect(render(widget, colored, used(35000))).toBe(`${MID}$350.00${FG_RESET}`);
-            expect(render(widget, colored, used(44999))).toBe(`${MID}$449.99${FG_RESET}`);
-            expect(render(widget, colored, used(45000))).toBe(`${HIGH}$450.00${FG_RESET}`);
+            expect(render(widget, colored, used(34999))).toBe(`${LOW_256}$349.99${FG_RESET}`);
+            expect(render(widget, colored, used(35000))).toBe(`${MID_256}$350.00${FG_RESET}`);
+            expect(render(widget, colored, used(44999))).toBe(`${MID_256}$449.99${FG_RESET}`);
+            expect(render(widget, colored, used(45000))).toBe(`${HIGH_256}$450.00${FG_RESET}`);
         });
 
         it('colors only the spend, leaving the label to the renderer', () => {
-            expect(render(widget, { ...colored, rawValue: false }, used(10000))).toBe(`Overage Used: ${LOW}$100.00${FG_RESET}`);
+            expect(render(widget, { ...colored, rawValue: false }, used(10000))).toBe(`Overage Used: ${LOW_256}$100.00${FG_RESET}`);
         });
 
         it('leaves the spend to the renderer without a monthly limit', () => {
@@ -211,7 +213,7 @@ describe('ExtraUsageUsedWidget', () => {
 
         // The sample is $106.00 of Remaining's $3,894.00 sample plus it
         it('previews its sample in its color', () => {
-            expect(render(widget, { ...colored, rawValue: false }, { isPreview: true })).toBe(`Overage Used: ${LOW}$106.00${FG_RESET}`);
+            expect(render(widget, { ...colored, rawValue: false }, { isPreview: true })).toBe(`Overage Used: ${LOW_256}$106.00${FG_RESET}`);
         });
 
         it('offers value colors, names them on the editor row and colors around their runs', () => {

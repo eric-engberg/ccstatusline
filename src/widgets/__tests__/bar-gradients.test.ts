@@ -11,6 +11,11 @@ import {
     type Settings
 } from '../../types/Settings';
 import type { WidgetItem } from '../../types/Widget';
+import {
+    calculateMaxWidthsFromPreRendered,
+    preRenderAllWidgets,
+    renderStatusLine
+} from '../../utils/renderer';
 import { getWidget } from '../../utils/widgets';
 
 const truecolor: Settings = { ...DEFAULT_SETTINGS, colorLevel: 3 };
@@ -18,6 +23,9 @@ const color256: Settings = { ...DEFAULT_SETTINGS, colorLevel: 2 };
 const preview: RenderContext = { isPreview: true };
 const TRAFFIC_CALM = '\x1b[38;2;0;200;80m';
 const TRAFFIC_URGENT = '\x1b[38;2;220;40;20m';
+const DEFAULT_FOREGROUND = '\x1b[39m';
+// gradient:atlas starts at #feac5e
+const ATLAS_START = '\x1b[38;2;254;172;94m';
 
 interface BarWidgetCase {
     type: string;
@@ -47,6 +55,19 @@ function firstColor(text: string | null): string | undefined {
     return /\x1b\[38;2;[0-9;]+m/.exec(text ?? '')?.[0];
 }
 
+// The painted bar, from its first color code to the code that ends its last run
+function paintedBar(text: string | null): string {
+    const value = text ?? '';
+    const end = value.lastIndexOf(DEFAULT_FOREGROUND);
+    return value.slice(value.indexOf('\x1b[38;2;'), end + DEFAULT_FOREGROUND.length);
+}
+
+function renderLine(item: WidgetItem, settings: Settings): string {
+    const preRenderedLines = preRenderAllWidgets([[item]], settings, preview);
+    const maxWidths = calculateMaxWidthsFromPreRendered(preRenderedLines, settings);
+    return renderStatusLine([item], settings, preview, preRenderedLines[0] ?? [], maxWidths);
+}
+
 describe.each(cases)('$type bar gradient', ({ type, bar, inverted }) => {
     const widget = getWidget(type);
     if (!widget) {
@@ -60,6 +81,16 @@ describe.each(cases)('$type bar gradient', ({ type, bar, inverted }) => {
         const painted = render(withGradient, truecolor);
         expect(firstColor(painted)).toBe(TRAFFIC_CALM);
         expect(stripAnsi(painted ?? '')).toBe(stripAnsi(render(plain, truecolor) ?? ''));
+    });
+
+    it('keeps its colors under a gradient widget color in plain mode', () => {
+        const swept: WidgetItem = { ...withGradient, color: 'gradient:atlas' };
+        const bar = paintedBar(render(swept, truecolor));
+        const line = renderLine(swept, truecolor);
+        expect(bar).toContain(TRAFFIC_CALM);
+        expect(line).toContain(bar);
+        // The widget color still sweeps the label in front of the bar
+        expect(line.startsWith(ATLAS_START)).toBe(true);
     });
 
     it('stays plain below truecolor', () => {

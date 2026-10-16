@@ -91,8 +91,10 @@ describe('ModelWidget', () => {
     });
 
     describe('family colors', () => {
-        const ORANGE = '\x1b[38;2;255;136;0m';
-        const BLUE = '\x1b[38;2;0;0;255m';
+        // At the default 256 Color level, hex colors map to the nearest
+        // palette entry: #ff8800 is 208 and #0000ff is 21
+        const ORANGE = '\x1b[38;5;208m';
+        const BLUE = '\x1b[38;5;21m';
         const FG_RESET = '\x1b[39m';
         // Custom colors, so the escape codes don't depend on the terminal's
         // color support (named colors go through chalk)
@@ -170,11 +172,13 @@ describe('ModelWidget', () => {
             colorLevel: 2,
             powerline: { ...DEFAULT_SETTINGS.powerline, enabled: true, theme: 'nord' }
         };
-        // nord's first segment at 256 colors: text 16 on background 73
+        // nord's first segment at 256 colors: text 16 on background 73, with
+        // the family's #ff8800 as palette entry 208
         const themeText = '\x1b[38;5;16m';
+        const ORANGE_256 = '\x1b[38;5;208m';
 
         it('draws the label in the Powerline theme\'s text color', () => {
-            expect(renderLine(familyColored, nord)).toBe(`${themeText}\x1b[48;5;73mModel: ${ORANGE}Opus 4.6${themeText}\x1b[49m${FG_RESET}`);
+            expect(renderLine(familyColored, nord)).toBe(`${themeText}\x1b[48;5;73mModel: ${ORANGE_256}Opus 4.6${themeText}\x1b[49m${FG_RESET}`);
         });
 
         it('draws a model of no known family in the Powerline theme\'s text color', () => {

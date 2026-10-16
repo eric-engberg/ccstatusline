@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as path from 'path';
 import {
     afterEach,
     describe,
@@ -27,14 +28,18 @@ const LOCK_PATH = `${STATE_PATH}.lock`;
 // Monday 5 October 2026, 15:00 UTC.
 const NOW = Date.parse('2026-10-05T15:00:00Z');
 
-function makeDeps(initial: string | null, now = NOW): DailyStateDeps & { files: Map<string, string> } {
+function makeDeps(initial: string | null, now = NOW): DailyStateDeps & { files: Map<string, string>; mtimes: Map<string, number> } {
     const files = new Map<string, string>();
+    // Modification times of files written before the test; anything the
+    // update writes is dated now.
+    const mtimes = new Map<string, number>();
     if (initial !== null) {
         files.set(STATE_PATH, initial);
     }
 
     return {
         files,
+        mtimes,
         statePath: STATE_PATH,
         now: () => now,
         mkdirSync: () => undefined,
@@ -45,7 +50,10 @@ function makeDeps(initial: string | null, now = NOW): DailyStateDeps & { files: 
             }
             return content;
         },
-        writeFileSync: (p: string, data: string) => { files.set(p, data); },
+        writeFileSync: (p: string, data: string) => {
+            files.set(p, data);
+            mtimes.set(p, now);
+        },
         renameSync: (from: string, to: string) => {
             const data = files.get(from);
             if (data === undefined) {
@@ -53,6 +61,21 @@ function makeDeps(initial: string | null, now = NOW): DailyStateDeps & { files: 
             }
             files.set(to, data);
             files.delete(from);
+        },
+        unlinkSync: (p: string) => {
+            if (!files.delete(p)) {
+                throw new Error('ENOENT');
+            }
+        },
+        readdirSync: (dir: string) => [...files.keys()]
+            .filter(p => path.dirname(p) === dir)
+            .map(p => path.basename(p)),
+        statSync: (p: string) => {
+            const mtimeMs = mtimes.get(p);
+            if (!files.has(p) || mtimeMs === undefined) {
+                throw new Error('ENOENT');
+            }
+            return { mtimeMs };
         }
     };
 }
@@ -62,6 +85,8 @@ function sessionRecord(lastSeenDay: string): SessionDayRecord {
         lastSeenDay,
         lastSeenAt: Date.parse(`${lastSeenDay}T12:00:00Z`),
         startedAt: Date.parse(`${lastSeenDay}T10:00:00Z`),
+        firstSeenAt: Date.parse(`${lastSeenDay}T10:00:00Z`),
+        dayFirstSeenAt: Date.parse(`${lastSeenDay}T10:00:00Z`),
         cost: 2.5,
         apiMs: 600_000,
         dayStartCost: 0,
@@ -116,6 +141,63 @@ describe('daily state file', () => {
         expect(ran).toBe(true);
         expect([...deps.files.keys()]).toEqual([STATE_PATH]);
         expect(readDailyState(deps)).toEqual({ version: 1, spend: { acct: record('2026-10-05', 12345) }, sessions: {} });
+    });
+
+    it('removes the temp file when the rename fails, keeping the old state', () => {
+        const deps = makeDeps(JSON.stringify({ version: 1, spend: { acct: record('2026-10-05', 100) } }));
+        // A handle held on daily.json (a Windows virus scanner or sync
+        // client) makes the rename onto it fail with EPERM.
+        deps.renameSync = () => { throw new Error('EPERM'); };
+
+        const ran = updateDailyState(state => ({ ...state, spend: { acct: record('2026-10-05', 12345) } }), deps);
+
+        expect(ran).toBe(true);
+        expect([...deps.files.keys()]).toEqual([STATE_PATH]);
+        expect(readDailyState(deps).spend).toEqual({ acct: record('2026-10-05', 100) });
+    });
+
+    it('removes a partly written temp file when the write fails', () => {
+        const deps = makeDeps(null);
+        deps.writeFileSync = (p: string) => {
+            deps.files.set(p, '{"version":1,"sp');
+            throw new Error('ENOSPC');
+        };
+
+        updateDailyState(state => ({ ...state, spend: { acct: record('2026-10-05', 12345) } }), deps);
+
+        expect(deps.files.size).toBe(0);
+    });
+
+    // A handle held on a temp file refuses its removal as well as its rename,
+    // so that render's temp file stays; so do files from builds that never
+    // removed theirs. Each write clears those old enough that no running
+    // write can still own them.
+    it('clears the temp files earlier writes left behind once they are a minute old', () => {
+        const deps = makeDeps(null);
+        const orphans = {
+            stale: `${STATE_PATH}.4242.tmp`,
+            aMinuteOld: `${STATE_PATH}.4141.tmp`,
+            fresh: `${STATE_PATH}.4343.tmp`,
+            otherFile: '/tmp/session-usage-history.json.4444.tmp',
+            notATempName: `${STATE_PATH}.bak.tmp`
+        };
+        for (const orphan of Object.values(orphans)) {
+            deps.files.set(orphan, '{"version":1,"spend":{}}');
+        }
+        deps.mtimes.set(orphans.stale, NOW - 2 * 60 * 1000);
+        deps.mtimes.set(orphans.aMinuteOld, NOW - 60 * 1000);
+        deps.mtimes.set(orphans.fresh, NOW - 10 * 1000);
+        deps.mtimes.set(orphans.otherFile, NOW - 2 * 60 * 1000);
+        deps.mtimes.set(orphans.notATempName, NOW - 2 * 60 * 1000);
+
+        updateDailyState(state => ({ ...state, spend: { acct: record('2026-10-05', 12345) } }), deps);
+
+        expect([...deps.files.keys()].sort()).toEqual([
+            orphans.otherFile,
+            STATE_PATH,
+            orphans.notATempName,
+            orphans.fresh
+        ].sort());
     });
 
     it('writes nothing when the update reports no change', () => {
