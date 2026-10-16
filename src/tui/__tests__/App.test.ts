@@ -677,10 +677,34 @@ describe('App when Claude settings.json breaks while the TUI is open', () => {
         sandbox.restore();
     });
 
-    it('fails the uninstall and keeps the npm global package when settings.json no longer parses', async () => {
+    const managedHooks = {
+        UserPromptSubmit: [
+            {
+                _tag: 'ccstatusline-managed',
+                hooks: [{ type: 'command', command: 'ccstatusline --hook' }]
+            }
+        ]
+    };
+
+    it.each([
+        {
+            name: 'settings.json no longer parses',
+            // A hand edit in another window leaves a trailing comma
+            content: '{ "statusLine": { "type": "command", "command": "ccstatusline", "padding": 0 }, }',
+            mode: 0o644
+        },
+        {
+            name: 'a read-only settings.json has lost its statusLine but kept the managed hooks',
+            content: JSON.stringify({ hooks: managedHooks }),
+            mode: 0o444
+        }
+    ])('fails the uninstall and keeps the npm global package when $name', async ({ content, mode }) => {
         const installation: InstallationMetadata = { method: 'pinned', installedVersion: getPackageVersion() };
         fs.writeFileSync(sandbox.settingsPath, JSON.stringify({ ...DEFAULT_SETTINGS, installation }));
-        fs.writeFileSync(claudeSettingsPath, JSON.stringify({ statusLine: { type: 'command', command: 'ccstatusline', padding: 0 } }));
+        fs.writeFileSync(claudeSettingsPath, JSON.stringify({
+            statusLine: { type: 'command', command: 'ccstatusline', padding: 0 },
+            hooks: managedHooks
+        }));
         vi.spyOn(globalPackageManager, 'inspectActiveGlobalCommand').mockReturnValue({
             packageManager: 'npm',
             resolvedPath: '/usr/local/bin/ccstatusline',
@@ -701,9 +725,8 @@ describe('App when Claude settings.json breaks while the TUI is open', () => {
             await waitFor(() => {
                 expect(rendered.getFrame()).toContain('🧰 Manage Installation');
             });
-            // A hand edit in another window leaves a trailing comma
-            const broken = '{ "statusLine": { "type": "command", "command": "ccstatusline", "padding": 0 }, }';
-            fs.writeFileSync(claudeSettingsPath, broken);
+            fs.writeFileSync(claudeSettingsPath, content);
+            fs.chmodSync(claudeSettingsPath, mode);
 
             await pressKey(rendered, KEYS.up, '▶  ⭐ Like ccstatusline?');
             await pressKey(rendered, KEYS.up, '▶  🚪 Exit');
@@ -716,7 +739,7 @@ describe('App when Claude settings.json breaks while the TUI is open', () => {
             await pressKey(rendered, KEYS.enter, '✗ Uninstall failed');
 
             expect(globalUninstall).not.toHaveBeenCalled();
-            expect(fs.readFileSync(claudeSettingsPath, 'utf-8')).toBe(broken);
+            expect(fs.readFileSync(claudeSettingsPath, 'utf-8')).toBe(content);
             const saved = JSON.parse(fs.readFileSync(sandbox.settingsPath, 'utf-8')) as { installation?: InstallationMetadata };
             expect(saved.installation).toEqual(installation);
 

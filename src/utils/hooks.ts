@@ -77,6 +77,11 @@ function stripManagedHooks(hooks: Record<string, HookEntry[]>): void {
     }
 }
 
+function hasManagedHooks(hooks: Record<string, HookEntry[]>): boolean {
+    return Object.keys(hooks).some(event => (hooks[event] ?? [])
+        .some(entry => stripManagedHookEntry(entry) !== entry));
+}
+
 function getActiveHookDefs(settings: Settings): WidgetHookDef[] {
     const seen = new Set<string>();
     const defs: WidgetHookDef[] = [];
@@ -137,6 +142,12 @@ export async function syncWidgetHooks(settings: Settings): Promise<void> {
 export async function removeManagedHooks(): Promise<void> {
     const claudeSettings = await loadClaudeSettings({ logErrors: false });
     const hooks = (claudeSettings.hooks ?? {}) as Record<string, HookEntry[]>;
+
+    // With none of ours there the file is left alone, so a read-only
+    // settings.json doesn't fail an uninstall that has nothing to remove
+    if (!hasManagedHooks(hooks)) {
+        return;
+    }
 
     stripManagedHooks(hooks);
 

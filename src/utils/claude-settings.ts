@@ -473,14 +473,12 @@ export async function uninstallStatusLine(): Promise<void> {
         await saveClaudeSettings(settings);
     }
 
-    await saveInstallationMetadata(undefined);
+    // A failure to remove the managed hooks rejects too, before the metadata
+    // is cleared: they'd be left running the binary the caller removes next.
+    const { removeManagedHooks } = await import('./hooks');
+    await removeManagedHooks();
 
-    try {
-        const { removeManagedHooks } = await import('./hooks');
-        await removeManagedHooks();
-    } catch {
-        // Ignore hook cleanup failures during uninstall
-    }
+    await saveInstallationMetadata(undefined);
 }
 
 export async function getExistingStatusLine(): Promise<string | null> {
