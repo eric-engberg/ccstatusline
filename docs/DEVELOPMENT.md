@@ -80,6 +80,8 @@ Usage-lock deadlines more than 24 hours ahead are treated as poisoned and ignore
 
 After a complete successful usage fetch, the process clears the lock only if its contents still match the in-flight record it wrote, preserving a concurrent render's newer rate-limit backoff.
 
+`prefetchUsageDataIfNeeded` passes the payload's `rate_limits.five_hour` and `seven_day` reset ends to `fetchUsageData` as `payloadResetAt`. A memory or file cache that ends either window more than 60 seconds before the payload does was written before that window reset, so it no longer counts as fresh. Only a later payload end counts, because an idle session's payload keeps the window of its last request, and a window without an end on both sides isn't compared. The refetch goes through the usual guards: under an active usage lock (rate-limit, in-flight or parse-error) or the no-credentials backoff, the pre-reset answer is served as the stale fallback. A response that still ends the window before the payload does is cached but keeps the 30-second in-flight lock, so an API that lags the payload is asked at most every 30 seconds rather than on every render. Once a response matches the payload, later renders serve it from the cache.
+
 ## Widget Data Sources
 
 - **Transcript-backed widgets** stream the active JSONL transcript once per render through `getTranscriptAnalysis()`, collecting token, duration, speed, compaction, thinking-effort, and session-name data in one pass without materializing the whole file. Referenced subagent transcripts are streamed separately only when speed metrics include subagents.

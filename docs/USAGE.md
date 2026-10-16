@@ -191,6 +191,8 @@ The usage cache uses a fingerprint of the refresh token when available, falling 
 
 Each macOS Keychain command has a five-second timeout. When no OAuth credentials are found, the lookup backs off for 30 seconds for that profile, so a newly signed-in account may take up to 30 seconds to appear. Usage cache files dated more than 180 seconds into the future are treated as stale.
 
+Usage API answers are cached for 180 seconds and shared by every session. Values that Claude Code's status line data doesn't include, such as Weekly Fable Usage and the extra usage figures, come only from the usage API, through that cache. When the status line data's 5-hour or weekly reset time is more than a minute later than the cached answer's, that window has reset since the answer was cached, so the render fetches a new one instead of showing the previous window's numbers for the rest of the 180 seconds. While a fetch is already running, or fetches are paused after a failed or rate-limited one, the previous answer stays on screen until the next fetch. If the API still answers with the previous window, ccstatusline asks again at most every 30 seconds until it doesn't. A reset of a window the status line data doesn't include, such as a Fable window ending at a different time from the weekly one, still shows only once the cache expires.
+
 ### Proxy Settings
 
 Usage requests to `api.anthropic.com` and Claude Status requests to `status.claude.com` honor uppercase `HTTPS_PROXY`. Both `NO_PROXY` and `no_proxy` supply exclusions; matching either variable sends the request directly.
