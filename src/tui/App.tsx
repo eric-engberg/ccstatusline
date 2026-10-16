@@ -28,6 +28,7 @@ import {
     getPackageCommandAvailability,
     installStatusLine,
     isClaudeCodeVersionAtLeast,
+    isGlobalStatusLineCommand,
     isInstalled,
     isKnownCommand,
     setRefreshInterval,
@@ -424,18 +425,25 @@ export function getPathInferredInstallation(
 }
 
 // The version Check for Updates compares with the latest release: the global
-// package Claude Code runs when its version is known, since this TUI may be a
-// different copy (npx, bunx), else this TUI's own version
+// package's, when the status line runs the global `ccstatusline` and its
+// version is known, since this TUI may be a different copy (npx, bunx), else
+// this TUI's own version. A checkout also counts as self-managed, but Claude
+// Code runs the checkout, not the global on PATH.
 function getUpdateCheckVersion(
     installation: ResolvedInstallationMetadata,
     activeCommand: ActiveGlobalCommandResolution | null,
+    statusLineCommand: string | null,
     runningVersion: string
 ): string {
     if (installation.method === 'pinned' && installation.installedVersion) {
         return installation.installedVersion;
     }
 
-    if (installation.method === 'self-managed' && activeCommand?.version) {
+    if (
+        installation.method === 'self-managed'
+        && activeCommand?.version
+        && isGlobalStatusLineCommand(statusLineCommand)
+    ) {
         return activeCommand.version;
     }
 
@@ -771,7 +779,7 @@ export const App: React.FC = () => {
         const effectiveUpdateInstallation = getPathInferredInstallation(installation, activeCommand);
 
         void checkForUpdates({
-            currentVersion: getUpdateCheckVersion(effectiveUpdateInstallation, activeCommand, getPackageVersion()),
+            currentVersion: getUpdateCheckVersion(effectiveUpdateInstallation, activeCommand, existingStatusLine, getPackageVersion()),
             installedCommand: existingStatusLine,
             installationMetadata: effectiveUpdateInstallation,
             commandAvailability

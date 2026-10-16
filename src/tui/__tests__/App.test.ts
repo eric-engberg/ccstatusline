@@ -732,6 +732,27 @@ describe('App Check for Updates', () => {
         }
     });
 
+    // Claude Code runs the checkout, so a global elsewhere on PATH says nothing
+    // about whether the status line is current
+    it.each([
+        ['reports a checkout at the latest release as up to date, with an older global on PATH', '2.0.0', getPackageVersion(), 'ccstatusline is up to date.'],
+        ['offers the update to a checkout older than the latest release, with that release on PATH', '99.0.0', '99.0.0', 'An update is available.']
+    ])('on a status line that runs a local checkout, %s', async (_label, globalVersion, latestVersion, expectedResult) => {
+        vi.spyOn(claudeStatus, 'loadClaudeStatusLineState').mockResolvedValue({ existingStatusLine: 'bun /Users/dev/ccstatusline/src/ccstatusline.ts', refreshInterval: null });
+        vi.spyOn(claudeSettings, 'isInstalled').mockResolvedValue(true);
+        stubNpmGlobalInstall(() => globalVersion);
+        stubLatestRelease(latestVersion);
+        const rendered = renderApp();
+
+        try {
+            await openCheckForUpdates(rendered, expectedResult);
+            expect(rendered.getFrame()).toContain(`Current: ${getPackageVersion()}`);
+            expect(rendered.getFrame()).toContain(`Latest: ${latestVersion}`);
+        } finally {
+            rendered.cleanup();
+        }
+    });
+
     it.each([
         ['', null],
         [' and its PATH warning', '⚠ Multiple ccstatusline binaries are on PATH.']
