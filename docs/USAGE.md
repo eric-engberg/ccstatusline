@@ -191,6 +191,8 @@ The usage cache uses a fingerprint of the refresh token when available, falling 
 
 Each macOS Keychain command has a five-second timeout. When no OAuth credentials are found, the lookup backs off for 30 seconds for that profile, so a newly signed-in account may take up to 30 seconds to appear. Usage cache files dated more than 180 seconds into the future are treated as stale.
 
+Today's extra usage spend has to stay with a login all day, but Claude Code saves a new refresh token, and so a new fingerprint, each time it refreshes the access token. So while a widget shows today's spend, ccstatusline also asks `/api/oauth/profile` which account and organization the credentials belong to, once per refresh token, and keeps the answers in `~/.cache/ccstatusline/usage-account.json`. A failed lookup is retried for that login after 30 seconds, or after the `Retry-After` of a 429 response, up to a day (five minutes without one); until it succeeds, the day's record is kept under the token fingerprint and starts over when the token changes.
+
 ### Proxy Settings
 
 Usage requests to `api.anthropic.com` and Claude Status requests to `status.claude.com` honor uppercase `HTTPS_PROXY`. Both `NO_PROXY` and `no_proxy` supply exclusions; matching either variable sends the request directly.
