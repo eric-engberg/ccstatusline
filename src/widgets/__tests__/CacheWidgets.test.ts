@@ -203,7 +203,8 @@ describe('Cache widgets', () => {
         const w = await loadWidgets();
         const widget = new w.CacheHitRateWidget();
         expect(widget.getCustomKeybinds()).toEqual([
-            { key: 't', label: '(t)urn/session', action: 'toggle-cache-scope' }
+            { key: 't', label: '(t)urn/session', action: 'toggle-cache-scope' },
+            { key: 'v', label: '(v)alue colors', action: 'edit-value-colors' }
         ]);
         expect(widget.getHideableStates().map(state => state.key)).toEqual(['empty']);
 
