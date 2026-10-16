@@ -10,7 +10,10 @@ import {
 } from '../widgets/shared/usage-display';
 
 import type { UsageData } from './usage';
-import { fetchUsageData } from './usage';
+import {
+    fetchUsageData,
+    isStaleUsageFallback
+} from './usage';
 import type { UsageDataField } from './usage-types';
 import {
     WEEKLY_MODEL_USAGE_BUCKETS,
@@ -287,7 +290,9 @@ export async function prefetchUsageDataIfNeeded(lines: WidgetItem[][], data?: St
     }
 
     const usageData = mergeUsageData(rateLimitsData, apiData);
-    if (requirements.includes(SESSION_LIMIT_HIDE_REQUIREMENT) && apiData.sessionUsage !== undefined && isFromCurrentBlock(apiData)) {
+    // A stale fallback is the last good cache, served while the API can't be reached
+    // once it has outlived a refresh, so like a failed fetch it leaves the payload's percent to decide
+    if (requirements.includes(SESSION_LIMIT_HIDE_REQUIREMENT) && apiData.sessionUsage !== undefined && isFromCurrentBlock(apiData) && !isStaleUsageFallback(apiData)) {
         usageData.apiSessionUsage = apiData.sessionUsage;
     }
     return usageData;
