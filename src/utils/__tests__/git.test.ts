@@ -942,11 +942,20 @@ describe('git utils', () => {
 
         it('returns zero without listing when git status fails, as the staged and unstaged counts do', () => {
             mockExecFileSync.mockImplementationOnce(() => { throw new Error('git status failed'); });
-            mockExecFileSync.mockReturnValueOnce('a.ts\0b.ts\0');
 
             expect(getGitUntrackedFileCount({})).toBe(0);
             expect(mockExecFileSync.mock.calls).toHaveLength(1);
             expect(mockExecFileSync.mock.calls[0]?.[1]).toEqual([...GIT_HARDENING_ARGS, 'status', '--ignore-submodules=dirty', '--porcelain', '-z']);
+        });
+
+        // As when the listing runs past the timeout every git call has
+        it('returns zero when the listing fails after git status lists something untracked', () => {
+            mockExecFileSync.mockReturnValueOnce('?? a.ts\0');
+            mockExecFileSync.mockImplementationOnce(() => { throw new Error('ls-files failed'); });
+
+            expect(getGitUntrackedFileCount({})).toBe(0);
+            expect(mockExecFileSync.mock.calls).toHaveLength(2);
+            expect(mockExecFileSync.mock.calls[1]?.[1]).toEqual([...GIT_HARDENING_ARGS, '--no-literal-pathspecs', 'ls-files', '--others', '--exclude-standard', '-z', '--', ':/']);
         });
 
         it('returns zero when git fails', () => {
