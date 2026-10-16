@@ -809,13 +809,15 @@ const USAGE_API_HOST = 'api.anthropic.com';
 const USAGE_API_PATH = '/api/oauth/usage';
 const USAGE_API_TIMEOUT_MS = 5000;
 
-// A 5xx is the server failing, and clears up once it recovers. Any other
-// answer refuses the request itself: a 401 or 403 for a token the API
-// rejects, a 407 from a proxy that wants its own login, a 404 for an
-// endpoint that moved, or a 200 with nothing in it. Every render sends the
-// same request, so it is refused again until the login or the setup changes.
+// A 5xx is the server failing, and clears up once it recovers. A 408 is a
+// server that gave up waiting for the request, which a later try may well
+// get through in time. Any other answer refuses the request itself: a 401 or
+// 403 for a token the API rejects, a 407 from a proxy that wants its own
+// login, a 404 for an endpoint that moved, or a 200 with nothing in it.
+// Every render sends the same request, so it is refused again until the
+// login or the setup changes.
 function isTransientUsageApiStatus(statusCode: number | undefined): boolean {
-    return statusCode !== undefined && statusCode >= 500;
+    return statusCode !== undefined && (statusCode === 408 || statusCode >= 500);
 }
 
 // A server certificate the runtime can't verify, or one issued for another

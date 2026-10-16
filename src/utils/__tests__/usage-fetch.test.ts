@@ -1893,11 +1893,13 @@ describe('fetchUsageData error handling', () => {
         }
     });
 
-    // A server failing, a network that drops the request and a request that
-    // never answers all clear up on their own, so the reset timers keep their
-    // loading placeholder through them and through their backoff
+    // A server failing, a server that gave up waiting for the request, a
+    // network that drops the request and a request that never answers all
+    // clear up on their own, so the reset timers keep their loading
+    // placeholder through them and through their backoff
     it.each([
         { failure: { mode: 'status', statusCode: 503 }, name: 'a 503' },
+        { failure: { mode: 'status', statusCode: 408 }, name: 'a 408' },
         { failure: { mode: 'error' }, name: 'a network error' },
         { failure: { errorCode: 'ECONNREFUSED', mode: 'error' }, name: 'a refused connection' },
         { failure: { errorCode: 'ECONNRESET', mode: 'error' }, name: 'a reset connection' },
@@ -2386,11 +2388,13 @@ describe('usage API request behind a proxy that refuses CONNECT', () => {
     // and under Bun the request's connection also fails before that response
     // ends. A proxy that wants its own login (407) or won't tunnel to the API
     // (403) refuses the next render's request too; one that couldn't reach the
-    // API (502) may well reach it by then.
+    // API (502) or gave up waiting for the CONNECT (408) may well get through
+    // by then.
     it.each([
         { outcome: 'lasting', statusCode: 407, transient: false },
         { outcome: 'lasting', statusCode: 403, transient: false },
-        { outcome: 'transient', statusCode: 502, transient: true }
+        { outcome: 'transient', statusCode: 502, transient: true },
+        { outcome: 'transient', statusCode: 408, transient: true }
     ])('reports a proxy\'s $statusCode for CONNECT as a $outcome API error', async ({ statusCode, transient }) => {
         proxy = await startAnsweringProxy(statusCode);
         process.env.HTTPS_PROXY = proxy.url;

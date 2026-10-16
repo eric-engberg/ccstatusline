@@ -352,8 +352,8 @@ describe('usage prefetch', () => {
         await expect(prefetchUsageDataIfNeeded(lines, {})).resolves.toBeNull();
     });
 
-    // A 5xx, a network error or a request past its deadline, whether this
-    // render's fetch failed or it read that failure's backoff
+    // A 5xx or 408, a network error or a request past its deadline, whether
+    // this render's fetch failed or it read that failure's backoff
     it('returns no usage data for reset-only lines while the API error clears up on its own', async () => {
         mockFetchUsageData.mockResolvedValue({ error: 'api-error', errorTransient: true });
 
