@@ -156,10 +156,15 @@ export async function checkPowerlineFontsAsync(): Promise<PowerlineFontStatus> {
     }
 }
 
+export interface FontInstallResult {
+    success: boolean;
+    message: string;
+}
+
 /**
  * Install Powerline fonts on the system
  */
-export async function installPowerlineFonts(): Promise<{ success: boolean; message: string }> {
+export async function installPowerlineFonts(): Promise<FontInstallResult> {
     // Ensure this is always async
     await Promise.resolve();
 

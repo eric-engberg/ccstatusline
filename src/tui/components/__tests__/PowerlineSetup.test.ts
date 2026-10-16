@@ -22,6 +22,7 @@ import {
     PowerlineSetup,
     buildPowerlineSetupMenuItems,
     getCapDisplay,
+    getFontInstallMessageColor,
     getSeparatorDisplay,
     getThemeDisplay,
     type PowerlineSetupProps
@@ -85,6 +86,22 @@ describe('PowerlineSetup helpers', () => {
         expect(getCapDisplay(config, 'start')).toBe('\uE0B2 - Triangle');
         expect(getCapDisplay(config, 'end')).toBe('\uE0B0 - Triangle');
         expect(getThemeDisplay(config)).toBe('Gruvbox');
+    });
+
+    // The Windows success message doesn't say "success"
+    it('colors a font install message by whether the install worked', () => {
+        expect(getFontInstallMessageColor({
+            success: true,
+            message: 'Installed 3 Powerline fonts. Please restart your terminal and select a Powerline font from your terminal settings.'
+        })).toBe('green');
+        expect(getFontInstallMessageColor({
+            success: true,
+            message: 'Powerline fonts installed successfully! Please restart your terminal and select a Powerline font'
+        })).toBe('green');
+        expect(getFontInstallMessageColor({
+            success: false,
+            message: 'Failed to install Powerline fonts: No fonts were installed. You can manually install fonts from: https://github.com/powerline/fonts'
+        })).toBe('red');
     });
 
     it('builds powerline setup items with disabled states and sublabels', () => {
@@ -364,6 +381,48 @@ describe('PowerlineSetup helpers', () => {
             expect(updatedSettings?.powerline.enabled).toBe(false);
             expect(updatedSettings?.defaultPadding).toBe('  ');
             expect(updatedSettings?.powerline.paddingToRestore).toBeUndefined();
+        } finally {
+            instance.unmount();
+            instance.cleanup();
+            stdin.destroy();
+            stdout.destroy();
+            stderr.destroy();
+        }
+    });
+
+    it('shows the font install result it is given', async () => {
+        const stdin = createMockStdin();
+        const stdout = createMockStdout();
+        const stderr = createMockStdout();
+        const instance = render(
+            React.createElement(PowerlineSetup, {
+                settings: DEFAULT_SETTINGS,
+                powerlineFontStatus: { installed: true },
+                onUpdate: vi.fn(),
+                onBack: vi.fn(),
+                onInstallFonts: vi.fn(),
+                installingFonts: false,
+                fontInstallMessage: {
+                    success: true,
+                    message: 'Installed 3 Powerline fonts. Please restart your terminal and select a Powerline font from your terminal settings.'
+                },
+                onClearMessage: vi.fn()
+            }),
+            {
+                stdin,
+                stdout,
+                stderr,
+                debug: true,
+                exitOnCtrlC: false,
+                patchConsole: false
+            }
+        );
+
+        try {
+            await waitFor(() => {
+                expect(stdout.getOutput()).toContain('Installed 3 Powerline fonts.');
+                expect(stdout.getOutput()).toContain('Press any key to continue...');
+            });
         } finally {
             instance.unmount();
             instance.cleanup();

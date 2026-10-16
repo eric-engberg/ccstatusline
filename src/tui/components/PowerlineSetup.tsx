@@ -9,7 +9,10 @@ import React, { useState } from 'react';
 import type { PowerlineConfig } from '../../types/PowerlineConfig';
 import type { Settings } from '../../types/Settings';
 import { getPlainInput } from '../../utils/input-guards';
-import { type PowerlineFontStatus } from '../../utils/powerline';
+import {
+    type FontInstallResult,
+    type PowerlineFontStatus
+} from '../../utils/powerline';
 import {
     buildDisabledPowerlineSettings,
     buildEnabledPowerlineSettings
@@ -106,6 +109,12 @@ export function getThemeDisplay(powerlineConfig: PowerlineConfig): string {
     return theme.charAt(0).toUpperCase() + theme.slice(1);
 }
 
+// From the install's own result, not its wording: the Windows success message
+// doesn't say "success"
+export function getFontInstallMessageColor(result: FontInstallResult): 'green' | 'red' {
+    return result.success ? 'green' : 'red';
+}
+
 export function buildPowerlineSetupMenuItems(
     powerlineConfig: PowerlineConfig
 ): ListEntry<PowerlineMenuValue>[] {
@@ -150,7 +159,7 @@ export interface PowerlineSetupProps {
     onBack: () => void;
     onInstallFonts: () => void;
     installingFonts: boolean;
-    fontInstallMessage: string | null;
+    fontInstallMessage: FontInstallResult | null;
     onClearMessage: () => void;
 }
 
@@ -378,8 +387,8 @@ export const PowerlineSetup: React.FC<PowerlineSetupProps> = ({
                 </Box>
             ) : fontInstallMessage ? (
                 <Box flexDirection='column'>
-                    <Text color={fontInstallMessage.includes('success') ? 'green' : 'red'}>
-                        {fontInstallMessage}
+                    <Text color={getFontInstallMessageColor(fontInstallMessage)}>
+                        {fontInstallMessage.message}
                     </Text>
                     <Box marginTop={1}>
                         <Text dimColor>Press any key to continue...</Text>
