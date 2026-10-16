@@ -99,8 +99,9 @@ export class CurrentWorkingDirWidget implements Widget {
                     }
                 };
             } else {
-                // When disabling fish-style
-                const { fishStyle, ...restMetadata } = item.metadata ?? {};
+                // When disabling fish-style, also drop a segment count saved
+                // next to it, so a count hidden behind fish style doesn't apply
+                const { fishStyle, segments, ...restMetadata } = item.metadata ?? {};
 
                 return {
                     ...item,
@@ -254,10 +255,12 @@ const CurrentWorkingDirEditor: React.FC<WidgetEditorProps> = ({ widget, onComple
             if (key.return) {
                 const segments = Number.parseInt(segmentsInput, 10);
                 if (!Number.isNaN(segments) && segments > 0) {
+                    // A segment count disables fishStyle (mutually exclusive)
+                    const { fishStyle, ...restMetadata } = widget.metadata ?? {};
                     onComplete({
                         ...widget,
                         metadata: {
-                            ...widget.metadata,
+                            ...restMetadata,
                             segments: segments.toString()
                         }
                     });

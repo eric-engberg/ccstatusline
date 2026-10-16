@@ -301,6 +301,13 @@ describe('CurrentWorkingDirWidget', () => {
             expect(result?.metadata?.fishStyle).toBe('true');
             expect(result?.metadata?.abbreviateHome).toBeUndefined();
         });
+
+        it('should disable fishStyle and drop a segment count saved next to it', () => {
+            const item = createItem({ fishStyle: 'true', segments: '2' });
+            const result = widget.handleEditorAction('toggle-fish-style', item);
+            expect(result?.metadata?.fishStyle).toBeUndefined();
+            expect(result?.metadata?.segments).toBeUndefined();
+        });
     });
 
     describe('getCustomKeybinds', () => {
