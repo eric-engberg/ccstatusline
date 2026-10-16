@@ -13,7 +13,9 @@ import type {
 } from '../../../types/Widget';
 import { CustomSymbolWidget } from '../../CustomSymbol';
 import { createGlyphCatalog } from '../glyph-catalog';
+import * as glyphCatalog from '../glyph-catalog';
 import { GLYPH_GROUPS } from '../glyph-groups';
+import { clearGlyphCatalogCache } from '../glyph-picker';
 import { SkinToneContext } from '../skin-tone';
 import {
     renderSymbolOverrideEditor,
@@ -228,6 +230,31 @@ describe('glyph picker', () => {
             await editor.press(ENTER, ENTER);
             expect(savedWidget(editor)?.metadata).toEqual({ deleteGlyph: firstGroup?.glyphs[0]?.glyph });
         } finally {
+            editor.cleanup();
+        }
+    });
+
+    // The list loads from its own build chunk, which is gone if ccstatusline
+    // is updated while the TUI is open
+    it('says when the glyph list can\'t load, goes back on ESC, and tries again next time', async () => {
+        clearGlyphCatalogCache();
+        const createCatalog = vi.spyOn(glyphCatalog, 'createGlyphCatalog').mockImplementationOnce(() => {
+            throw new Error('Cannot find module \'./glyph-catalog-0a1b2c3d.js\'');
+        });
+        const editor = renderWidgetEditor(singleGlyphEditor, { ...cwd, character: '★' });
+
+        try {
+            await editor.ready();
+            await editor.press(RIGHT);
+            expect(await waitForOutput(editor, 'Couldn\'t load the glyph list')).toContain('ESC back');
+            await editor.press(ESC);
+            expect(editor.takeOutput()).toContain('Glyph: ★');
+            expect(editor.onCancel).not.toHaveBeenCalled();
+            await openPicker(editor);
+            await editor.press(ENTER, ENTER);
+            expect(savedWidget(editor)?.character).toBe(firstGroup?.glyphs[0]?.glyph);
+        } finally {
+            createCatalog.mockRestore();
             editor.cleanup();
         }
     });
