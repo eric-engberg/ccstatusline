@@ -20,7 +20,9 @@ import {
 import { WEEKLY_MODEL_USAGE_BUCKETS } from '../usage-types';
 
 import {
+    startAnsweringProxy,
     startStalledProxy,
+    type AnsweringProxy,
     type StalledProxy
 } from './proxy-test-helpers';
 
@@ -2263,6 +2265,41 @@ describe('usage API request behind a proxy that never answers CONNECT', () => {
 
         expect(await __testing.fetchFromUsageApi('test-token', 50)).toEqual({ kind: 'error', transient: true });
         await proxy.connectionClosed;
+    });
+});
+
+describe('usage API request behind a proxy that refuses CONNECT', () => {
+    let originalProxy: string | undefined;
+    let proxy: AnsweringProxy | null = null;
+
+    beforeEach(() => {
+        originalProxy = process.env.HTTPS_PROXY;
+    });
+
+    afterEach(async () => {
+        await proxy?.stop();
+        proxy = null;
+        if (originalProxy === undefined) {
+            delete process.env.HTTPS_PROXY;
+        } else {
+            process.env.HTTPS_PROXY = originalProxy;
+        }
+    });
+
+    // The proxy agent hands the proxy's answer to the request as its response,
+    // and under Bun the request's connection also fails before that response
+    // ends. A proxy that wants its own login (407) or won't tunnel to the API
+    // (403) refuses the next render's request too; one that couldn't reach the
+    // API (502) may well reach it by then.
+    it.each([
+        { outcome: 'lasting', statusCode: 407, transient: false },
+        { outcome: 'lasting', statusCode: 403, transient: false },
+        { outcome: 'transient', statusCode: 502, transient: true }
+    ])('reports a proxy\'s $statusCode for CONNECT as a $outcome API error', async ({ statusCode, transient }) => {
+        proxy = await startAnsweringProxy(statusCode);
+        process.env.HTTPS_PROXY = proxy.url;
+
+        expect(await __testing.fetchFromUsageApi('test-token', 2000)).toEqual({ kind: 'error', transient });
     });
 });
 

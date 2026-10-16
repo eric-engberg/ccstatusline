@@ -75,3 +75,48 @@ export async function startRefusingProxy(): Promise<RefusingProxy> {
         })
     };
 }
+
+export interface AnsweringProxy {
+    url: string;
+    stop: () => Promise<void>;
+}
+
+// A local proxy that answers every CONNECT with `statusCode` and closes the
+// connection, as a proxy does when it won't open the tunnel
+export async function startAnsweringProxy(statusCode: number): Promise<AnsweringProxy> {
+    const sockets = new Set<net.Socket>();
+    const server = net.createServer((socket) => {
+        sockets.add(socket);
+        let received = '';
+        socket.setEncoding('utf8');
+        socket.on('data', (chunk: string) => {
+            const answered = received.includes('\r\n\r\n');
+            received += chunk;
+            // Answers once the CONNECT's headers are in
+            if (!answered && received.includes('\r\n\r\n')) {
+                socket.end(`HTTP/1.1 ${statusCode} Refused\r\ncontent-length: 0\r\nconnection: close\r\n\r\n`);
+            }
+        });
+        socket.on('error', () => undefined);
+        socket.on('close', () => {
+            sockets.delete(socket);
+        });
+    });
+
+    await new Promise<void>((resolve) => {
+        server.listen(0, '127.0.0.1', resolve);
+    });
+    const { port } = server.address() as net.AddressInfo;
+
+    return {
+        url: `http://127.0.0.1:${port}`,
+        stop: () => new Promise<void>((resolve) => {
+            for (const socket of sockets) {
+                socket.destroy();
+            }
+            server.close(() => {
+                resolve();
+            });
+        })
+    };
+}

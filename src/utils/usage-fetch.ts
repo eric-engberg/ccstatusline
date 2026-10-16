@@ -860,6 +860,7 @@ async function fetchFromUsageApi(token: string, deadlineMs = USAGE_API_TIMEOUT_M
 
     return new Promise((resolve) => {
         let settled = false;
+        let answeredStatus: number | undefined;
 
         const finish = (value: UsageApiFetchResult) => {
             if (settled) {
@@ -870,12 +871,19 @@ async function fetchFromUsageApi(token: string, deadlineMs = USAGE_API_TIMEOUT_M
             resolve(value);
         };
         // No answer, or one cut short: the network or the server may well be
-        // back by the next try
-        const failTransiently = () => {
-            finish({ kind: 'error', transient: true });
+        // back by the next try. A failure after an answer that refused the
+        // request is still that refusal: under Bun, a proxy's refused CONNECT
+        // fails the request before the agent's replay of that answer ends.
+        const failRequest = () => {
+            const refused = answeredStatus !== undefined
+                && answeredStatus !== 200
+                && answeredStatus !== 429
+                && !isTransientUsageApiStatus(answeredStatus);
+            finish({ kind: 'error', transient: !refused });
         };
 
         const request = https.request(usageRequest.options, (response) => {
+            answeredStatus = response.statusCode;
             let data = '';
             response.setEncoding('utf8');
 
@@ -901,21 +909,21 @@ async function fetchFromUsageApi(token: string, deadlineMs = USAGE_API_TIMEOUT_M
             });
             // A connection dropped mid-body ends neither the response nor the
             // request, and the idle timeout can't fire on a closed socket
-            response.on('aborted', failTransiently);
-            response.on('error', failTransiently);
+            response.on('aborted', failRequest);
+            response.on('error', failRequest);
         });
 
-        request.on('error', failTransiently);
+        request.on('error', failRequest);
         request.on('timeout', () => {
             request.destroy();
-            failTransiently();
+            failRequest();
         });
         // `timeout` only covers an idle socket, and behind a proxy the request
         // has none until the proxy answers CONNECT
         const deadline = setTimeout(() => {
             request.destroy();
             usageRequest.proxy?.close();
-            failTransiently();
+            failRequest();
         }, deadlineMs);
         request.end();
     });
