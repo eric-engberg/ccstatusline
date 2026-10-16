@@ -26,7 +26,10 @@ import {
     handleContextSliderAction,
     renderContextSlider
 } from './context-slider';
-import { paintWidgetBar } from './gradient-bar';
+import {
+    paintWidgetBar,
+    paintsBarGradient
+} from './gradient-bar';
 import {
     getLevelGlyph,
     isLevelGlyphMode
@@ -137,10 +140,11 @@ export abstract class ContextPercentageWidgetBase implements Widget {
         });
     }
 
-    // Value colors paint only the value (or the whole text), so the renderer
-    // colors the rest with the theme or widget color
+    // Value colors paint only the value (or the whole text), and a gradient
+    // preset only the slider, so the renderer colors the rest with the theme
+    // or widget color
     colorsOnlyItsRuns(item: WidgetItem): boolean {
-        return isValueColorsEnabled(item) && showsPlainPercent(item);
+        return (isValueColorsEnabled(item) && showsPlainPercent(item)) || paintsBarGradient(item, getContextSliderMode(item) !== 'none');
     }
 
     supportsRawValue(): boolean { return true; }
