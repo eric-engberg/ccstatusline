@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 import { findAllOnPosixPath } from './executable-path';
@@ -167,13 +168,24 @@ function getDirectoryName(filePath: string): string {
         : normalized.slice(0, lastSlashIndex);
 }
 
+// A directory with symlinks resolved, so two spellings of one, such as /bin and
+// /usr/bin where /bin links to usr/bin (merged /usr), count as one install
+// location. The path as given when it can't be resolved.
+export function getRealDirectory(dir: string): string {
+    try {
+        return fs.realpathSync(dir);
+    } catch {
+        return dir;
+    }
+}
+
 function getUniqueResolvedDirs(resolvedPaths: string[]): string[] {
     const seen = new Set<string>();
     const dirs: string[] = [];
 
     for (const resolvedPath of resolvedPaths) {
         const dir = getDirectoryName(resolvedPath);
-        const comparableDir = normalizePathForComparison(dir);
+        const comparableDir = normalizePathForComparison(getRealDirectory(dir));
         if (seen.has(comparableDir)) {
             continue;
         }

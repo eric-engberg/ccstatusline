@@ -9,6 +9,7 @@ import {
     getCommandResolutionPaths,
     getExpectedGlobalBinDir,
     getPersistentCommandResolutionPaths,
+    getRealDirectory,
     isPathInsideDir,
     type GlobalPackageManager
 } from './global-command-resolution';
@@ -141,7 +142,7 @@ function getUniqueResolvedDirs(resolvedPaths: string[]): string[] {
 
     for (const resolvedPath of resolvedPaths) {
         const dir = getDirectoryName(resolvedPath);
-        const comparableDir = getComparablePath(dir);
+        const comparableDir = getComparablePath(getRealDirectory(dir));
         if (seen.has(comparableDir)) {
             continue;
         }

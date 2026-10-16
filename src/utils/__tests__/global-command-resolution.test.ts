@@ -152,6 +152,27 @@ describe('global command resolution', () => {
         expect(resolution.warning).toContain('/usr/local/bin/ccstatusline');
     });
 
+    // Merged /usr (Ubuntu 22.04+, Debian 12): /bin links to usr/bin and PATH lists both
+    it.skipIf(process.platform === 'win32')('counts a PATH directory reached through a symlink once', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-merged-usr-'));
+        try {
+            fs.mkdirSync(path.join(root, 'usr', 'bin'), { recursive: true });
+            fs.writeFileSync(path.join(root, 'usr', 'bin', 'ccstatusline'), '#!/bin/sh\n', { mode: 0o755 });
+            fs.symlinkSync('usr/bin', path.join(root, 'bin'));
+            mockExecFileSync({
+                'which -a ccstatusline': `${root}/usr/bin/ccstatusline\n${root}/bin/ccstatusline\n`,
+                'npm prefix -g': `${root}/usr\n`
+            });
+
+            const resolution = inspectGlobalCommandResolution('npm', { platform: 'linux' });
+
+            expect(resolution.resolvedPaths).toEqual([`${root}/usr/bin/ccstatusline`, `${root}/bin/ccstatusline`]);
+            expect(resolution.warning).toBeNull();
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('ignores transient bunx status line shims when resolving global commands', () => {
         mockExecFileSync({
             'which -a ccstatusline': '/var/folders/demo/T/bunx-501-ccstatusline@latest/node_modules/.bin/ccstatusline\n/Users/alice/.bun/bin/ccstatusline\n',
