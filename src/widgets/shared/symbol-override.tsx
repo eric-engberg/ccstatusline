@@ -11,7 +11,7 @@ import type {
     WidgetItem
 } from '../../types/Widget';
 import { getVisibleWidth } from '../../utils/ansi';
-import { shouldInsertInput } from '../../utils/input-guards';
+import { getInsertableText } from '../../utils/input-guards';
 
 import { BlinkingCursor } from './BlinkingCursor';
 import { removeMetadataKeys } from './metadata';
@@ -96,6 +96,7 @@ const SymbolSlotsEditor: React.FC<WidgetEditorProps & { slots: SymbolSlot[] }> =
     const labelWidth = Math.max(...slots.map(slot => getVisibleWidth(slot.label)), 0);
 
     useInput((input, key) => {
+        const text = getInsertableText(input, key);
         if (key.return) {
             onComplete(slots.reduce((item, slot, index) => setSlotSymbol(item, slot, values[index] ?? ''), widget));
         } else if (key.escape) {
@@ -110,9 +111,9 @@ const SymbolSlotsEditor: React.FC<WidgetEditorProps & { slots: SymbolSlot[] }> =
             )));
         } else if (key.backspace || key.delete) {
             setValues(values.map((value, index) => (index === selectedIndex ? '' : value)));
-        } else if (shouldInsertInput(input, key)) {
+        } else if (text) {
             // Take only the first grapheme (handles multi-byte emojis correctly)
-            const grapheme = getGraphemes(input)[0] ?? '';
+            const grapheme = getGraphemes(text)[0] ?? '';
             setValues(values.map((value, index) => (index === selectedIndex ? grapheme : value)));
         }
     });

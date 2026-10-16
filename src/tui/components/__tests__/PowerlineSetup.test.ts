@@ -1,6 +1,7 @@
 import { render } from 'ink';
 import { PassThrough } from 'node:stream';
 import React from 'react';
+import stripAnsi from 'strip-ansi';
 import {
     afterEach,
     describe,
@@ -64,6 +65,52 @@ function createMockStdout(): CapturedWriteStream {
             return chunks.join('');
         }
     });
+}
+
+function renderSeparatorEditor() {
+    const stdin = createMockStdin();
+    const stdout = createMockStdout();
+    const stderr = createMockStdout();
+    const onUpdate = vi.fn<PowerlineSeparatorEditorProps['onUpdate']>();
+    const instance = render(
+        React.createElement(PowerlineSeparatorEditor, {
+            settings: {
+                ...DEFAULT_SETTINGS,
+                powerline: {
+                    ...DEFAULT_SETTINGS.powerline,
+                    enabled: true,
+                    separators: ['\uE0B0'],
+                    separatorInvertBackground: [false]
+                }
+            },
+            mode: 'separator',
+            onUpdate,
+            onBack: vi.fn()
+        }),
+        {
+            stdin,
+            stdout,
+            stderr,
+            debug: true,
+            exitOnCtrlC: false,
+            patchConsole: false
+        }
+    );
+
+    return {
+        stdin,
+        onUpdate,
+        output: () => stripAnsi(stdout.getOutput()),
+        // The hex prompt's field, as last drawn
+        hexField: () => stripAnsi(stdout.getOutput()).split('\n').filter(line => line.startsWith('U+')).at(-1),
+        cleanup: () => {
+            instance.unmount();
+            instance.cleanup();
+            stdin.destroy();
+            stdout.destroy();
+            stderr.destroy();
+        }
+    };
 }
 
 describe('PowerlineSetup helpers', () => {
@@ -360,6 +407,90 @@ describe('PowerlineSeparatorEditor', () => {
             stdin.destroy();
             stdout.destroy();
             stderr.destroy();
+        }
+    });
+
+    // A terminal paste reaches Ink as one input chunk, not key by key
+    it('puts the cursor after a pasted hex code', async () => {
+        const editor = renderSeparatorEditor();
+
+        try {
+            await waitFor(() => {
+                expect(editor.output()).toContain('(h)ex');
+            });
+            editor.stdin.write('h');
+            await waitFor(() => {
+                expect(editor.hexField()).toBe('U+______');
+            });
+
+            editor.stdin.write('E0B4');
+            await waitFor(() => {
+                expect(editor.hexField()).toBe('U+E0B4__');
+            });
+            editor.stdin.write('2');
+            await waitFor(() => {
+                expect(editor.hexField()).toBe('U+E0B42_');
+            });
+            editor.stdin.write('\r');
+            await waitFor(() => {
+                expect(editor.onUpdate).toHaveBeenCalledTimes(1);
+            });
+            expect(editor.onUpdate.mock.calls[0]?.[0]?.powerline.separators).toEqual([String.fromCodePoint(0xE0B42)]);
+        } finally {
+            editor.cleanup();
+        }
+    });
+
+    it('takes a pasted U+ code without its prefix', async () => {
+        const editor = renderSeparatorEditor();
+
+        try {
+            await waitFor(() => {
+                expect(editor.output()).toContain('(h)ex');
+            });
+            editor.stdin.write('h');
+            await waitFor(() => {
+                expect(editor.hexField()).toBe('U+______');
+            });
+
+            editor.stdin.write('U+E0B4');
+            await waitFor(() => {
+                expect(editor.hexField()).toBe('U+E0B4__');
+            });
+            editor.stdin.write('\r');
+            await waitFor(() => {
+                expect(editor.onUpdate).toHaveBeenCalledTimes(1);
+            });
+            expect(editor.onUpdate.mock.calls[0]?.[0]?.powerline.separators).toEqual(['\uE0B4']);
+        } finally {
+            editor.cleanup();
+        }
+    });
+
+    it('ignores a paste that is not a hex code', async () => {
+        const editor = renderSeparatorEditor();
+
+        try {
+            await waitFor(() => {
+                expect(editor.output()).toContain('(h)ex');
+            });
+            editor.stdin.write('h');
+            await waitFor(() => {
+                expect(editor.hexField()).toBe('U+______');
+            });
+
+            // A paste the field turns down changes nothing on screen, so wait
+            // for Ink to read it before the key that shows what the field holds
+            editor.stdin.write('E0G4');
+            await waitFor(() => {
+                expect(editor.stdin.readableLength).toBe(0);
+            });
+            editor.stdin.write('E');
+            await waitFor(() => {
+                expect(editor.hexField()).toBe('U+E_____');
+            });
+        } finally {
+            editor.cleanup();
         }
     });
 });

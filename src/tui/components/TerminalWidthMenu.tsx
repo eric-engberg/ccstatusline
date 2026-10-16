@@ -7,7 +7,7 @@ import React, { useState } from 'react';
 
 import type { FlexMode } from '../../types/FlexMode';
 import type { Settings } from '../../types/Settings';
-import { shouldInsertInput } from '../../utils/input-guards';
+import { getInsertableText } from '../../utils/input-guards';
 
 import {
     List,
@@ -82,6 +82,7 @@ export const TerminalWidthMenu: React.FC<TerminalWidthMenuProps> = ({
     const [validationError, setValidationError] = useState<string | null>(null);
 
     useInput((input, key) => {
+        const text = getInsertableText(input, key);
         if (editingThreshold) {
             if (key.return) {
                 const error = validateCompactThresholdInput(thresholdInput);
@@ -110,8 +111,8 @@ export const TerminalWidthMenu: React.FC<TerminalWidthMenuProps> = ({
                 setValidationError(null);
             } else if (key.delete) {
                 // For simple number inputs, forward delete does nothing since there's no cursor position
-            } else if (shouldInsertInput(input, key) && /\d/.test(input)) {
-                const newValue = thresholdInput + input;
+            } else if (/\d/.test(text)) {
+                const newValue = thresholdInput + text;
                 if (newValue.length <= 2) {
                     setThresholdInput(newValue);
                     setValidationError(null);

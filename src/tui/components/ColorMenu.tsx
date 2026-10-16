@@ -17,8 +17,9 @@ import {
 } from '../../utils/colors';
 import { GRADIENT_PRESET_NAMES } from '../../utils/gradient';
 import {
-    getPlainInput,
-    shouldInsertInput
+    getInsertableHexDigits,
+    getInsertableText,
+    getPlainInput
 } from '../../utils/input-guards';
 import { getWidget } from '../../utils/widgets';
 
@@ -106,11 +107,11 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
                 }
             } else if (key.backspace || key.delete) {
                 setHexInput(hexInput.slice(0, -1));
-            } else if (shouldInsertInput(input, key) && hexInput.length < 6) {
+            } else {
                 // Only accept hex characters (0-9, A-F, a-f)
-                const upperInput = input.toUpperCase();
-                if (/^[0-9A-F]$/.test(upperInput)) {
-                    setHexInput(hexInput + upperInput);
+                const digits = getInsertableHexDigits(input, key, 6 - hexInput.length);
+                if (digits) {
+                    setHexInput(hexInput + digits);
                 }
             }
             return;
@@ -143,15 +144,13 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
                 }
             } else if (key.backspace || key.delete) {
                 setAnsi256Input(ansi256Input.slice(0, -1));
-            } else if (shouldInsertInput(input, key) && ansi256Input.length < 3) {
-                // Only accept numeric characters (0-9)
-                if (/^[0-9]$/.test(input)) {
-                    const newInput = ansi256Input + input;
-                    const code = Number.parseInt(newInput, 10);
-                    // Only allow if it won't exceed 255
-                    if (code <= 255) {
-                        setAnsi256Input(newInput);
-                    }
+            } else {
+                // Only accept numeric characters (0-9), at most 3 of them
+                const digits = getInsertableText(input, key).trim();
+                const newInput = ansi256Input + digits;
+                // Only allow if it won't exceed 255
+                if (/^\d+$/.test(digits) && newInput.length <= 3 && Number.parseInt(newInput, 10) <= 255) {
+                    setAnsi256Input(newInput);
                 }
             }
             return;
@@ -191,10 +190,10 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
                     }
                 } else if (key.backspace || key.delete) {
                     setGradientHexInput(gradientHexInput.slice(0, -1));
-                } else if (shouldInsertInput(input, key) && gradientHexInput.length < 6) {
-                    const upperInput = input.toUpperCase();
-                    if (/^[0-9A-F]$/.test(upperInput)) {
-                        setGradientHexInput(gradientHexInput + upperInput);
+                } else {
+                    const digits = getInsertableHexDigits(input, key, 6 - gradientHexInput.length);
+                    if (digits) {
+                        setGradientHexInput(gradientHexInput + digits);
                     }
                 }
                 return;
