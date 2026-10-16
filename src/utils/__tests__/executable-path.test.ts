@@ -99,6 +99,21 @@ describe('findAllOnPosixPath', () => {
         expect(findAllOnPosixPath('npm', { env: {}, isExecutableFile: () => true })).toEqual([]);
     });
 
+    // A test or a caller may swap in a new env object; the lookup must see it
+    it.skipIf(process.platform === 'win32')('reads PATH from process.env as it is when called', () => {
+        const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-path-env-'));
+        const originalEnv = process.env;
+        try {
+            fs.writeFileSync(path.join(binDir, 'npm'), '#!/bin/sh\n', { mode: 0o755 });
+            process.env = { ...originalEnv, PATH: binDir };
+
+            expect(findAllOnPosixPath('npm')).toEqual([path.join(binDir, 'npm')]);
+        } finally {
+            process.env = originalEnv;
+            fs.rmSync(binDir, { recursive: true, force: true });
+        }
+    });
+
     it.skipIf(process.platform === 'win32')('only lists files the user can run', () => {
         const binDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-path-scan-'));
         const originalPath = process.env.PATH;
