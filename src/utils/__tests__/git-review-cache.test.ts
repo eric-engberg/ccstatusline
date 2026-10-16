@@ -26,7 +26,7 @@ interface PrCacheHarness {
     authDurations: number[];
     cacheFiles: Map<string, FakeCacheFile>;
     deps: GitReviewCacheDeps;
-    execCalls: { args: string[]; cmd: string; cwd?: string; env?: NodeJS.ProcessEnv }[];
+    execCalls: { args: string[]; cmd: string; cwd?: string; env?: NodeJS.ProcessEnv; timeout?: number }[];
     ghDurations: number[];
     ghResponses: (Error | string)[];
     glabResponses: (Error | string)[];
@@ -42,7 +42,7 @@ interface PrCacheHarness {
 function createHarness(): PrCacheHarness {
     const authDurations: number[] = [];
     const cacheFiles = new Map<string, FakeCacheFile>();
-    const execCalls: { args: string[]; cmd: string; cwd?: string; env?: NodeJS.ProcessEnv }[] = [];
+    const execCalls: { args: string[]; cmd: string; cwd?: string; env?: NodeJS.ProcessEnv; timeout?: number }[] = [];
     const ghDurations: number[] = [];
     const ghResponses: (Error | string)[] = [];
     const glabResponses: (Error | string)[] = [];
@@ -71,6 +71,9 @@ function createHarness(): PrCacheHarness {
                     : undefined,
                 env: typeof options === 'object' && 'env' in options
                     ? options.env
+                    : undefined,
+                timeout: typeof options === 'object' && 'timeout' in options
+                    ? options.timeout
                     : undefined
             });
             const gitArgs = cmd === 'git' ? gitCommandOf(commandArgs).split(' ') : [];
@@ -238,6 +241,34 @@ function withoutJsonFields(args: string[] | undefined): string[] {
     const index = args?.indexOf('--json') ?? -1;
     return index >= 0 ? [...(args ?? []).slice(0, index), ...(args ?? []).slice(index + 2)] : [...(args ?? [])];
 }
+
+// The `gh pr checks` calls a lookup made
+function prChecksCalls(harness: PrCacheHarness): PrCacheHarness['execCalls'] {
+    return harness.execCalls.filter(call => call.cmd === 'gh' && call.args[0] === 'pr' && call.args[1] === 'checks');
+}
+
+// What `gh pr view` prints for PR #42 with this statusCheckRollup
+function prWithChecks(statusCheckRollup: unknown[]): string {
+    return JSON.stringify({
+        number: 42,
+        reviewDecision: '',
+        state: 'OPEN',
+        statusCheckRollup,
+        title: 'Re-run checks',
+        url: 'https://github.com/example-owner/example-repo/pull/42'
+    });
+}
+
+// The rollup lists every run on the PR's head commit: CI's `test` failed, then
+// passed on a re-run, and `lint` passed
+const RERUN_ROLLUP = [
+    { __typename: 'CheckRun', conclusion: 'FAILURE', name: 'test', startedAt: '2026-10-14T10:00:00Z', status: 'COMPLETED', workflowName: 'CI' },
+    { __typename: 'CheckRun', conclusion: 'SUCCESS', name: 'test', startedAt: '2026-10-14T10:20:00Z', status: 'COMPLETED', workflowName: 'CI' },
+    { __typename: 'CheckRun', conclusion: 'SUCCESS', name: 'lint', startedAt: '2026-10-14T10:00:00Z', status: 'COMPLETED', workflowName: 'CI' }
+];
+// `gh pr checks` keeps the newest run of each check
+const RERUN_CHECK_ROWS = JSON.stringify([{ bucket: 'pass' }, { bucket: 'pass' }]);
+const RERUN_ROLLUP_COUNTS = { failing: 1, pending: 0, state: 'failing', success: 2 };
 
 mockExecutableResolution();
 
@@ -703,6 +734,165 @@ describe('git-review-cache', () => {
             call => call.cmd === 'gh' && call.args[0] === 'pr'
         );
         expect(cachedGhPrCalls).toHaveLength(2);
+    });
+
+    it('counts only the newest run of a re-run check, from gh pr checks', () => {
+        const harness = createHarness();
+        harness.setOriginRemoteUrl('https://github.com/example-owner/example-repo.git');
+        harness.ghResponses.push(prWithChecks(RERUN_ROLLUP));
+        harness.ghResponses.push(RERUN_CHECK_ROWS);
+
+        expect(fetchGitReviewData('/tmp/repo', harness.deps, { includeChecks: true })?.checks).toEqual({
+            failing: 0,
+            pending: 0,
+            state: 'passing',
+            success: 2
+        });
+
+        const checksCalls = prChecksCalls(harness);
+        expect(checksCalls.map(call => call.args)).toEqual([['pr', 'checks', '--json', 'bucket', '--', '42']]);
+        expect(checksCalls[0]?.cwd).toBe('/tmp/repo');
+        expect(gitConfigFromEnv(checksCalls[0]?.env)).toEqual(expect.arrayContaining([
+            ['core.fsmonitor', ''],
+            ['safe.bareRepository', 'explicit']
+        ]));
+    });
+
+    it('counts only the newest run of a re-run status context, from gh pr checks', () => {
+        const harness = createHarness();
+        harness.setOriginRemoteUrl('https://github.com/example-owner/example-repo.git');
+        harness.ghResponses.push(prWithChecks([
+            { __typename: 'StatusContext', context: 'ci/jenkins', startedAt: '2026-10-14T10:00:00Z', state: 'FAILURE' },
+            { __typename: 'StatusContext', context: 'ci/jenkins', startedAt: '2026-10-14T10:20:00Z', state: 'SUCCESS' }
+        ]));
+        harness.ghResponses.push(JSON.stringify([{ bucket: 'pass' }]));
+
+        expect(fetchGitReviewData('/tmp/repo', harness.deps, { includeChecks: true })?.checks).toEqual({
+            failing: 0,
+            pending: 0,
+            state: 'passing',
+            success: 1
+        });
+        expect(prChecksCalls(harness)).toHaveLength(1);
+    });
+
+    it('counts gh pr checks\' pending, skipping and cancel rows as it counts the rollup', () => {
+        const harness = createHarness();
+        harness.setOriginRemoteUrl('https://github.com/example-owner/example-repo.git');
+        harness.ghResponses.push(prWithChecks([
+            // Failed, and its re-run is still going
+            { __typename: 'CheckRun', conclusion: 'FAILURE', name: 'test', startedAt: '2026-10-14T10:00:00Z', status: 'COMPLETED', workflowName: 'CI' },
+            { __typename: 'CheckRun', conclusion: '', name: 'test', startedAt: '2026-10-14T10:20:00Z', status: 'IN_PROGRESS', workflowName: 'CI' },
+            { __typename: 'CheckRun', conclusion: 'SKIPPED', name: 'docs', startedAt: '2026-10-14T10:00:00Z', status: 'COMPLETED', workflowName: 'CI' },
+            { __typename: 'CheckRun', conclusion: 'CANCELLED', name: 'deploy', startedAt: '2026-10-14T10:00:00Z', status: 'COMPLETED', workflowName: 'CI' }
+        ]));
+        harness.ghResponses.push(JSON.stringify([{ bucket: 'pending' }, { bucket: 'skipping' }, { bucket: 'cancel' }]));
+
+        expect(fetchGitReviewData('/tmp/repo', harness.deps, { includeChecks: true })?.checks).toEqual({
+            failing: 1,
+            pending: 1,
+            state: 'failing',
+            success: 0
+        });
+    });
+
+    // The rollup has no event field, so a workflow's push and pull_request runs
+    // look like runs of one check. GitHub lists them as two checks.
+    it('keeps a workflow\'s push and pull_request runs apart, as gh pr checks does', () => {
+        const harness = createHarness();
+        harness.setOriginRemoteUrl('https://github.com/example-owner/example-repo.git');
+        harness.ghResponses.push(prWithChecks([
+            // push
+            { __typename: 'CheckRun', conclusion: 'FAILURE', name: 'test', startedAt: '2026-10-14T10:00:00Z', status: 'COMPLETED', workflowName: 'CI' },
+            // pull_request, then its re-run
+            { __typename: 'CheckRun', conclusion: 'FAILURE', name: 'test', startedAt: '2026-10-14T10:00:05Z', status: 'COMPLETED', workflowName: 'CI' },
+            { __typename: 'CheckRun', conclusion: 'SUCCESS', name: 'test', startedAt: '2026-10-14T10:20:00Z', status: 'COMPLETED', workflowName: 'CI' }
+        ]));
+        // The newest pull_request run, and the push run
+        harness.ghResponses.push(JSON.stringify([{ bucket: 'pass' }, { bucket: 'fail' }]));
+
+        expect(fetchGitReviewData('/tmp/repo', harness.deps, { includeChecks: true })?.checks).toEqual({
+            failing: 1,
+            pending: 0,
+            state: 'failing',
+            success: 1
+        });
+    });
+
+    // gh added --json to pr checks in 2.50
+    it('keeps the rollup\'s counts when gh is too old for pr checks --json', () => {
+        const harness = createHarness();
+        harness.setOriginRemoteUrl('https://github.com/example-owner/example-repo.git');
+        harness.ghResponses.push(prWithChecks(RERUN_ROLLUP));
+        harness.ghResponses.push(new Error('unknown flag: --json'));
+
+        expect(fetchGitReviewData('/tmp/repo', harness.deps, { includeChecks: true })?.checks).toEqual(RERUN_ROLLUP_COUNTS);
+        expect(prChecksCalls(harness)).toHaveLength(1);
+    });
+
+    it('keeps the rollup\'s counts when gh pr checks prints no rows', () => {
+        const harness = createHarness();
+        harness.setOriginRemoteUrl('https://github.com/example-owner/example-repo.git');
+        harness.ghResponses.push(prWithChecks(RERUN_ROLLUP));
+        harness.ghResponses.push('[]');
+
+        expect(fetchGitReviewData('/tmp/repo', harness.deps, { includeChecks: true })?.checks).toEqual(RERUN_ROLLUP_COUNTS);
+        expect(prChecksCalls(harness)).toHaveLength(1);
+    });
+
+    it('makes no gh pr checks call when the rollup repeats no check', () => {
+        const harness = createHarness();
+        harness.setOriginRemoteUrl('https://github.com/example-owner/example-repo.git');
+        harness.ghResponses.push(prWithChecks([
+            { __typename: 'CheckRun', conclusion: 'SUCCESS', name: 'build', status: 'COMPLETED', workflowName: 'CI' },
+            { __typename: 'CheckRun', conclusion: 'SUCCESS', name: 'build', status: 'COMPLETED', workflowName: 'Release' },
+            { __typename: 'StatusContext', context: 'build', state: 'SUCCESS' },
+            { conclusion: 'SUCCESS', status: 'COMPLETED' },
+            { conclusion: 'SUCCESS', status: 'COMPLETED' }
+        ]));
+
+        expect(fetchGitReviewData('/tmp/repo', harness.deps, { includeChecks: true })?.checks).toEqual({
+            failing: 0,
+            pending: 0,
+            state: 'passing',
+            success: 5
+        });
+        expect(prChecksCalls(harness)).toHaveLength(0);
+    });
+
+    it('passes the pinned --repo to gh pr checks', () => {
+        const harness = createHarness();
+        harness.setOriginRemoteUrl('https://github.com/fork-owner/example-repo.git');
+        harness.ghResponses.push('');
+        harness.ghResponses.push(prWithChecks(RERUN_ROLLUP));
+        harness.ghResponses.push(RERUN_CHECK_ROWS);
+
+        expect(fetchGitReviewData('/tmp/repo', harness.deps, { includeChecks: true })?.checks?.state).toBe('passing');
+        expect(prChecksCalls(harness).map(call => call.args)).toEqual([
+            ['pr', 'checks', '--repo', 'https://github.com/fork-owner/example-repo', '--json', 'bucket', '--', '42']
+        ]);
+    });
+
+    it('gives gh pr checks only what is left of the lookup\'s budget', () => {
+        const harness = createHarness();
+        harness.setOriginRemoteUrl('https://github.com/example-owner/example-repo.git');
+        harness.ghDurations.push(3_000);
+        harness.ghResponses.push(prWithChecks(RERUN_ROLLUP));
+        harness.ghResponses.push(RERUN_CHECK_ROWS);
+
+        expect(fetchGitReviewData('/tmp/repo', harness.deps, { includeChecks: true })?.checks?.state).toBe('passing');
+        expect(prChecksCalls(harness).map(call => call.timeout)).toEqual([2_000]);
+    });
+
+    it('keeps the rollup\'s counts without a gh pr checks call once the lookup\'s budget is spent', () => {
+        const harness = createHarness();
+        harness.setOriginRemoteUrl('https://github.com/example-owner/example-repo.git');
+        harness.ghDurations.push(5_000);
+        harness.ghResponses.push(prWithChecks(RERUN_ROLLUP));
+        harness.ghResponses.push(RERUN_CHECK_ROWS);
+
+        expect(fetchGitReviewData('/tmp/repo', harness.deps, { includeChecks: true })?.checks).toEqual(RERUN_ROLLUP_COUNTS);
+        expect(prChecksCalls(harness)).toHaveLength(0);
     });
 
     // A branch named like a flag (a planted HEAD can say `ref: refs/heads/--web`)
