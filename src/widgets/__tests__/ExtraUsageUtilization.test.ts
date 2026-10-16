@@ -271,8 +271,10 @@ describe('ExtraUsageUtilizationWidget', () => {
 
     describe('value colors', () => {
         const LOW = '\x1b[38;2;0;255;0m';
-        const MID = '\x1b[38;2;255;255;0m';
-        const HIGH = '\x1b[38;2;255;0;0m';
+        // At the default 256 Color level these hex colors map to palette entries
+        const LOW_256 = '\x1b[38;5;46m';
+        const MID_256 = '\x1b[38;5;226m';
+        const HIGH_256 = '\x1b[38;5;196m';
         const FG_RESET = '\x1b[39m';
         // Custom colors, so the escape codes don't depend on the terminal's
         // color support (named colors go through chalk)
@@ -293,21 +295,21 @@ describe('ExtraUsageUtilizationWidget', () => {
             const widget = new ExtraUsageUtilizationWidget();
             const raw = { ...colored, rawValue: true };
 
-            expect(render(widget, raw, used(69.9))).toBe(`${LOW}69.9%${FG_RESET}`);
-            expect(render(widget, raw, used(70))).toBe(`${MID}70.0%${FG_RESET}`);
-            expect(render(widget, raw, used(89.9))).toBe(`${MID}89.9%${FG_RESET}`);
-            expect(render(widget, raw, used(90))).toBe(`${HIGH}90.0%${FG_RESET}`);
+            expect(render(widget, raw, used(69.9))).toBe(`${LOW_256}69.9%${FG_RESET}`);
+            expect(render(widget, raw, used(70))).toBe(`${MID_256}70.0%${FG_RESET}`);
+            expect(render(widget, raw, used(89.9))).toBe(`${MID_256}89.9%${FG_RESET}`);
+            expect(render(widget, raw, used(90))).toBe(`${HIGH_256}90.0%${FG_RESET}`);
         });
 
         it('colors only the percent, leaving the label to the renderer', () => {
-            expect(render(new ExtraUsageUtilizationWidget(), colored, used(25))).toBe(`Overage: ${LOW}25.0%${FG_RESET}`);
+            expect(render(new ExtraUsageUtilizationWidget(), colored, used(25))).toBe(`Overage: ${LOW_256}25.0%${FG_RESET}`);
         });
 
         it('colors the label with the percent when set to the whole widget', async () => {
             const widget = new ExtraUsageUtilizationWidget();
             const whole = { ...colored, metadata: { ...colored.metadata, valueColorScope: 'widget' } };
 
-            expect(render(widget, whole, used(95))).toBe(`${HIGH}Overage: 95.0%${FG_RESET}`);
+            expect(render(widget, whole, used(95))).toBe(`${HIGH_256}Overage: 95.0%${FG_RESET}`);
             expect(widget.getEditorDisplay(whole).modifierText).toBe('(used, value colors, whole widget)');
 
             // The editor's sample shows the widget's label with each value
@@ -323,7 +325,7 @@ describe('ExtraUsageUtilizationWidget', () => {
         it('colors by the used percent while showing what\'s left', () => {
             const item = { ...colored, rawValue: true, metadata: { ...colored.metadata, invert: 'true' } };
 
-            expect(render(new ExtraUsageUtilizationWidget(), item, used(95))).toBe(`${HIGH}5.0%${FG_RESET}`);
+            expect(render(new ExtraUsageUtilizationWidget(), item, used(95))).toBe(`${HIGH_256}5.0%${FG_RESET}`);
         });
 
         // The sample shows what the widget shows, what's left, in the color of what's used
@@ -333,10 +335,10 @@ describe('ExtraUsageUtilizationWidget', () => {
             const whole = { ...remaining, metadata: { ...remaining.metadata, valueColorScope: 'widget' } };
 
             // 70% used shows as 30% left, yellow
-            expect(render(widget, whole, used(70))).toBe(`${MID}Overage: 30.0%${FG_RESET}`);
+            expect(render(widget, whole, used(70))).toBe(`${MID_256}Overage: 30.0%${FG_RESET}`);
             for (const [item, sample, coloredValue] of [
-                [remaining, 'Sample: 65% 30% 10% 0% left', `${MID}30%`],
-                [whole, 'Sample: Overage: 65%  Overage: 30%  Overage: 10%  Overage: 0% left', `${MID}Overage: 30%`]
+                [remaining, 'Sample: 65% 30% 10% 0% left', `${MID_256}30%`],
+                [whole, 'Sample: Overage: 65%  Overage: 30%  Overage: 10%  Overage: 0% left', `${MID_256}Overage: 30%`]
             ] as const) {
                 const editor = renderWidgetEditor(props => widget.renderEditor(props), item);
                 try {
@@ -376,8 +378,8 @@ describe('ExtraUsageUtilizationWidget', () => {
         it('previews 85% in its color', () => {
             const widget = new ExtraUsageUtilizationWidget();
 
-            expect(render(widget, colored, { isPreview: true })).toBe(`Overage: ${MID}85.0%${FG_RESET}`);
-            expect(render(widget, { ...colored, metadata: { ...colored.metadata, invert: 'true' } }, { isPreview: true })).toBe(`Overage: ${MID}15.0%${FG_RESET}`);
+            expect(render(widget, colored, { isPreview: true })).toBe(`Overage: ${MID_256}85.0%${FG_RESET}`);
+            expect(render(widget, { ...colored, metadata: { ...colored.metadata, invert: 'true' } }, { isPreview: true })).toBe(`Overage: ${MID_256}15.0%${FG_RESET}`);
         });
 
         it('names the option on the editor row and opens its editor with v', () => {

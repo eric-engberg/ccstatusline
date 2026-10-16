@@ -68,7 +68,7 @@ describe('EffortColorsEditor', () => {
 
         try {
             await editor.ready();
-            expect(editor.takeColoredOutput()).toContain('Sample: \x1b[38;2;17;34;51m(Thinking: \x1b[38;2;255;136;0mlow\x1b[38;2;17;34;51m)');
+            expect(editor.takeColoredOutput()).toContain('Sample: \x1b[38;5;235m(Thinking: \x1b[38;5;208mlow\x1b[38;5;235m)');
         } finally {
             editor.cleanup();
         }
