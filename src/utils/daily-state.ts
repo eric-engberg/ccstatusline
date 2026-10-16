@@ -24,7 +24,7 @@ export interface SpendDayRecord {
 
 export interface DailyState {
     version: typeof STATE_VERSION;
-    /** Keyed by the login's token fingerprint, so accounts never mix. */
+    /** Keyed by the login's account, or its token fingerprint until the account is known, so accounts never mix. */
     spend: Record<string, SpendDayRecord>;
 }
 
