@@ -335,8 +335,12 @@ describe('npm registry request', () => {
         expect(destroy).toHaveBeenCalledOnce();
     });
 
-    it('tunnels through the proxy named by HTTPS_PROXY', async () => {
-        process.env.HTTPS_PROXY = 'http://proxy.example:8080';
+    // A host:port with no scheme is an HTTP proxy, as curl reads it
+    it.each([
+        ['', 'http://proxy.example:8080'],
+        [' given as host:port, with no scheme', 'proxy.example:8080']
+    ])('tunnels through the proxy named by HTTPS_PROXY%s', async (_label, proxyUrl) => {
+        process.env.HTTPS_PROXY = proxyUrl;
         const requestFn = vi.fn(respondingRequest('{"version":"2.3.0"}'));
 
         await expect(fetchLatestNpmVersion(5000, requestFn)).resolves.toBe('2.3.0');
