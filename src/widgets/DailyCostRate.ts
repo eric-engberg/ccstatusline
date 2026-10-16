@@ -11,6 +11,7 @@ import {
     resolveNumberFormat
 } from '../utils/number-format';
 
+import { formatUsageCurrency } from './shared/currency';
 import {
     isMetadataFlagEnabled,
     toggleMetadataFlag
@@ -96,7 +97,13 @@ export class DailyCostRateWidget implements Widget {
             return null;
         }
 
-        return formatRawOrLabeledValue(item, LABEL, `${formatCost(cost / (durationMs / HOUR_MS), format)}/hr`);
+        const perHour = cost / (durationMs / HOUR_MS);
+        // Billed spend is in the currency the usage API reports, as Extra Usage
+        // Today shows it; Claude Code's own costs are in US dollars.
+        const amount = isBilledSpend(item)
+            ? formatUsageCurrency(perHour, context.usageData?.extraUsageCurrency, format)
+            : formatCost(perHour, format);
+        return formatRawOrLabeledValue(item, LABEL, `${amount}/hr`);
     }
 
     supportsRawValue(): boolean { return true; }
