@@ -244,6 +244,21 @@ describe('CurrentWorkingDirWidget', () => {
 
             expect(result).toBe(expected);
         });
+
+        it.each([
+            { path: '\\\\server\\share\\team\\repo', expected: '\\\\server\\s\\t\\repo' },
+            { path: '//server/share/team/repo', expected: '//server/s/t/repo' },
+            { path: 'C:\\Users\\me\\proj\\sub', expected: 'C:\\U\\m\\p\\sub' }
+        ])('should keep the root of $path', ({ path, expected }) => {
+            const item = createItem({ fishStyle: 'true' }, true);
+            const result = widget.render(
+                item,
+                createContext(path),
+                defaultSettings
+            );
+
+            expect(result).toBe(expected);
+        });
     });
 
     describe('getEditorDisplay', () => {

@@ -240,14 +240,9 @@ export class CurrentWorkingDirWidget implements Widget {
             return first;  // Only first letter for others
         });
 
-        // Rebuild path
-        if (normalizedPath.startsWith('~')) {
-            return abbreviated.join(sep);
-        } else if (normalizedPath.startsWith('/')) {
-            return sep + abbreviated.join(sep);
-        } else {
-            return abbreviated.join(sep);
-        }
+        // Rebuild path on its root: '/', or the '\\' or '//' of a UNC path
+        const root = /^[\\/]+/.exec(normalizedPath)?.[0] ?? '';
+        return root + abbreviated.join(sep);
     }
 }
 
