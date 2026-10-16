@@ -14,6 +14,7 @@ import {
     DEFAULT_SETTINGS,
     SettingsSchema
 } from '../../types/Settings';
+import { initConfigPath } from '../config';
 import {
     removeManagedHooks,
     syncWidgetHooks
@@ -30,9 +31,12 @@ describe('syncWidgetHooks', () => {
     beforeEach(() => {
         testClaudeConfigDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-hooks-'));
         process.env.CLAUDE_CONFIG_DIR = testClaudeConfigDir;
+        // Saves are of the default config, which a command without --config loads
+        initConfigPath();
     });
 
     afterEach(() => {
+        initConfigPath();
         if (testClaudeConfigDir) {
             fs.rmSync(testClaudeConfigDir, { recursive: true, force: true });
         }
@@ -259,6 +263,81 @@ describe('syncWidgetHooks', () => {
 
         const settings = SettingsSchema.parse({ lines: [[{ id: 'skills-1', type: 'skills' }]] });
 
+        await syncWidgetHooks(settings);
+
+        const saved = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as { hooks?: Record<string, unknown[]> };
+        expect(saved.hooks).toEqual({
+            PreToolUse: [
+                {
+                    _tag: 'ccstatusline-managed',
+                    matcher: 'Skill',
+                    hooks: [{ type: 'command', command: `${command} --hook` }]
+                }
+            ],
+            UserPromptSubmit: [
+                {
+                    _tag: 'ccstatusline-managed',
+                    hooks: [{ type: 'command', command: `${command} --hook` }]
+                }
+            ]
+        });
+    });
+
+    it('leaves the hooks alone when saving a config the status line command doesn\'t load', async () => {
+        const settingsPath = getClaudeSettingsPath();
+        const command = 'npx -y ccstatusline@latest';
+        const claudeSettings = JSON.stringify({
+            statusLine: { type: 'command', command },
+            hooks: {
+                PreToolUse: [
+                    {
+                        _tag: 'ccstatusline-managed',
+                        matcher: 'Skill',
+                        hooks: [{ type: 'command', command: `${command} --hook` }]
+                    }
+                ],
+                UserPromptSubmit: [
+                    {
+                        _tag: 'ccstatusline-managed',
+                        hooks: [{ type: 'command', command: `${command} --hook` }]
+                    }
+                ]
+            }
+        }, null, 2);
+        fs.writeFileSync(settingsPath, claudeSettings, 'utf-8');
+
+        // The command loads the default config; this one was opened with --config
+        initConfigPath(path.join(testClaudeConfigDir, 'other.json'));
+        await syncWidgetHooks(DEFAULT_SETTINGS);
+
+        expect(fs.readFileSync(settingsPath, 'utf-8')).toBe(claudeSettings);
+    });
+
+    it('doesn\'t add hooks for the default config when the status line command loads another', async () => {
+        const settingsPath = getClaudeSettingsPath();
+        const command = `ccstatusline --config ${path.join(testClaudeConfigDir, 'other.json')}`;
+        const claudeSettings = JSON.stringify({ statusLine: { type: 'command', command } }, null, 2);
+        fs.writeFileSync(settingsPath, claudeSettings, 'utf-8');
+
+        const settings = SettingsSchema.parse({ lines: [[{ id: 'skills-1', type: 'skills' }]] });
+
+        await syncWidgetHooks(settings);
+
+        expect(fs.readFileSync(settingsPath, 'utf-8')).toBe(claudeSettings);
+    });
+
+    it('adds hooks once the saved config is the one the command\'s --config names', async () => {
+        const settingsPath = getClaudeSettingsPath();
+        const command = 'ccstatusline --config ~/\'my configs\'/statusline.json';
+        fs.writeFileSync(settingsPath, JSON.stringify({ statusLine: { type: 'command', command } }, null, 2), 'utf-8');
+
+        const settings = SettingsSchema.parse({ lines: [[{ id: 'skills-1', type: 'skills' }]] });
+
+        await syncWidgetHooks(settings);
+        const unchanged = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as { hooks?: Record<string, unknown[]> };
+        expect(unchanged.hooks).toBeUndefined();
+
+        initConfigPath(path.join(os.homedir(), 'my configs', 'statusline.json'));
         await syncWidgetHooks(settings);
 
         const saved = JSON.parse(fs.readFileSync(settingsPath, 'utf-8')) as { hooks?: Record<string, unknown[]> };
