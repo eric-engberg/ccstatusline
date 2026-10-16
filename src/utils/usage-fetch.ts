@@ -85,9 +85,13 @@ const UsageCredentialsSchema = z.object({
     }).optional()
 });
 const UsageLockErrorSchema = z.enum(['timeout', 'rate-limited', 'api-error', 'parse-error']);
+// `transient` marks an api-error lock whose failure clears up on its own (see
+// UsageData.errorTransient). Locks written without it, including every lock
+// from before it existed, read as lasting failures.
 const UsageLockSchema = z.object({
     blockedUntil: z.number(),
-    error: UsageLockErrorSchema.optional()
+    error: UsageLockErrorSchema.optional(),
+    transient: z.boolean().optional()
 });
 
 // The per-model fields (weeklySonnetUsage, weeklyOpusUsage, ...) are declared
@@ -357,7 +361,7 @@ let usageErrorCacheMaxAge = LOCK_MAX_AGE;
 
 type UsageLockError = z.infer<typeof UsageLockErrorSchema>;
 
-type UsageApiFetchResult = { kind: 'success'; body: string } | { kind: 'rate-limited'; retryAfterSeconds: number } | { kind: 'error' };
+type UsageApiFetchResult = { kind: 'success'; body: string } | { kind: 'rate-limited'; retryAfterSeconds: number } | { kind: 'error'; transient: boolean };
 interface MacKeychainCredentialCandidate {
     modifiedAt: string | null;
     order: number;
@@ -379,8 +383,8 @@ function ensureCacheDirExists(): void {
     }
 }
 
-function setCachedUsageError(error: UsageError, now: number, maxAge = LOCK_MAX_AGE): UsageData {
-    const errorData: UsageData = { error };
+function setCachedUsageError(error: UsageError, now: number, maxAge = LOCK_MAX_AGE, transient = false): UsageData {
+    const errorData: UsageData = transient ? { error, errorTransient: true } : { error };
     cachedUsageData = errorData;
     usageCacheTime = now;
     usageErrorCacheMaxAge = maxAge;
@@ -426,14 +430,15 @@ function getStaleUsageOrError(
     now: number,
     cacheIdentity: UsageCacheIdentity | null,
     errorCacheMaxAge = LOCK_MAX_AGE,
-    requiredFields: readonly UsageDataField[] = []
+    requiredFields: readonly UsageDataField[] = [],
+    transient = false
 ): UsageData {
     const stale = readStaleUsageCache(cacheIdentity);
     if (stale && !stale.error && hasRequiredUsageFields(stale, requiredFields)) {
         return cacheUsageData(stale, now);
     }
 
-    return setCachedUsageError(error, now, errorCacheMaxAge);
+    return setCachedUsageError(error, now, errorCacheMaxAge, transient);
 }
 
 function normalizeSecurityTimedateValue(rawValue: string): string | null {
@@ -684,8 +689,8 @@ function readStaleUsageCache(cacheIdentity: UsageCacheIdentity | null): UsageDat
     }
 }
 
-function writeUsageLock(blockedUntil: number, error: UsageLockError): string {
-    const contents = JSON.stringify({ blockedUntil, error });
+function writeUsageLock(blockedUntil: number, error: UsageLockError, transient = false): string {
+    const contents = JSON.stringify(transient ? { blockedUntil, error, transient } : { blockedUntil, error });
     try {
         ensureCacheDirExists();
         fs.writeFileSync(getLockFile(), contents);
@@ -710,12 +715,13 @@ function clearOwnUsageLock(ownContents: string): void {
 }
 
 // Swap the in-flight record this process wrote for a failed request's own
-// backoff, so later renders report that failure rather than a timeout. As
-// above, a concurrent render's newer lock is left in place.
-function replaceOwnUsageLock(ownContents: string, blockedUntil: number, error: UsageLockError): void {
+// backoff, so later renders report that failure, and whether it clears up on
+// its own, rather than a timeout. As above, a concurrent render's newer lock
+// is left in place.
+function replaceOwnUsageLock(ownContents: string, blockedUntil: number, error: UsageLockError, transient: boolean): void {
     try {
         if (fs.readFileSync(getLockFile(), 'utf8') === ownContents) {
-            writeUsageLock(blockedUntil, error);
+            writeUsageLock(blockedUntil, error, transient);
         }
     } catch {
         // Ignore lock file errors
@@ -732,7 +738,7 @@ function getUsageLockHorizon(error: UsageLockError): number {
     return error === 'rate-limited' ? MAX_LOCK_HORIZON : 2 * LOCK_MAX_AGE;
 }
 
-function readActiveUsageLock(now: number): { blockedUntil: number; error: UsageLockError } | null {
+function readActiveUsageLock(now: number): { blockedUntil: number; error: UsageLockError; transient: boolean } | null {
     let hasValidJsonLock = false;
 
     try {
@@ -746,7 +752,8 @@ function readActiveUsageLock(now: number): { blockedUntil: number; error: UsageL
             if (parsed.blockedUntil > now && parsed.blockedUntil <= now + getUsageLockHorizon(error)) {
                 return {
                     blockedUntil: parsed.blockedUntil,
-                    error
+                    error,
+                    transient: parsed.transient ?? false
                 };
             }
             return null;
@@ -766,7 +773,8 @@ function readActiveUsageLock(now: number): { blockedUntil: number; error: UsageL
         if (blockedUntil > now && blockedUntil <= now + getUsageLockHorizon('timeout')) {
             return {
                 blockedUntil,
-                error: 'timeout'
+                error: 'timeout',
+                transient: false
             };
         }
     } catch {
@@ -800,6 +808,15 @@ function parseRetryAfterSeconds(headerValue: string | string[] | undefined, nowM
 const USAGE_API_HOST = 'api.anthropic.com';
 const USAGE_API_PATH = '/api/oauth/usage';
 const USAGE_API_TIMEOUT_MS = 5000;
+
+// A 5xx is the server failing, and clears up once it recovers. Any other
+// answer refuses the request itself: a 401 or 403 for a token the API
+// rejects, a 407 from a proxy that wants its own login, a 404 for an
+// endpoint that moved, or a 200 with nothing in it. Every render sends the
+// same request, so it is refused again until the login or the setup changes.
+function isTransientUsageApiStatus(statusCode: number | undefined): boolean {
+    return statusCode !== undefined && statusCode >= 500;
+}
 
 function getUsageApiProxyUrl(): string | null {
     const proxyUrl = process.env.HTTPS_PROXY?.trim();
@@ -837,7 +854,8 @@ function getUsageApiRequest(token: string): { options: https.RequestOptions; pro
 async function fetchFromUsageApi(token: string, deadlineMs = USAGE_API_TIMEOUT_MS): Promise<UsageApiFetchResult> {
     const usageRequest = getUsageApiRequest(token);
     if (!usageRequest) {
-        return { kind: 'error' };
+        // A proxy setting that can't be used stays that way until it's changed
+        return { kind: 'error', transient: false };
     }
 
     return new Promise((resolve) => {
@@ -850,6 +868,11 @@ async function fetchFromUsageApi(token: string, deadlineMs = USAGE_API_TIMEOUT_M
             settled = true;
             clearTimeout(deadline);
             resolve(value);
+        };
+        // No answer, or one cut short: the network or the server may well be
+        // back by the next try
+        const failTransiently = () => {
+            finish({ kind: 'error', transient: true });
         };
 
         const request = https.request(usageRequest.options, (response) => {
@@ -874,25 +897,25 @@ async function fetchFromUsageApi(token: string, deadlineMs = USAGE_API_TIMEOUT_M
                     return;
                 }
 
-                finish({ kind: 'error' });
+                finish({ kind: 'error', transient: isTransientUsageApiStatus(response.statusCode) });
             });
             // A connection dropped mid-body ends neither the response nor the
             // request, and the idle timeout can't fire on a closed socket
-            response.on('aborted', () => { finish({ kind: 'error' }); });
-            response.on('error', () => { finish({ kind: 'error' }); });
+            response.on('aborted', failTransiently);
+            response.on('error', failTransiently);
         });
 
-        request.on('error', () => { finish({ kind: 'error' }); });
+        request.on('error', failTransiently);
         request.on('timeout', () => {
             request.destroy();
-            finish({ kind: 'error' });
+            failTransiently();
         });
         // `timeout` only covers an idle socket, and behind a proxy the request
         // has none until the proxy answers CONNECT
         const deadline = setTimeout(() => {
             request.destroy();
             usageRequest.proxy?.close();
-            finish({ kind: 'error' });
+            failTransiently();
         }, deadlineMs);
         request.end();
     });
@@ -953,7 +976,8 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
             now,
             cacheIdentity,
             Math.max(1, activeLock.blockedUntil - now),
-            requiredFields
+            requiredFields,
+            activeLock.transient
         );
     }
 
@@ -969,8 +993,8 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
         }
 
         if (response.kind === 'error') {
-            replaceOwnUsageLock(inFlightLock, now + LOCK_MAX_AGE, 'api-error');
-            return getStaleUsageOrError('api-error', now, cacheIdentity, LOCK_MAX_AGE, requiredFields);
+            replaceOwnUsageLock(inFlightLock, now + LOCK_MAX_AGE, 'api-error', response.transient);
+            return getStaleUsageOrError('api-error', now, cacheIdentity, LOCK_MAX_AGE, requiredFields, response.transient);
         }
 
         const usageData = parseUsageApiResponse(response.body);

@@ -26,6 +26,10 @@ export interface UsageData {
     extraUsageUtilization?: number; // percentage 0-100
     extraUsageCurrency?: string;   // ISO 4217 currency code (e.g. 'USD', 'EUR')
     error?: UsageError;
+    // Set with an api-error that clears up on its own: a 5xx response, a
+    // network error or a request past its deadline. A request the API or a
+    // proxy refused, such as a rejected token, leaves it unset.
+    errorTransient?: boolean;
 }
 
 export interface UsageWindowMetrics {
@@ -36,7 +40,7 @@ export interface UsageWindowMetrics {
     remainingPercent: number;
 }
 
-export type UsageDataField = Exclude<keyof UsageData, 'error'>;
+export type UsageDataField = Exclude<keyof UsageData, 'error' | 'errorTransient'>;
 
 // Fields that exist only in the statusline payload, never in the usage API
 // response or its on-disk cache.

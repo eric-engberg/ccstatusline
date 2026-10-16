@@ -53,7 +53,7 @@ interface ProbeOptions {
     lockWrittenDuringRequest?: string;
     lowercaseHttpsProxy?: string;
     noProxy?: string;
-    mode?: 'error' | 'response-aborted' | 'response-error' | 'status' | 'success' | 'unexpected';
+    mode?: 'error' | 'request-timeout' | 'response-aborted' | 'response-error' | 'status' | 'success' | 'unexpected';
     nowMs: number;
     pathDir?: string;
     requiredFields?: string[];
@@ -133,6 +133,15 @@ https.request = (...args) => {
                 const handlers = requestHandlers.get('error') || [];
                 for (const handler of handlers) {
                     handler(new Error('unexpected request'));
+                }
+                return;
+            }
+
+            // The socket sits idle past the request's timeout
+            if (mode === 'request-timeout') {
+                const handlers = requestHandlers.get('timeout') || [];
+                for (const handler of handlers) {
+                    handler();
                 }
                 return;
             }
@@ -302,8 +311,8 @@ process.stdout.write(JSON.stringify({
     };
 }
 
-function parseLockContents(lockContents: string | null): { blockedUntil: number; error?: string } | null {
-    return lockContents ? JSON.parse(lockContents) as { blockedUntil: number; error?: string } : null;
+function parseLockContents(lockContents: string | null): { blockedUntil: number; error?: string; transient?: boolean } | null {
+    return lockContents ? JSON.parse(lockContents) as { blockedUntil: number; error?: string; transient?: boolean } : null;
 }
 
 // createTokenHome writes an access-token-only credentials file; these tests
@@ -526,15 +535,16 @@ describe('fetchUsageData error handling', () => {
                 pathDir: apiErrorHome.bin
             });
 
-            expect(apiErrorResult.first).toEqual({ error: 'api-error' });
-            expect(apiErrorResult.second).toEqual({ error: 'api-error' });
+            expect(apiErrorResult.first).toEqual({ error: 'api-error', errorTransient: true });
+            expect(apiErrorResult.second).toEqual({ error: 'api-error', errorTransient: true });
             expect(apiErrorResult.cacheExists).toBe(false);
             expect(apiErrorResult.requestCount).toBe(1);
             expect(apiErrorResult.proxyAgentConfigured).toBe(false);
             expect(apiErrorResult.requestHost).toBe('api.anthropic.com');
             expect(parseLockContents(apiErrorResult.lockContents)).toEqual({
                 blockedUntil: Math.floor(nowMs / 1000) + 30,
-                error: 'api-error'
+                error: 'api-error',
+                transient: true
             });
 
             const genericLockResult = harness.runProbe({
@@ -545,8 +555,8 @@ describe('fetchUsageData error handling', () => {
                 pathDir: apiErrorHome.bin
             });
 
-            expect(genericLockResult.first).toEqual({ error: 'api-error' });
-            expect(genericLockResult.second).toEqual({ error: 'api-error' });
+            expect(genericLockResult.first).toEqual({ error: 'api-error', errorTransient: true });
+            expect(genericLockResult.second).toEqual({ error: 'api-error', errorTransient: true });
             expect(genericLockResult.requestCount).toBe(0);
 
             const successResult = harness.runProbe({
@@ -1015,7 +1025,7 @@ describe('fetchUsageData error handling', () => {
 
             // The failure's own 30-second backoff must not cut the server's
             // Retry-After window short.
-            expect(result.first).toEqual({ error: 'api-error' });
+            expect(result.first).toEqual({ error: 'api-error', errorTransient: true });
             expect(result.requestCount).toBe(1);
             expect(result.lockContents).toBe(rateLimitedLock);
         } finally {
@@ -1027,9 +1037,9 @@ describe('fetchUsageData error handling', () => {
     // next render from calling the API again. Root can write anywhere, and
     // Windows ignores the read-only mode on folders.
     it.skipIf(process.platform === 'win32' || process.getuid?.() === 0).each([
-        { error: 'rate-limited', failure: { mode: 'status', responseBody: rateLimitedResponseBody, responseHeaders: { 'retry-after': '600' }, statusCode: 429 } },
-        { error: 'api-error', failure: { mode: 'error' } }
-    ] as const)('keeps the $error backoff across renders when ~/.cache cannot be written', ({ error, failure }) => {
+        { error: 'rate-limited', expected: { error: 'rate-limited' }, failure: { mode: 'status', responseBody: rateLimitedResponseBody, responseHeaders: { 'retry-after': '600' }, statusCode: 429 } },
+        { error: 'api-error', expected: { error: 'api-error', errorTransient: true }, failure: { mode: 'error' } }
+    ] as const)('keeps the $error backoff across renders when ~/.cache cannot be written', ({ error, expected, failure }) => {
         const harness = createProbeHarness();
         const home = harness.createTokenHome(`read-only-cache-${error}`);
         const userCacheDir = path.join(home.home, '.cache');
@@ -1044,7 +1054,7 @@ describe('fetchUsageData error handling', () => {
                 pathDir: home.bin,
                 ...failure
             });
-            expect(failed.first).toEqual({ error });
+            expect(failed.first).toEqual(expected);
             expect(failed.requestCount).toBe(1);
 
             const backedOff = harness.runProbe({
@@ -1054,7 +1064,7 @@ describe('fetchUsageData error handling', () => {
                 nowMs: nowMs + 10000,
                 pathDir: home.bin
             });
-            expect(backedOff.first).toEqual({ error });
+            expect(backedOff.first).toEqual(expected);
             expect(backedOff.requestCount).toBe(0);
             expect(fs.readdirSync(userCacheDir)).toEqual([]);
             expect(fs.existsSync(path.join(harness.probeTmpDir, `ccstatusline-${process.getuid?.()}`, 'usage.lock'))).toBe(true);
@@ -1846,6 +1856,95 @@ describe('fetchUsageData error handling', () => {
         }
     });
 
+    // A server failing, a network that drops the request and a request that
+    // never answers all clear up on their own, so the reset timers keep their
+    // loading placeholder through them and through their backoff
+    it.each([
+        { failure: { mode: 'status', statusCode: 503 }, name: 'a 503' },
+        { failure: { mode: 'error' }, name: 'a network error' },
+        { failure: { mode: 'request-timeout' }, name: 'a request timeout' }
+    ] as const)('marks $name as an API error that clears up on its own, across its backoff', ({ failure }) => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome(`transient-api-error-${failure.mode}`);
+            const failed = harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                nowMs,
+                pathDir: home.bin,
+                ...failure
+            });
+
+            expect(failed.first).toEqual({ error: 'api-error', errorTransient: true });
+            expect(failed.second).toEqual({ error: 'api-error', errorTransient: true });
+            expect(failed.requestCount).toBe(1);
+            expect(parseLockContents(failed.lockContents)).toEqual({
+                blockedUntil: Math.floor(nowMs / 1000) + 30,
+                error: 'api-error',
+                transient: true
+            });
+
+            const backedOff = harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                mode: 'unexpected',
+                nowMs: nowMs + 10000,
+                pathDir: home.bin
+            });
+
+            expect(backedOff.first).toEqual({ error: 'api-error', errorTransient: true });
+            expect(backedOff.requestCount).toBe(0);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    // The same request is refused again on the next render: a token the API
+    // rejects, an unknown path, a proxy that won't tunnel without its own
+    // login, or an answer with nothing in it. Their lock is written as before
+    // the transient marker existed, so it also stands for a lock left by an
+    // older version.
+    it.each([
+        { failure: { mode: 'status', statusCode: 403 }, name: 'a 403' },
+        { failure: { mode: 'status', statusCode: 404 }, name: 'a 404' },
+        { failure: { mode: 'status', statusCode: 407 }, name: 'a proxy\'s 407' },
+        { failure: { mode: 'status', statusCode: 200 }, name: 'an empty 200' }
+    ] as const)('keeps $name a lasting API error, across its backoff', ({ failure }) => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome(`lasting-api-error-${failure.statusCode}`);
+            const failed = harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                nowMs,
+                pathDir: home.bin,
+                ...failure
+            });
+
+            expect(failed.first).toEqual({ error: 'api-error' });
+            expect(failed.requestCount).toBe(1);
+            expect(parseLockContents(failed.lockContents)).toEqual({
+                blockedUntil: Math.floor(nowMs / 1000) + 30,
+                error: 'api-error'
+            });
+
+            const backedOff = harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                mode: 'unexpected',
+                nowMs: nowMs + 10000,
+                pathDir: home.bin
+            });
+
+            expect(backedOff.first).toEqual({ error: 'api-error' });
+            expect(backedOff.requestCount).toBe(0);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
     it.each(['response-aborted', 'response-error'] as const)('gives up as soon as the response stream fails (%s)', (mode) => {
         const harness = createProbeHarness();
 
@@ -1863,7 +1962,7 @@ describe('fetchUsageData error handling', () => {
 
             // Nothing more can arrive once the connection drops mid-body, and
             // waiting out the five-second deadline would hold the status line.
-            expect(result.first).toEqual({ error: 'api-error' });
+            expect(result.first).toEqual({ error: 'api-error', errorTransient: true });
             expect(result.requestCount).toBe(1);
             expect(result.firstElapsedMs).toBeLessThan(2500);
         } finally {
@@ -2162,7 +2261,7 @@ describe('usage API request behind a proxy that never answers CONNECT', () => {
         proxy = await startStalledProxy();
         process.env.HTTPS_PROXY = proxy.url;
 
-        expect(await __testing.fetchFromUsageApi('test-token', 50)).toEqual({ kind: 'error' });
+        expect(await __testing.fetchFromUsageApi('test-token', 50)).toEqual({ kind: 'error', transient: true });
         await proxy.connectionClosed;
     });
 });

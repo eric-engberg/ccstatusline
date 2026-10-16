@@ -352,6 +352,29 @@ describe('usage prefetch', () => {
         await expect(prefetchUsageDataIfNeeded(lines, {})).resolves.toBeNull();
     });
 
+    // A 5xx, a network error or a request past its deadline, whether this
+    // render's fetch failed or it read that failure's backoff
+    it('returns no usage data for reset-only lines while the API error clears up on its own', async () => {
+        mockFetchUsageData.mockResolvedValue({ error: 'api-error', errorTransient: true });
+
+        const lines = makeLines(
+            [{ id: '1', type: 'weekly-reset-timer' }],
+            [{ id: '2', type: 'reset-timer' }]
+        );
+
+        await expect(prefetchUsageDataIfNeeded(lines, {})).resolves.toBeNull();
+    });
+
+    it('keeps an API error that clears up on its own for lines that show it', async () => {
+        mockFetchUsageData.mockResolvedValue({ error: 'api-error', errorTransient: true });
+
+        const lines = makeLines(
+            [{ id: '1', type: 'weekly-usage' }, { id: '2', type: 'reset-timer' }]
+        );
+
+        await expect(prefetchUsageDataIfNeeded(lines, {})).resolves.toEqual({ error: 'api-error' });
+    });
+
     // A missing login, a rejected token or an unreadable response won't clear
     // up on a later render, so the timers would otherwise show [Loading] forever
     it.each(['no-credentials', 'api-error', 'parse-error'] as const)('keeps the %s error for reset-only fetches', async (error) => {

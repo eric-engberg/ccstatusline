@@ -63,8 +63,10 @@ const EMPTY_USAGE_REQUIREMENTS: UsageFieldRequirement[] = [];
 
 // Fetch errors that only mean the data hasn't arrived yet: a 429 while Claude
 // Code starts up, before its payload carries rate_limits, or another render's
-// fetch still in flight. Any other failure, a missing login or a rejected
-// token among them, may never clear up, so it is shown rather than a loading
+// fetch still in flight. An API error joins them when the fetch marks it as
+// one that clears up on its own: a 5xx response, a network error or a request
+// past its deadline. Any other failure, a missing login or a rejected token
+// among them, may never clear up, so it is shown rather than a loading
 // placeholder that never ends.
 const TRANSIENT_FETCH_ERRORS = new Set<UsageError>(['rate-limited', 'timeout']);
 
@@ -254,7 +256,9 @@ export async function prefetchUsageDataIfNeeded(lines: WidgetItem[][], data?: St
     }
 
     const apiData = await fetchUsageData({ requiredFields: missingFields });
-    if (apiData.error && missingRequirements.suppressFetchError && TRANSIENT_FETCH_ERRORS.has(apiData.error)) {
+    const hasTransientError = apiData.error !== undefined
+        && (TRANSIENT_FETCH_ERRORS.has(apiData.error) || apiData.errorTransient === true);
+    if (hasTransientError && missingRequirements.suppressFetchError) {
         return rateLimitsData;
     }
 
