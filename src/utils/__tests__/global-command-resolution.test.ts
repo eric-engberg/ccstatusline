@@ -238,6 +238,21 @@ describe('global command resolution', () => {
         }
     });
 
+    // Bun's plain realpathSync already reports the on-disk case, so only the
+    // call itself shows that Node gets the same answer
+    it('resolves directories with the native realpath', () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-case-'));
+        try {
+            const nativeSpy = vi.spyOn(fs.realpathSync, 'native');
+
+            getRealDirectory(root);
+
+            expect(nativeSpy).toHaveBeenCalledWith(root);
+        } finally {
+            fs.rmSync(root, { recursive: true, force: true });
+        }
+    });
+
     it('ignores transient bunx status line shims when resolving global commands', () => {
         mockExecFileSync({
             'which -a ccstatusline': '/var/folders/demo/T/bunx-501-ccstatusline@latest/node_modules/.bin/ccstatusline\n/Users/alice/.bun/bin/ccstatusline\n',
