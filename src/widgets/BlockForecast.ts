@@ -16,7 +16,7 @@ import {
 
 import {
     getUsageDirectionKeybind,
-    getUsageDisplayModifierText,
+    getUsageTextModifierText,
     isUsageInverted,
     toggleUsageInverted
 } from './shared/usage-display';
@@ -47,7 +47,7 @@ export class BlockForecastWidget implements Widget {
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         return {
             displayText: this.getDisplayName(),
-            modifierText: getUsageDisplayModifierText(item, {
+            modifierText: getUsageTextModifierText(item, {
                 showUsageDirection: true,
                 extraModifiers: [getValueColorsModifier(item)].filter((modifier): modifier is string => modifier !== null)
             })
@@ -71,14 +71,13 @@ export class BlockForecastWidget implements Widget {
         }
 
         const forecast = context.sessionForecast;
-        const currentPercent = context.usageData?.sessionUsage;
-        if (!forecast || currentPercent === undefined) {
+        if (!forecast) {
             return null;
         }
 
         // Nothing to add when the projection would only repeat the current value.
         const projected = shown(forecast.projectedPercent);
-        if (projected === shown(Math.max(0, Math.min(100, currentPercent)))) {
+        if (projected === shown(forecast.currentPercent)) {
             return null;
         }
 

@@ -14,9 +14,11 @@ import { describeValueColorsOnTheLine } from './helpers/value-colors-line';
 const ITEM: WidgetItem = { id: 'forecast', type: 'block-forecast' };
 const REMAINING: WidgetItem = { ...ITEM, metadata: { invert: 'true' } };
 
-const LOW = '\x1b[38;2;0;255;0m';
 const MID = '\x1b[38;2;255;255;0m';
-const HIGH = '\x1b[38;2;255;0;0m';
+// At the default 256 Color level these hex colors map to palette entries
+const LOW_256 = '\x1b[38;5;46m';
+const MID_256 = '\x1b[38;5;226m';
+const HIGH_256 = '\x1b[38;5;196m';
 const FG_RESET = '\x1b[39m';
 // Custom colors, so the escape codes don't depend on the terminal's color support
 const BAND_COLORS = {
@@ -31,8 +33,8 @@ function render(item: WidgetItem, context: RenderContext = {}): string | null {
     return new BlockForecastWidget().render(item, context, DEFAULT_SETTINGS);
 }
 
-function live(sessionUsage: number, projectedPercent: number, limitInMs: number | null = null): RenderContext {
-    return { usageData: { sessionUsage }, sessionForecast: { projectedPercent, limitInMs } };
+function live(currentPercent: number, projectedPercent: number, limitInMs: number | null = null): RenderContext {
+    return { usageData: { sessionUsage: currentPercent }, sessionForecast: { currentPercent, projectedPercent, limitInMs } };
 }
 
 describe('BlockForecastWidget', () => {
@@ -60,7 +62,6 @@ describe('BlockForecastWidget', () => {
     it.each([
         ['there is no forecast', { usageData: { sessionUsage: 42 } }],
         ['nothing is known', {}],
-        ['the 5-hour usage is unknown', { sessionForecast: { projectedPercent: 83.2, limitInMs: null } }],
         ['the projection reads the same as current usage', live(42, 42.04)]
     ])('renders nothing when %s', (_label, context: RenderContext) => {
         expect(render(ITEM, context)).toBeNull();
@@ -68,6 +69,14 @@ describe('BlockForecastWidget', () => {
 
     it('compares in the widget\'s number format', () => {
         expect(render({ ...ITEM, numberFormat: { style: 'whole' } }, live(42, 42.4))).toBeNull();
+    });
+
+    // An idle session's payload still has the percent from its own last
+    // response, while the forecast goes from the latest reading of any session
+    it('compares with the usage the forecast goes from, not an idle session\'s', () => {
+        const idle: RenderContext = { usageData: { sessionUsage: 30 }, sessionForecast: { currentPercent: 42, projectedPercent: 42.0167, limitInMs: null } };
+
+        expect(render(ITEM, idle)).toBeNull();
     });
 
     // On pace for the limit, so it reads with Block Limit Timer's preview
@@ -84,6 +93,17 @@ describe('BlockForecastWidget', () => {
         expect(widget.getDefaultColor()).toBe('brightBlue');
         expect(widget.getEditorDisplay(ITEM).modifierText).toBe('(used)');
         expect(widget.getEditorDisplay(REMAINING).modifierText).toBe('(remaining)');
+    });
+
+    // A type change in the widget picker keeps the old widget's metadata, but this
+    // widget never draws a bar
+    it('names only what it renders after a type change from a bar', () => {
+        const widget = new BlockForecastWidget();
+        const fromBar: WidgetItem = { ...ITEM, metadata: { display: 'progress', invert: 'true' } };
+
+        expect(render(fromBar, live(42, 83.2))).toBe('→16.8%');
+        expect(widget.getEditorDisplay(fromBar).modifierText).toBe('(remaining)');
+        expect(widget.getEditorDisplay({ ...ITEM, metadata: { display: 'slider-only' } }).modifierText).toBe('(used)');
     });
 
     it('toggles remaining mode with u', () => {
@@ -104,21 +124,21 @@ describe('BlockForecastWidget', () => {
         it('colors the projection by the band it lands in', () => {
             const raw = { ...COLORED, rawValue: true };
 
-            expect(render(raw, live(42, 55))).toBe(`${LOW}55.0%${FG_RESET}`);
-            expect(render(raw, live(42, 83.2))).toBe(`${MID}83.2%${FG_RESET}`);
-            expect(render(raw, live(61, 100, 4_387_500))).toBe(`${HIGH}100.0%${FG_RESET}`);
+            expect(render(raw, live(42, 55))).toBe(`${LOW_256}55.0%${FG_RESET}`);
+            expect(render(raw, live(42, 83.2))).toBe(`${MID_256}83.2%${FG_RESET}`);
+            expect(render(raw, live(61, 100, 4_387_500))).toBe(`${HIGH_256}100.0%${FG_RESET}`);
         });
 
         it('paints only the projection, leaving the arrow to the renderer', () => {
-            expect(render(COLORED, live(42, 83.2))).toBe(`→${MID}83.2%${FG_RESET}`);
+            expect(render(COLORED, live(42, 83.2))).toBe(`→${MID_256}83.2%${FG_RESET}`);
         });
 
         it('colors by the projected used percent while showing what\'s left', () => {
-            expect(render({ ...COLORED, metadata: { ...BAND_COLORS, invert: 'true' } }, live(61, 100, 4_387_500))).toBe(`→${HIGH}0.0%${FG_RESET}`);
+            expect(render({ ...COLORED, metadata: { ...BAND_COLORS, invert: 'true' } }, live(61, 100, 4_387_500))).toBe(`→${HIGH_256}0.0%${FG_RESET}`);
         });
 
         it('previews on pace for the limit, in the high color', () => {
-            expect(render(COLORED, { isPreview: true })).toBe(`→${HIGH}100.0%${FG_RESET}`);
+            expect(render(COLORED, { isPreview: true })).toBe(`→${HIGH_256}100.0%${FG_RESET}`);
         });
 
         it('offers (v), names it on the editor row, opens its editor and colors around its value', () => {

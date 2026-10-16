@@ -46,7 +46,10 @@ function makeDeps(initial?: unknown): SessionUsageHistoryDeps & { files: Map<str
         renameSync: (from: string, to: string) => {
             files.set(to, files.get(from) ?? '');
             files.delete(from);
-        }
+        },
+        unlinkSync: (p: string) => { files.delete(p); },
+        readdirSync: () => [],
+        statSync: () => ({ mtimeMs: NOW })
     };
     return deps;
 }
@@ -132,5 +135,42 @@ describe('computeSessionForecastIfNeeded', () => {
 
         expect(computeSessionForecastIfNeeded([[{ id: '1', type: 'block-forecast' }]], { ...usageData, sessionUsage: 104 }, deps)).toBeNull();
         expect(deps.files.get(CACHE_PATH)).toContain(`[${NOW},${NOW},100]`);
+    });
+
+    // An idle session's percent is from its own last response, while the history
+    // holds what another session of this account has seen since.
+    it('forecasts the same for an idle session whose percent is behind the history', () => {
+        const deps = makeDeps({
+            version: 1,
+            profiles: { [path.resolve(PROFILE)]: [{ resetAt: RESET_AT, readings: [[at(12, 20), at(12, 52), 30], [at(12, 53), at(13, 16), 42]] }] }
+        });
+
+        const forecast = computeSessionForecastIfNeeded([[{ id: '1', type: 'block-forecast' }]], { ...usageData, sessionUsage: 30 }, deps);
+
+        expect(forecast?.projectedPercent).toBeCloseTo(83.2, 6);
+        expect(forecast?.limitInMs).toBeNull();
+    });
+
+    // Claude Code re-renders an idle session on its refresh interval with the
+    // percent from its last response. Usage on another device meanwhile shows
+    // up only with the next response, and is spread over the time since.
+    it('spreads a climb that shows up after an idle stretch over the stretch', () => {
+        const lastResponseAt = at(11, 37);
+        const deps = makeDeps({
+            version: 1,
+            profiles: { [path.resolve(PROFILE)]: [{ resetAt: RESET_AT, readings: [[at(11, 30), lastResponseAt, 20]] }] }
+        });
+        const lines: WidgetItem[][] = [[{ id: '1', type: 'block-limit-timer' }]];
+
+        deps.percentSeenAt = () => lastResponseAt;
+        deps.now = () => at(13, 16);
+        computeSessionForecastIfNeeded(lines, { ...usageData, sessionUsage: 20 }, deps);
+        deps.percentSeenAt = () => NOW;
+        deps.now = () => NOW;
+        const forecast = computeSessionForecastIfNeeded(lines, { ...usageData, sessionUsage: 60 }, deps);
+
+        // 20% at 11:37 and 60% at 13:17 put 48% at 12:47, so 12% in the last 30
+        // minutes leaves 100 minutes until the limit.
+        expect(forecast?.limitInMs).toBe(6_000_000);
     });
 });
