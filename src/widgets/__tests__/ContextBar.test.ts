@@ -153,19 +153,40 @@ describe('ContextBarWidget', () => {
         }, context, DEFAULT_SETTINGS)).toBe('Context: [bar:15.0:32] 30k/200k (15%)');
     });
 
-    it('cycles display modes in the expected order', () => {
+    it('shows both numbers, the percent only, the counts only, or none after the bar', () => {
+        const widget = new ContextBarWidget();
+        const render = (barNumbers?: string) => widget.render(
+            { id: 'ctx', type: 'context-bar', rawValue: true, metadata: { display: 'slider', ...(barNumbers ? { barNumbers } : {}) } },
+            { isPreview: true },
+            DEFAULT_SETTINGS
+        );
+
+        expect(render()).toBe('▓▓▓▓▓▓▓▓▓░ 180k/200k (90%)');
+        expect(render('percent')).toBe('▓▓▓▓▓▓▓▓▓░ 90%');
+        expect(render('counts')).toBe('▓▓▓▓▓▓▓▓▓░ 180k/200k');
+        expect(render('none')).toBe('▓▓▓▓▓▓▓▓▓░');
+    });
+
+    it('cycles its numbers with n and names the choice on the editor row', () => {
+        const widget = new ContextBarWidget();
+        const item: WidgetItem = { id: 'ctx', type: 'context-bar', metadata: { barNumbers: 'percent' } };
+
+        expect(widget.getCustomKeybinds(item)).toContainEqual({ key: 'n', label: '(n)umbers', action: 'cycle-bar-numbers' });
+        expect(widget.getEditorDisplay(item).modifierText).toBe('(block bar, medium, % only)');
+    });
+
+    // (p) switches between a block bar and a slider of the same size
+    it('switches between a block bar and a slider, keeping the size', () => {
         const widget = new ContextBarWidget();
         const base: WidgetItem = { id: 'ctx', type: 'context-bar' };
 
-        const first = widget.handleEditorAction('toggle-progress', base);
-        const second = widget.handleEditorAction('toggle-progress', first ?? base);
-        const third = widget.handleEditorAction('toggle-progress', second ?? base);
-        const fourth = widget.handleEditorAction('toggle-progress', third ?? base);
+        const slider = widget.handleEditorAction('toggle-progress', base);
+        const block = widget.handleEditorAction('toggle-progress', slider ?? base);
 
-        expect(first?.metadata?.display).toBe('progress');
-        expect(second?.metadata?.display).toBe('slider');
-        expect(third?.metadata?.display).toBe('slider-only');
-        expect(fourth?.metadata?.display).toBe('progress-short');
+        expect(slider?.metadata).toEqual({ display: 'slider', barWidth: 'medium' });
+        expect(block?.metadata).toEqual({ display: 'progress-short' });
+        expect(widget.handleEditorAction('toggle-progress', { ...base, metadata: { display: 'slider-only' } })?.metadata)
+            .toEqual({ display: 'progress-short', barWidth: 'short', barNumbers: 'none' });
     });
 
     it('formats context preview samples with the selected styles', () => {
@@ -185,6 +206,6 @@ describe('ContextBarWidget', () => {
             id: 'bar',
             type: 'context-bar',
             numberFormat: { decimals: 2 }
-        }, context, DEFAULT_SETTINGS)).toBe('Context: [bar:25.0:16] 50.00k/200.00k (25.00%)');
+        }, context, DEFAULT_SETTINGS)).toBe('Context: [bar:90.0:16] 180.00k/200.00k (90.00%)');
     });
 });

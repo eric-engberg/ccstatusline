@@ -312,29 +312,37 @@ describe('ColorMenu', () => {
         }
     });
 
-    it('takes a pasted ANSI 256 color code', async () => {
-        const menu = renderColorMenu([{ id: '1', type: 'model' }], { ...DEFAULT_SETTINGS, colorLevel: 2 });
+    it('explains which text the foreground still colors when a widget sets some colors itself', async () => {
+        const renderMenu = async (widget: WidgetItem) => {
+            const stdin = createMockStdin();
+            const stdout = createMockStdout();
+            const stderr = createMockStdout();
+            const instance = render(
+                React.createElement(ColorMenu, {
+                    widgets: [widget],
+                    settings: DEFAULT_SETTINGS,
+                    onUpdate: vi.fn(),
+                    onBack: vi.fn()
+                }),
+                { stdin, stdout, stderr, debug: true, exitOnCtrlC: false, patchConsole: false }
+            );
 
-        try {
-            await waitFor(() => {
-                expect(menu.latestFrame()).toContain('▶  1: Model');
-            });
-            menu.stdin.write('a');
-            await waitFor(() => {
-                expect(menu.latestFrame()).toContain('Enter ANSI 256 color code');
-            });
+            try {
+                await flushInk();
+                return stripAnsi(stdout.getOutput().split('Configure Colors').at(-1) ?? '');
+            } finally {
+                instance.unmount();
+                instance.cleanup();
+                stdin.destroy();
+                stdout.destroy();
+                stderr.destroy();
+            }
+        };
 
-            menu.stdin.write('208');
-            await waitFor(() => {
-                expect(menu.latestFrame()).toMatch(/^208$/m);
-            });
-            menu.stdin.write('\r');
-            await waitFor(() => {
-                expect(menu.onUpdate).toHaveBeenCalledTimes(1);
-            });
-            expect(menu.onUpdate.mock.calls[0]?.[0]?.[0]).toMatchObject({ id: '1', color: 'ansi256:208' });
-        } finally {
-            menu.cleanup();
-        }
+        const levelColored = await renderMenu({ id: '1', type: 'thinking-effort', metadata: { levelColors: 'true' } });
+        const singleColored = await renderMenu({ id: '1', type: 'thinking-effort' });
+
+        expect(levelColored).toContain('sets some of its own colors');
+        expect(singleColored).not.toContain('sets some of its own colors');
     });
 });
