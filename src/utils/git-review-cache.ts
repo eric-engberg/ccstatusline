@@ -628,9 +628,12 @@ export function fetchGitReviewData(
         return cached.data;
     }
     const repoRef = getOriginRepoRef(cwd, deps);
+    // The auth probes for a self-hosted host each have their own timeout, so the
+    // lookup's budget starts after them
+    const providers = getProviderCandidates(cwd, deps);
     const deadline = deps.now() + CLI_TIMEOUT;
 
-    for (const provider of getProviderCandidates(cwd, deps)) {
+    for (const provider of providers) {
         if (!isCliAvailable(provider, deadline, deps)) {
             continue;
         }

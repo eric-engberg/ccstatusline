@@ -23,6 +23,7 @@ interface FakeCacheFile {
 }
 
 interface PrCacheHarness {
+    authDurations: number[];
     cacheFiles: Map<string, FakeCacheFile>;
     deps: GitReviewCacheDeps;
     execCalls: { args: string[]; cmd: string; cwd?: string; env?: NodeJS.ProcessEnv }[];
@@ -39,6 +40,7 @@ interface PrCacheHarness {
 }
 
 function createHarness(): PrCacheHarness {
+    const authDurations: number[] = [];
     const cacheFiles = new Map<string, FakeCacheFile>();
     const execCalls: { args: string[]; cmd: string; cwd?: string; env?: NodeJS.ProcessEnv }[] = [];
     const ghDurations: number[] = [];
@@ -92,6 +94,7 @@ function createHarness(): PrCacheHarness {
             if (cmd === 'gh' && commandArgs[0] === '--version')
                 return 'gh version 2.0.0\n';
             if (cmd === 'gh' && commandArgs[0] === 'auth' && commandArgs[1] === 'status') {
+                now += authDurations.shift() ?? 0;
                 const hostIdx = commandArgs.indexOf('--hostname');
                 const host = hostIdx >= 0 ? commandArgs[hostIdx + 1] : undefined;
                 if (!host || !authedHosts.gh.has(host))
@@ -113,6 +116,7 @@ function createHarness(): PrCacheHarness {
             if (cmd === 'glab' && commandArgs[0] === 'auth' && commandArgs[1] === 'status') {
                 if (!glabAvailable)
                     throw new Error('glab not installed');
+                now += authDurations.shift() ?? 0;
                 const hostIdx = commandArgs.indexOf('--hostname');
                 const host = hostIdx >= 0 ? commandArgs[hostIdx + 1] : undefined;
                 if (!host || !authedHosts.glab.has(host))
@@ -170,6 +174,7 @@ function createHarness(): PrCacheHarness {
     };
 
     return {
+        authDurations,
         cacheFiles,
         deps,
         execCalls,
@@ -1013,6 +1018,39 @@ describe('git-review-cache', () => {
             call => call.cmd === 'glab' && call.args[0] === 'mr'
         );
         expect(glabMrCalls).toHaveLength(0);
+        const ghPrCalls = harness.execCalls.filter(
+            call => call.cmd === 'gh' && call.args[0] === 'pr'
+        );
+        expect(ghPrCalls).toHaveLength(1);
+    });
+
+    // `auth status` checks the token with the server, so on a slow link the two
+    // probes together can take longer than the lookup's whole budget
+    it('starts the lookup deadline after the auth probes for an unknown host', () => {
+        const harness = createHarness();
+        harness.setOriginRemoteUrl('git@git.self-hosted.example:team/repo.git');
+        harness.setGlabAvailable(true);
+        harness.setCliAuthedForHost('gh', 'git.self-hosted.example', true);
+        harness.authDurations.push(2_600, 2_600);
+        harness.ghResponses.push(JSON.stringify({
+            number: 7,
+            reviewDecision: '',
+            state: 'OPEN',
+            title: 'Self-hosted GHE PR',
+            url: 'https://git.self-hosted.example/team/repo/pull/7'
+        }));
+
+        expect(fetchGitReviewData('/tmp/repo', harness.deps)).toEqual({
+            number: 7,
+            provider: 'gh',
+            reviewDecision: '',
+            state: 'OPEN',
+            title: 'Self-hosted GHE PR',
+            url: 'https://git.self-hosted.example/team/repo/pull/7'
+        });
+
+        const authCalls = harness.execCalls.filter(call => call.args[0] === 'auth');
+        expect(authCalls.map(call => call.cmd)).toEqual(['glab', 'gh']);
         const ghPrCalls = harness.execCalls.filter(
             call => call.cmd === 'gh' && call.args[0] === 'pr'
         );
