@@ -1,5 +1,6 @@
 export {
     fetchUsageData,
+    isStaleUsageFallback,
     type PayloadResetAt
 } from './usage-fetch';
 export {
