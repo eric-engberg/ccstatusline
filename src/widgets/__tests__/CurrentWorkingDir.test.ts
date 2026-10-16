@@ -228,6 +228,22 @@ describe('CurrentWorkingDirWidget', () => {
 
             expect(result).toBe('/Users/a/project');
         });
+
+        it.each([
+            { name: 'an emoji', path: '/srv/🚀 rockets/sub/last', expected: '/srv/🚀/s/last' },
+            { name: 'a joined emoji', path: '/srv/👨‍👩‍👧 family/sub/last', expected: '/srv/👨‍👩‍👧/s/last' },
+            { name: 'an emoji after a dot', path: '/srv/.😀x/sub/last', expected: '/srv/.😀/s/last' },
+            { name: 'a decomposed accent', path: '/srv/U\u0308ber/sub/last', expected: '/srv/U\u0308/s/last' }
+        ])('should keep $name whole when abbreviating a middle segment', ({ path, expected }) => {
+            const item = createItem({ fishStyle: 'true' }, true);
+            const result = widget.render(
+                item,
+                createContext(path),
+                defaultSettings
+            );
+
+            expect(result).toBe(expected);
+        });
     });
 
     describe('getEditorDisplay', () => {

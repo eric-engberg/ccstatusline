@@ -25,6 +25,7 @@ import {
     getSymbolKeybind,
     renderSymbolOverrideEditor
 } from './shared/symbol-override';
+import { getGraphemes } from './shared/text-cursor';
 
 const LABEL = 'cwd: ';
 
@@ -228,12 +229,15 @@ export class CurrentWorkingDirWidget implements Widget {
                 return part;  // Keep full
             }
 
+            // Whole graphemes, so an emoji or accented letter isn't cut in half
+            const [first = '', second = ''] = getGraphemes(part);
+
             // Hidden directories keep the dot
-            if (part.startsWith('.') && part.length > 1) {
-                return '.' + (part[1] ?? '');
+            if (first === '.' && second !== '') {
+                return first + second;
             }
 
-            return part[0];  // Only first letter for others
+            return first;  // Only first letter for others
         });
 
         // Rebuild path
