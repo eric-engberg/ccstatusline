@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as https from 'node:https';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { z } from 'zod';
 
@@ -651,7 +652,9 @@ function isSameUsageCredentialsStamp(a: UsageCredentialsStamp, b: UsageCredentia
 // the credentials file, which may be another one, so until the keychain
 // answers again the recorded login only decides which stale cache stands in
 // when no credentials are found.
-const USAGE_LOGIN_FILE = path.join(CACHE_DIR, 'usage-login.json');
+function getUsageLoginFile(): string {
+    return path.join(getWritableCacheDir(), 'usage-login.json');
+}
 // Room for the profiles used side by side; the one recorded longest ago goes first.
 const MAX_USAGE_LOGINS = 16;
 const UsageLoginSchema = z.object({
@@ -670,7 +673,7 @@ interface KnownUsageLogin {
 
 function readUsageLogins(): z.infer<typeof UsageLoginsSchema> {
     try {
-        return parseJsonWithSchema(fs.readFileSync(USAGE_LOGIN_FILE, 'utf8'), UsageLoginsSchema) ?? [];
+        return parseJsonWithSchema(fs.readFileSync(getUsageLoginFile(), 'utf8'), UsageLoginsSchema) ?? [];
     } catch {
         return [];
     }
@@ -686,7 +689,7 @@ function readKnownUsageLogin(source: string, stamp: UsageCredentialsStamp): Know
 function writeUsageLogin(logins: z.infer<typeof UsageLoginsSchema>, login: z.infer<typeof UsageLoginSchema>): void {
     try {
         ensureCacheDirExists();
-        fs.writeFileSync(USAGE_LOGIN_FILE, JSON.stringify([
+        replaceFileSync(getUsageLoginFile(), JSON.stringify([
             login,
             ...logins.filter(entry => entry.source !== login.source)
         ].slice(0, MAX_USAGE_LOGINS)));
@@ -721,7 +724,9 @@ function rememberUsageLoginKeychainFailure(source: string, stamp: UsageCredentia
 // may be the account switch the backoff would hide, so the next render
 // reads the keychain once. Each credential source keeps its own entry, so
 // one profile's failure never suppresses another profile's lookup.
-const KEYCHAIN_LOCK_FILE = path.join(CACHE_DIR, 'usage-keychain.lock');
+function getKeychainLockFile(): string {
+    return path.join(getWritableCacheDir(), 'usage-keychain.lock');
+}
 const KeychainLockSchema = z.record(z.string(), z.object({
     blockedUntil: z.number(),
     keychainStamp: z.string()
@@ -729,7 +734,7 @@ const KeychainLockSchema = z.record(z.string(), z.object({
 
 function readKeychainLocks(now: number): z.infer<typeof KeychainLockSchema> {
     try {
-        const locks = parseJsonWithSchema(fs.readFileSync(KEYCHAIN_LOCK_FILE, 'utf8'), KeychainLockSchema) ?? {};
+        const locks = parseJsonWithSchema(fs.readFileSync(getKeychainLockFile(), 'utf8'), KeychainLockSchema) ?? {};
         // Bounded so a deadline written before the clock was set back cannot
         // stretch the backoff; expired ones are dropped on the next write.
         return Object.fromEntries(Object.entries(locks).filter(([, lock]) => lock.blockedUntil > now && lock.blockedUntil <= now + MACOS_KEYCHAIN_BACKOFF));
@@ -757,7 +762,7 @@ function getUsageCredentialsWithBackoff(now: number, source: string, stamp: Usag
             ensureCacheDirExists();
             // Read again: other profiles' renders may have recorded their
             // own failures while this read waited, up to its timeout
-            fs.writeFileSync(KEYCHAIN_LOCK_FILE, JSON.stringify({
+            replaceFileSync(getKeychainLockFile(), JSON.stringify({
                 ...readKeychainLocks(now),
                 [source]: { blockedUntil: now + MACOS_KEYCHAIN_BACKOFF, keychainStamp: stamp.loginKeychain }
             }));
@@ -1130,8 +1135,10 @@ async function fetchFromUsageApi(token: string, deadlineMs = USAGE_API_TIMEOUT_M
 // The fingerprint of the login fetchUsageData last resolved, so per-login
 // state outside the usage cache (today's spend) stays with that login.
 let lastUsageAccountKey: string | null = null;
-// That login's credentials, which lookUpUsageAccount asks about.
-let lastUsageCredentials: UsageCredentials | null = null;
+// That login's credentials, which lookUpUsageAccount asks about, or
+// undefined when fetchUsageData answered for a known login without reading
+// them (see readKnownUsageLogin).
+let lastUsageCredentials: UsageCredentials | null | undefined;
 
 /** The token fingerprint of the login the last usage fetch used, or null when none was found. */
 export function getUsageAccountKey(): string | null {
@@ -1171,7 +1178,7 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
     const knownLogin = readKnownUsageLogin(credentialsSource, credentialsStamp);
     if (knownLogin && !knownLogin.keychainFailed) {
         lastUsageAccountKey = knownLogin.identity.preferredHash;
-        lastUsageCredentials = null;
+        lastUsageCredentials = undefined;
         const knownFileData = readFreshUsageCache(now, knownLogin.identity, options);
         if (knownFileData) {
             return cacheUsageData(knownFileData.data, now, knownFileData.fetchedAtMs);
@@ -1362,17 +1369,33 @@ function storeUsageAccountEntry(entry: UsageAccountEntry): void {
  * failure, or a 429's Retry-After, up to a day.
  */
 export async function lookUpUsageAccount(): Promise<UsageAccount | null> {
-    const credentials = lastUsageCredentials;
     const tokenHash = lastUsageAccountKey;
-    if (!credentials || tokenHash === null) {
+    if (tokenHash === null || lastUsageCredentials === null) {
         return null;
     }
 
     const now = Math.floor(Date.now() / 1000);
     const cached = findUsageAccount(tokenHash);
-    if (cached || !claimUsageAccountLookup(tokenHash, now)) {
+    if (cached) {
+        return cached;
+    }
+
+    // Held off after a failed lookup, there is nothing to ask yet
+    if (isUsageAccountLookupBlocked(readUsageAccountEntries().find(entry => entry.tokenHash === tokenHash), now)) {
+        return null;
+    }
+
+    // Served for a known login, the fetch didn't read the credentials: only
+    // a lookup still to be made reads them, under the same backoffs
+    const credentials = lastUsageCredentials
+        ?? getUsageCredentialsWithBackoff(now, getUsageCredentialsSource(), getUsageCredentialsStamp());
+    if (!credentials || getUsageCacheIdentity(credentials).preferredHash !== tokenHash) {
+        return null;
+    }
+
+    if (!claimUsageAccountLookup(tokenHash, now)) {
         // Another render may have just named it
-        return cached ?? findUsageAccount(tokenHash);
+        return findUsageAccount(tokenHash);
     }
 
     const response = await fetchFromUsageApi(credentials.accessToken, USAGE_API_TIMEOUT_MS, PROFILE_API_PATH)

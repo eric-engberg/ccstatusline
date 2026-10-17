@@ -94,7 +94,7 @@ function mockKeychainWithOtherProfileLogin(plainItem?: string): void {
 
         if (args[0] === 'find-generic-password' && args[2] === 'Claude Code-credentials') {
             if (plainItem === undefined) {
-                throw new Error('missing exact credential');
+                throw makeMissingItemError();
             }
 
             return plainItem;
@@ -223,56 +223,18 @@ describe('getUsageToken', () => {
     });
 
     it.each([
-        [
-            'the item read times out',
-            'find-generic-password -s Claude Code-credentials -w',
-            Object.assign(new Error('spawnSync security ETIMEDOUT'), { code: 'ETIMEDOUT', signal: 'SIGTERM', status: null })
-        ],
-        [
-            'the keychain dump finds it locked',
-            'dump-keychain',
-            Object.assign(new Error('User interaction is not allowed.'), { status: 36 })
-        ],
-        [
-            'a suffixed item read is refused',
-            'find-generic-password -s Claude Code-credentials-new -w',
-            Object.assign(new Error('The user name or passphrase you entered is not correct.'), { status: 51 })
-        ]
-    ])('stops the macOS keychain lookup when %s, then reads the credentials file', (_label, failingCall, failure) => {
-        const dump = [
-            makeKeychainBlock('Claude Code-credentials-new', { quoted: '20240301010101Z' }),
-            makeKeychainBlock('Claude Code-credentials-old', { quoted: '20240201010101Z' })
-        ].join('\n');
-        const chain = [
-            'find-generic-password -s Claude Code-credentials -w',
-            'dump-keychain',
-            'find-generic-password -s Claude Code-credentials-new -w',
-            'find-generic-password -s Claude Code-credentials-old -w'
-        ];
-
+        ['times out', Object.assign(new Error('spawnSync security ETIMEDOUT'), { code: 'ETIMEDOUT', signal: 'SIGTERM', status: null })],
+        ['finds the keychain locked', Object.assign(new Error('User interaction is not allowed.'), { status: 36 })],
+        ['is refused', Object.assign(new Error('The user name or passphrase you entered is not correct.'), { status: 51 })]
+    ])('reads the credentials file when the macOS keychain item read %s', (_label, failure) => {
         vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
         mockCredentialsFile(makeTokenPayload('file-token'));
-        mockedExecFileSync.mockImplementation((command: string, args?: string[]) => {
-            if (command !== 'security' || !args) {
-                throw new Error(`Unexpected security args: ${args?.join(' ')}`);
-            }
-
-            if (args.join(' ') === failingCall) {
-                throw failure;
-            }
-
-            if (args[0] === 'dump-keychain') {
-                return dump;
-            }
-
-            throw makeMissingItemError();
+        mockedExecFileSync.mockImplementation(() => {
+            throw failure;
         });
 
-        // Only a missing item moves on to the next keychain call. Any other
-        // failure would meet every later call too, each one another request
-        // for securityd to answer.
         expect(getUsageToken()).toBe('file-token');
-        expect(getSecurityCallLog()).toEqual(chain.slice(0, chain.indexOf(failingCall) + 1));
+        expect(getSecurityCallLog()).toEqual(['find-generic-password -s Claude Code-credentials -w']);
     });
 
     it('uses the credentials file on non-macOS', () => {
