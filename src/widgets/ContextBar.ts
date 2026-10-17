@@ -19,8 +19,8 @@ import {
     resolveNumberFormat
 } from '../utils/number-format';
 import { formatTokens } from '../utils/renderer';
-import { makeUsageProgressBar } from '../utils/usage';
 
+import { drawWidgetBar } from './shared/bar-draw';
 import {
     getBarLayoutModifiers,
     getBarNumbersKeybinds,
@@ -38,10 +38,8 @@ import {
     cycleGradientPreset,
     getGradientKeybinds,
     getGradientModifier,
-    paintWidgetBar,
     paintsBarGradient
 } from './shared/gradient-bar';
-import { makeSliderBar } from './shared/usage-display';
 import {
     LIMIT_SCALE,
     formatColoredValue,
@@ -135,15 +133,14 @@ export class ContextBarWidget implements Widget {
     private formatBar(item: WidgetItem, percent: number, counts: string, percentText: string, settings: Settings, context: RenderContext): string {
         const barItem = withBarDisplay(item);
         const cells = context.barCells ?? getFixedBarCells(barItem);
-        const bar = getBarStyle(barItem) === 'slider' ? makeSliderBar(percent, cells) : makeUsageProgressBar(percent, cells);
+        const bar = drawWidgetBar(barItem, percent, cells, settings);
         const showsCounts = showsBarCounts(barItem);
         const showsPercent = showsBarPercent(barItem);
         let numbers = showsCounts ? counts : percentText;
         if (showsCounts && showsPercent) {
             numbers = `${counts} (${percentText})`;
         }
-        const painted = paintWidgetBar(bar, item, settings);
-        const display = showsCounts || showsPercent ? `${painted} ${numbers}` : painted;
+        const display = showsCounts || showsPercent ? `${bar} ${numbers}` : bar;
         return formatColoredValue(item, this.getLabelPrefix(), display, percent, LIMIT_SCALE, getValueFormatOptions(settings));
     }
 

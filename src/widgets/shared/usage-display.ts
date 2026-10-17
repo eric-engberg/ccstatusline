@@ -12,6 +12,7 @@ import {
 } from '../../utils/locales';
 import { formatPercent } from '../../utils/number-format';
 
+import { drawWidgetBar } from './bar-draw';
 import {
     getBarLayoutModifiers,
     getBarNumbersKeybinds,
@@ -27,8 +28,7 @@ import {
 import { makeModifierText } from './editor-display';
 import {
     getGradientKeybinds,
-    getGradientModifier,
-    paintWidgetBar
+    getGradientModifier
 } from './gradient-bar';
 import {
     LEVEL_GLYPH_DISPLAY,
@@ -40,7 +40,7 @@ import {
     removeMetadataKeys,
     toggleMetadataFlag
 } from './metadata';
-import { makeTimerProgressBar } from './progress-bar';
+import { layoutBar } from './progress-bar';
 
 export type UsageDisplayMode = 'time' | 'progress' | 'progress-short' | 'slider' | 'slider-only';
 
@@ -92,37 +92,18 @@ export function formatUsageBar(
     context: RenderContext,
     getCursor: () => SliderBarOptions | undefined = () => undefined
 ): string | null {
-    const style = getBarStyle(item);
-    if (style === null) {
+    if (getBarStyle(item) === null) {
         return null;
     }
     const cells = context.barCells ?? getFixedBarCells(item);
-    const bar = style === 'block'
-        ? `[${makeTimerProgressBar(percent, cells, getCursor())}]`
-        : makeSliderBar(percent, cells, getCursor());
-    const text = showsBarPercent(item) ? `${bar} ${formatPercent(percent, format)}` : bar;
-    return paintWidgetBar(text, item, settings, isUsageInverted(item));
+    const bar = drawWidgetBar(item, percent, cells, settings, { ...getCursor(), reversed: isUsageInverted(item) });
+    return showsBarPercent(item) ? `${bar} ${formatPercent(percent, format)}` : bar;
 }
 
+const SLIDER_CELL_GLYPHS = { filled: '▓', empty: '░', cursor: '│' } as const;
+
 export function makeSliderBar(percent: number, width: number = SLIDER_WIDTH, options?: SliderBarOptions): string {
-    const clamped = Math.max(0, Math.min(100, percent));
-    const filled = Math.round((clamped / 100) * width);
-    const cursorPos = options?.cursorPercent !== undefined
-        ? Math.min(Math.floor((Math.max(0, Math.min(100, options.cursorPercent)) / 100) * width), width - 1)
-        : -1;
-
-    let bar = '';
-    for (let i = 0; i < width; i++) {
-        if (i === cursorPos) {
-            bar += '│';
-        } else if (i < filled) {
-            bar += '▓';
-        } else {
-            bar += '░';
-        }
-    }
-
-    return bar;
+    return layoutBar(percent, width, options).map(cell => SLIDER_CELL_GLYPHS[cell]).join('');
 }
 
 export function isUsageInverted(item: WidgetItem): boolean {

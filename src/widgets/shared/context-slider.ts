@@ -1,10 +1,12 @@
 import type { NumberFormat } from '../../types/NumberFormat';
+import type { Settings } from '../../types/Settings';
 import type {
     CustomKeybind,
     WidgetItem
 } from '../../types/Widget';
 import { formatPercent } from '../../utils/number-format';
 
+import { drawWidgetBar } from './bar-draw';
 import {
     getBarLayoutModifiers,
     getBarNumbersKeybinds,
@@ -27,7 +29,6 @@ import {
     getLevelGlyphKeybinds,
     isLevelGlyphMode
 } from './level-glyph';
-import { makeSliderBar } from './usage-display';
 
 export type ContextSliderMode = 'none' | 'slider' | 'slider-only';
 
@@ -60,11 +61,13 @@ export function cycleContextSliderMode(item: WidgetItem): WidgetItem {
     };
 }
 
-export function renderContextSlider(item: WidgetItem, percent: number, format: NumberFormat = {}, cells?: number): string | null {
+// The slider and the percent after it, painted with the widget's gradient
+// preset; reversed when it fills with what's left
+export function renderContextSlider(item: WidgetItem, percent: number, settings: Settings, format: NumberFormat = {}, cells?: number, reversed = false): string | null {
     if (getContextSliderMode(item) === 'none') {
         return null;
     }
-    const slider = makeSliderBar(percent, cells ?? getFixedBarCells(item));
+    const slider = drawWidgetBar(item, percent, cells ?? getFixedBarCells(item), settings, { reversed });
     return showsBarPercent(item) ? `${slider} ${formatPercent(percent, format)}` : slider;
 }
 
