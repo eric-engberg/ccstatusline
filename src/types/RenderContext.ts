@@ -59,6 +59,13 @@ export interface RenderContext {
     skillsMetrics?: SkillsMetrics | null;
     compactionData?: CompactionData | null;
     terminalWidth?: number | null;
+    // Cells for this widget's bar, set by the renderer when the bar has a width
+    // setting (see widgets/shared/bar-width.ts); otherwise its mode's own size
+    barCells?: number;
+    // Set while sizeBarsToLines renders a line only to measure it: plain mode
+    // gives flex separators no columns, as they can on a full line. Powerline
+    // keeps its one-column break there, so a bar leaves room for it
+    measuringLine?: boolean;
     isPreview?: boolean;
     minimalist?: boolean;
     gitCacheTtlSeconds?: number;
