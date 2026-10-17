@@ -14,6 +14,10 @@ import {
     type InstallationMetadata
 } from '../../types/Settings';
 import * as claudeSettings from '../../utils/claude-settings';
+import {
+    getColorAnsiCode,
+    updateColorMap
+} from '../../utils/colors';
 import * as globalPackageManager from '../../utils/global-package-manager';
 import { getPackageVersion } from '../../utils/terminal';
 import * as updateChecker from '../../utils/update-checker';
@@ -40,7 +44,8 @@ import {
     pressKey,
     renderApp,
     setUpAppSandbox,
-    type AppSandbox
+    type AppSandbox,
+    type RenderedApp
 } from './helpers/render-app';
 import {
     letReactCatchUp,
@@ -102,6 +107,28 @@ describe('TUI config imports', () => {
             expect(chalk.level).toBe(0);
         } finally {
             chalk.level = originalLevel;
+        }
+    });
+
+    it('builds the named colors for the imported color level', () => {
+        const originalLevel = chalk.level;
+
+        try {
+            // The color codes as built at startup in a terminal that reports 16 colors
+            chalk.level = 1;
+            updateColorMap();
+
+            applyTuiImport(
+                { ...DEFAULT_SETTINGS, colorLevel: 1 },
+                { ...DEFAULT_SETTINGS, colorLevel: 2 },
+                'merge',
+                ['colorLevel']
+            );
+
+            expect(getColorAnsiCode('cyan', 'ansi256')).toBe('\x1b[38;5;30m');
+        } finally {
+            chalk.level = originalLevel;
+            updateColorMap();
         }
     });
 });
@@ -535,6 +562,145 @@ describe('App save guard for an invalid settings.json', () => {
             expect(rendered.getFrame()).toContain('Edit Line 1');
             const saved = JSON.parse(fs.readFileSync(sandbox.settingsPath, 'utf-8')) as { lines: unknown };
             expect(Array.isArray(saved.lines)).toBe(true);
+        } finally {
+            rendered.cleanup();
+        }
+    });
+});
+
+describe('App main menu highlight across Ctrl+S', () => {
+    let sandbox: AppSandbox;
+
+    beforeEach(() => {
+        sandbox = setUpAppSandbox();
+        fs.writeFileSync(sandbox.settingsPath, JSON.stringify(DEFAULT_SETTINGS));
+        vi.spyOn(claudeStatus, 'loadClaudeStatusLineState').mockResolvedValue({ existingStatusLine: null, refreshInterval: null });
+        vi.spyOn(claudeSettings, 'isInstalled').mockResolvedValue(false);
+    });
+
+    afterEach(() => {
+        sandbox.restore();
+    });
+
+    // Changes Color Level, so the main menu offers Save & Exit, then moves down
+    // from Terminal Options, the entry last opened, through the given entries
+    async function changeAndMoveDown(rendered: RenderedApp, entries: string[]): Promise<void> {
+        await waitFor(() => {
+            expect(rendered.getFrame()).toContain('Main Menu');
+        });
+        await pressKey(rendered, KEYS.down, '▶  🎨 Edit Colors');
+        await pressKey(rendered, KEYS.down, '▶  ⚡ Powerline Setup');
+        await pressKey(rendered, KEYS.down, '▶  💻 Terminal Options');
+        await pressKey(rendered, KEYS.enter, '▶  ◱ Terminal Width');
+        await pressKey(rendered, KEYS.down, '▶  ▓ Color Level');
+        await pressKey(rendered, KEYS.enter, '(Truecolor)');
+        await pressKey(rendered, KEYS.escape, '💾 Save & Exit');
+        for (const entry of entries) {
+            await pressKey(rendered, KEYS.down, `▶  ${entry}`);
+        }
+    }
+
+    const toInstall = ['🌐 Global Overrides', '📤 Export Config', '📥 Import Config', '📦 Install to Claude Code'];
+
+    it('keeps the highlighted entry, so Enter opens it', async () => {
+        const rendered = renderApp();
+
+        try {
+            await changeAndMoveDown(rendered, toInstall);
+            await pressKey(rendered, KEYS.ctrlS, '✓ Configuration saved');
+            expect(rendered.getFrame()).not.toContain('💾 Save & Exit');
+            expect(rendered.getFrame()).toContain('▶  📦 Install to Claude Code');
+
+            await pressKey(rendered, KEYS.enter, 'Install ccstatusline to Claude Code');
+        } finally {
+            rendered.cleanup();
+        }
+    });
+
+    // Saving replaces Save & Exit and Exit without saving with a single Exit
+    const belowInstall = ['💾 Save & Exit', '❌ Exit without saving', '⭐ Like ccstatusline? Star us on GitHub'];
+
+    it.each([
+        { highlighted: '💾 Save & Exit', after: '🚪 Exit', above: '📦 Install to Claude Code' },
+        { highlighted: '❌ Exit without saving', after: '🚪 Exit', above: '📦 Install to Claude Code' },
+        { highlighted: '⭐ Like ccstatusline? Star us on GitHub', after: '⭐ Like ccstatusline? Star us on GitHub', above: '🚪 Exit' }
+    ])('highlights $after after a save from $highlighted', async ({ highlighted, after, above }) => {
+        const rendered = renderApp();
+
+        try {
+            await changeAndMoveDown(rendered, [...toInstall, ...belowInstall.slice(0, belowInstall.indexOf(highlighted) + 1)]);
+            await pressKey(rendered, KEYS.ctrlS, '✓ Configuration saved');
+            await waitFor(() => {
+                expect(rendered.getFrame()).toContain(`▶  ${after}`);
+            });
+
+            await pressKey(rendered, KEYS.up, `▶  ${above}`);
+        } finally {
+            rendered.cleanup();
+        }
+    });
+});
+
+describe('App preview colors in a terminal that reports fewer colors', () => {
+    let sandbox: AppSandbox;
+
+    beforeEach(() => {
+        sandbox = setUpAppSandbox();
+        vi.spyOn(claudeStatus, 'loadClaudeStatusLineState').mockResolvedValue({ existingStatusLine: null, refreshInterval: null });
+        vi.spyOn(claudeSettings, 'isInstalled').mockResolvedValue(false);
+        // The color codes as built at startup in a terminal that reports 16 colors
+        chalk.level = 1;
+        updateColorMap();
+    });
+
+    afterEach(() => {
+        sandbox.restore();
+    });
+
+    function writeSettingsAt256Colors(line: unknown[]): void {
+        fs.writeFileSync(sandbox.settingsPath, JSON.stringify({ ...DEFAULT_SETTINGS, colorLevel: 2, lines: [line] }));
+    }
+
+    it('draws the preview in the configured color level', async () => {
+        writeSettingsAt256Colors([{ id: 'model', type: 'model' }]);
+        const rendered = renderApp();
+
+        try {
+            await waitFor(() => {
+                expect(rendered.getFrame()).toContain('Main Menu');
+            });
+            // Cyan as the status line draws it at 256 colors, not as black, its 16-color stand-in
+            expect(rendered.getRawFrame()).toContain('\x1b[38;5;30mModel: Claude');
+        } finally {
+            rendered.cleanup();
+        }
+    });
+
+    it.each([
+        { case: 'without custom colors', customColors: false },
+        { case: 'after the custom-colors warning', customColors: true }
+    ])('redraws the preview in the color level picked in Terminal Options ($case)', async ({ customColors }) => {
+        writeSettingsAt256Colors([
+            { id: 'model', type: 'model' },
+            ...(customColors ? [{ id: 'orange', type: 'custom-text', customText: 'Orange', color: 'ansi256:208' }] : [])
+        ]);
+        const rendered = renderApp();
+
+        try {
+            await waitFor(() => {
+                expect(rendered.getFrame()).toContain('Main Menu');
+            });
+            await pressKey(rendered, KEYS.down, '▶  🎨 Edit Colors');
+            await pressKey(rendered, KEYS.down, '▶  ⚡ Powerline Setup');
+            await pressKey(rendered, KEYS.down, '▶  💻 Terminal Options');
+            await pressKey(rendered, KEYS.enter, '▶  ◱ Terminal Width');
+            await pressKey(rendered, KEYS.down, '▶  ▓ Color Level');
+            if (customColors) {
+                await pressKey(rendered, KEYS.enter, 'Custom colors detected');
+            }
+            await pressKey(rendered, KEYS.enter, '(Truecolor)');
+
+            expect(rendered.getRawFrame()).toContain('\x1b[38;2;6;152;154mModel: Claude');
         } finally {
             rendered.cleanup();
         }
