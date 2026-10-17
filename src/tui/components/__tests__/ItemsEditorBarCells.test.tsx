@@ -11,10 +11,7 @@ import {
 
 import { DEFAULT_SETTINGS } from '../../../types/Settings';
 import type { WidgetItem } from '../../../types/Widget';
-import {
-    letReactCatchUp,
-    waitFor
-} from '../../__tests__/helpers/wait-for-ink';
+import { waitFor } from '../../__tests__/helpers/wait-for-ink';
 import { ItemsEditor } from '../ItemsEditor';
 
 class MockTtyStream extends PassThrough {
@@ -145,21 +142,25 @@ describe('ItemsEditor cell bar empty cells', () => {
         });
     });
 
-    // (y) is offered only on a cell bar, and does nothing elsewhere
-    it('neither offers nor applies (y) on a block bar', async () => {
+    // (y) does nothing elsewhere (see the input handler's tests), so the help
+    // line leaves it out until (p) reaches a cell bar
+    it('offers (y) only once (p) reaches a cell bar', async () => {
         const block: WidgetItem = { id: 'opus', type: 'weekly-opus-usage', metadata: { display: 'progress' } };
-        await withEditor(block, async ({ press, screen, onUpdate }) => {
+        await withEditor(block, async ({ press, screen }) => {
             expect(screen()).toContain('Weekly Opus Usage (block bar, long, used)');
             expect(screen()).not.toContain('(y)');
 
-            press('y');
-            await letReactCatchUp();
             press('p');
             await waitFor(() => {
                 expect(screen()).toContain('Weekly Opus Usage (slider bar, long, used)');
             });
-            expect(onUpdate).toHaveBeenCalledTimes(1);
-            expect(screen()).not.toContain('gray');
+            expect(screen()).not.toContain('(y)');
+
+            press('p');
+            await waitFor(() => {
+                expect(screen()).toContain('Weekly Opus Usage (cells ▮, long, used)');
+            });
+            expect(screen()).toContain('(y) gray empty cells');
         });
     });
 });
