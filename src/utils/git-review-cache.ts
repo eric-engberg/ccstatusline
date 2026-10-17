@@ -440,7 +440,9 @@ function mapGlabState(state: string): string {
     return state.toUpperCase();
 }
 
-function errorText(error: unknown): string {
+// What gh printed. Not the error's message: execFileSync starts that with the
+// command line, which names every --json field the lookup asked for.
+function ghStderr(error: unknown): string {
     if (!(error instanceof Error)) {
         return '';
     }
@@ -449,11 +451,14 @@ function errorText(error: unknown): string {
         ? (error as Error & { stderr?: Buffer | string }).stderr
         : undefined;
     const stderrText = Buffer.isBuffer(stderr) ? stderr.toString('utf8') : (stderr ?? '');
-    return `${error.message}\n${stderrText}`.toLowerCase();
+    return stderrText.toLowerCase();
 }
 
+// gh names the field it can't give: its flag check prints
+// `Unknown JSON field: "statusCheckRollup"`, and a GraphQL error on the field
+// gives its path
 function isCiFieldUnavailableError(error: unknown): boolean {
-    const text = errorText(error);
+    const text = ghStderr(error);
     return text.includes('statuscheckrollup')
         || text.includes('resource not accessible by integration');
 }
