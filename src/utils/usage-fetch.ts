@@ -13,6 +13,7 @@ import {
     createProxyAgent,
     type ClosableProxyAgent
 } from './proxy-agent';
+import { replaceFileSync } from './replace-file';
 import type {
     UsageData,
     UsageDataField,
@@ -774,7 +775,7 @@ function getUsageCredentialsWithBackoff(now: number, source: string, stamp: Usag
     if (!credentials) {
         try {
             ensureCacheDirExists();
-            fs.writeFileSync(getNoCredentialsLockFile(), JSON.stringify({ blockedUntil: now + LOCK_MAX_AGE, source }));
+            replaceFileSync(getNoCredentialsLockFile(), JSON.stringify({ blockedUntil: now + LOCK_MAX_AGE, source }));
         } catch {
             // Ignore lock file errors
         }
@@ -824,7 +825,7 @@ function writeUsageLock(blockedUntil: number, error: UsageLockError, transient =
     const contents = JSON.stringify(transient ? { blockedUntil, error, transient } : { blockedUntil, error });
     try {
         ensureCacheDirExists();
-        fs.writeFileSync(getLockFile(), contents);
+        replaceFileSync(getLockFile(), contents);
     } catch {
         // Ignore lock file errors
     }
@@ -1240,7 +1241,7 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
         // Save to cache
         try {
             ensureCacheDirExists();
-            fs.writeFileSync(getCacheFile(), JSON.stringify({ ...usageData, tokenHash: cacheIdentity?.preferredHash }));
+            replaceFileSync(getCacheFile(), JSON.stringify({ ...usageData, tokenHash: cacheIdentity?.preferredHash }));
         } catch {
             // Ignore cache write errors
         }
