@@ -1175,11 +1175,12 @@ describe('jsonl transcript metrics', () => {
 
         const metrics = await getSpeedMetrics(transcriptPath, { windowSeconds: 5 });
 
+        // msg-2 ran 6s, 5s of it inside the window: 5/6 of its tokens, once
         expect(metrics).toEqual({
             totalDurationMs: 5000,
-            inputTokens: 150,
-            outputTokens: 90,
-            totalTokens: 240,
+            inputTokens: 125,
+            outputTokens: 75,
+            totalTokens: 200,
             requestCount: 1
         });
     });
@@ -1268,11 +1269,15 @@ describe('jsonl transcript metrics', () => {
 
         const metrics = await getSpeedMetrics(transcriptPath, { windowSeconds: 5 });
 
+        // msg-1's final usage ran 6s, 2s of it inside the window; msg-2 ran 9s,
+        // 5s of it inside. Each keeps that share of its tokens
+        const inputTokens = 50 * 2 / 6 + 70 * 5 / 9;
+        const outputTokens = 500 * 2 / 6 + 100 * 5 / 9;
         expect(metrics).toEqual({
             totalDurationMs: 5000,
-            inputTokens: 120,
-            outputTokens: 600,
-            totalTokens: 720,
+            inputTokens,
+            outputTokens,
+            totalTokens: inputTokens + outputTokens,
             requestCount: 2
         });
     });
