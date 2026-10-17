@@ -42,6 +42,17 @@ const MACOS_SECURITY_DUMP_MAX_BUFFER = 8 * 1024 * 1024;
 // Keychain reads normally take milliseconds. A `security` call blocked on an
 // unlock prompt must not hold the status line until someone answers it.
 const MACOS_SECURITY_TIMEOUT_MS = 5000;
+// `security` exits with the low byte of the OSStatus it failed with: 44 for
+// errSecItemNotFound (-25300), the one failure that means the item isn't there.
+const MACOS_SECURITY_ITEM_NOT_FOUND = 44;
+// How long the keychain is left alone after a `security` call fails any
+// other way. A keychain that timed out or is locked stays that way while
+// nobody is at the machine, and each further call queues one more unlock
+// request in securityd.
+const MACOS_KEYCHAIN_BACKOFF = 300; // seconds
+// The login keychain's database file, which changes whenever an item in it
+// is added, changed or deleted. Only its stat is read, never the file.
+const MACOS_LOGIN_KEYCHAIN_FILE = path.join(os.homedir(), 'Library', 'Keychains', 'login.keychain-db');
 
 export interface FetchUsageDataOptions { requiredFields?: readonly UsageDataField[] }
 
@@ -519,6 +530,12 @@ export function parseMacKeychainCredentialCandidates(rawDump: string, servicePre
         .map(candidate => candidate.service);
 }
 
+function isMissingKeychainItem(error: unknown): boolean {
+    return (error as { status?: unknown } | null)?.status === MACOS_SECURITY_ITEM_NOT_FOUND;
+}
+
+// Null for a missing item. Any other failure throws, which ends the keychain
+// lookup (see lookUpUsageCredentials).
 function readMacKeychainSecret(service: string): string | null {
     try {
         return execFileSync(
@@ -526,8 +543,11 @@ function readMacKeychainSecret(service: string): string | null {
             ['find-generic-password', '-s', service, '-w'],
             { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: MACOS_SECURITY_TIMEOUT_MS, windowsHide: true }
         ).trim();
-    } catch {
-        return null;
+    } catch (error) {
+        if (isMissingKeychainItem(error)) {
+            return null;
+        }
+        throw error;
     }
 }
 
@@ -536,24 +556,21 @@ function readUsageCredentialsFromMacKeychainService(service: string): UsageCrede
     return secret ? parseUsageCredentials(secret) : null;
 }
 
+// A failed dump throws, like a failed item read
 function listMacKeychainCredentialCandidates(): string[] {
-    try {
-        const rawDump = execFileSync(
-            'security',
-            ['dump-keychain'],
-            {
-                encoding: 'utf8',
-                maxBuffer: MACOS_SECURITY_DUMP_MAX_BUFFER,
-                stdio: ['pipe', 'pipe', 'ignore'],
-                timeout: MACOS_SECURITY_TIMEOUT_MS,
-                windowsHide: true
-            }
-        );
+    const rawDump = execFileSync(
+        'security',
+        ['dump-keychain'],
+        {
+            encoding: 'utf8',
+            maxBuffer: MACOS_SECURITY_DUMP_MAX_BUFFER,
+            stdio: ['pipe', 'pipe', 'ignore'],
+            timeout: MACOS_SECURITY_TIMEOUT_MS,
+            windowsHide: true
+        }
+    );
 
-        return parseMacKeychainCredentialCandidates(rawDump);
-    } catch {
-        return [];
-    }
+    return parseMacKeychainCredentialCandidates(rawDump);
 }
 
 function readUsageCredentialsFromMacKeychainCandidates(): UsageCredentials | null {
@@ -597,11 +614,7 @@ export function getMacKeychainConfigDirService(): string | null {
     return `${MACOS_USAGE_CREDENTIALS_SERVICE}-${suffix}`;
 }
 
-export function getUsageCredentials(): UsageCredentials | null {
-    if (process.platform !== 'darwin') {
-        return readUsageCredentialsFromCredentialsFile();
-    }
-
+function readUsageCredentialsFromMacKeychain(): UsageCredentials | null {
     const configDirService = getMacKeychainConfigDirService();
     if (configDirService !== null) {
         // A non-default profile owns exactly one keychain service name. On a
@@ -609,13 +622,33 @@ export function getUsageCredentials(): UsageCredentials | null {
         // other profiles (or MCP servers), so fall through only to the
         // profile's own .credentials.json rather than surface another
         // account's usage.
-        return readUsageCredentialsFromMacKeychainService(configDirService)
-            ?? readUsageCredentialsFromCredentialsFile();
+        return readUsageCredentialsFromMacKeychainService(configDirService);
     }
 
     return readUsageCredentialsFromMacKeychainService(MACOS_USAGE_CREDENTIALS_SERVICE)
-        ?? readUsageCredentialsFromMacKeychainCandidates()
-        ?? readUsageCredentialsFromCredentialsFile();
+        ?? readUsageCredentialsFromMacKeychainCandidates();
+}
+
+// A `security` call that fails other than for a missing item (it timed out,
+// the keychain is locked, a prompt was refused) ends the keychain lookup:
+// every later call would meet the same keychain, each one another request
+// for securityd to answer. The credentials file is still read.
+function lookUpUsageCredentials(skipKeychain: boolean): { credentials: UsageCredentials | null; keychainFailed: boolean } {
+    let credentials: UsageCredentials | null = null;
+    let keychainFailed = false;
+    if (process.platform === 'darwin' && !skipKeychain) {
+        try {
+            credentials = readUsageCredentialsFromMacKeychain();
+        } catch {
+            keychainFailed = true;
+        }
+    }
+
+    return { credentials: credentials ?? readUsageCredentialsFromCredentialsFile(), keychainFailed };
+}
+
+export function getUsageCredentials(): UsageCredentials | null {
+    return lookUpUsageCredentials(false).credentials;
 }
 
 export function getUsageToken(): string | null {
@@ -637,6 +670,46 @@ function getUsageCredentialsSource(): string {
     return JSON.stringify([getMacKeychainConfigDirService(), getClaudeConfigDir()]);
 }
 
+// From stat alone: a write to the file changes its inode, size, mtime or
+// ctime. Empty when there is no such file.
+function getFileStamp(filePath: string): string {
+    try {
+        const stat = fs.statSync(filePath);
+        return `${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
+    } catch {
+        return '';
+    }
+}
+
+function getLoginKeychainStamp(): string {
+    return process.platform === 'darwin' ? getFileStamp(MACOS_LOGIN_KEYCHAIN_FILE) : '';
+}
+
+// After a failed keychain lookup (see lookUpUsageCredentials), renders skip
+// that profile's keychain for MACOS_KEYCHAIN_BACKOFF and read only its
+// credentials file, while the login keychain file stays as it was then. A
+// locked keychain isn't written, so there the backoff holds. A write to it
+// (a login, another profile's token refresh, another app saving an item)
+// may be the account switch the backoff would hide, so the next render
+// reads the keychain once. Each credential source keeps its own entry, so
+// one profile's failure never suppresses another profile's lookup.
+const KEYCHAIN_LOCK_FILE = path.join(CACHE_DIR, 'usage-keychain.lock');
+const KeychainLockSchema = z.record(z.string(), z.object({
+    blockedUntil: z.number(),
+    keychainStamp: z.string()
+}));
+
+function readKeychainLocks(now: number): z.infer<typeof KeychainLockSchema> {
+    try {
+        const locks = parseJsonWithSchema(fs.readFileSync(KEYCHAIN_LOCK_FILE, 'utf8'), KeychainLockSchema) ?? {};
+        // Bounded so a deadline written before the clock was set back cannot
+        // stretch the backoff; expired ones are dropped on the next write.
+        return Object.fromEntries(Object.entries(locks).filter(([, lock]) => lock.blockedUntil > now && lock.blockedUntil <= now + MACOS_KEYCHAIN_BACKOFF));
+    } catch {
+        return {};
+    }
+}
+
 function getUsageCredentialsWithBackoff(now: number): UsageCredentials | null {
     const source = getUsageCredentialsSource();
     try {
@@ -650,7 +723,25 @@ function getUsageCredentialsWithBackoff(now: number): UsageCredentials | null {
         // No recorded miss - look the credentials up
     }
 
-    const credentials = getUsageCredentials();
+    // Taken before the read, so a write to the keychain during it ends the
+    // backoff the read may record
+    const keychainStamp = getLoginKeychainStamp();
+    const skipKeychain = readKeychainLocks(now)[source]?.keychainStamp === keychainStamp;
+    const { credentials, keychainFailed } = lookUpUsageCredentials(skipKeychain);
+    if (keychainFailed) {
+        try {
+            ensureCacheDirExists();
+            // Read again: other profiles' renders may have recorded their
+            // own failures while this read waited, up to its timeout
+            fs.writeFileSync(KEYCHAIN_LOCK_FILE, JSON.stringify({
+                ...readKeychainLocks(now),
+                [source]: { blockedUntil: now + MACOS_KEYCHAIN_BACKOFF, keychainStamp }
+            }));
+        } catch {
+            // Ignore lock file errors
+        }
+    }
+
     if (!credentials) {
         try {
             ensureCacheDirExists();
