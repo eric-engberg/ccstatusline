@@ -15,6 +15,7 @@ import {
     vi
 } from 'vitest';
 
+import { forceInkColors } from '../../tui/__tests__/helpers/ink-colors';
 import { waitFor } from '../../tui/__tests__/helpers/wait-for-ink';
 import type { RenderContext } from '../../types/RenderContext';
 import type { Settings } from '../../types/Settings';
@@ -424,6 +425,109 @@ describe('CustomCommandWidget', () => {
                 expect(editor.onComplete.mock.calls[0]?.[0]).toMatchObject(saved);
             } finally {
                 editor.cleanup();
+            }
+        });
+    });
+
+    describe('command editor', () => {
+        function renderCommandEditor() {
+            const stdin = createMockStdin();
+            const stdout = createMockStdout();
+            const stderr = createMockStdout();
+            const onComplete = vi.fn();
+            const instance = render(
+                widget.renderEditor({
+                    widget: { id: 'test', type: 'custom-command' },
+                    onComplete,
+                    onCancel: vi.fn(),
+                    action: 'edit-command'
+                }),
+                {
+                    stdin,
+                    stdout,
+                    stderr,
+                    debug: true,
+                    exitOnCtrlC: false,
+                    patchConsole: false
+                }
+            );
+
+            return {
+                stdin,
+                onComplete,
+                output: () => stripAnsi(stdout.getOutput()),
+                rawOutput: () => stdout.getOutput(),
+                cleanup: () => {
+                    instance.unmount();
+                    instance.cleanup();
+                    stdin.destroy();
+                    stdout.destroy();
+                    stderr.destroy();
+                }
+            };
+        }
+
+        const LEFT = '\x1b[D';
+        const RIGHT = '\x1b[C';
+
+        it.each([
+            ['Backspace deletes', ['\x7f'], 'echo '],
+            ['Left steps over', [LEFT, 'x'], 'echo x\u{1F680}'],
+            ['Right steps over', [LEFT, LEFT, RIGHT, 'x'], 'echo x\u{1F680}'],
+            ['Delete deletes', [LEFT, '\x1b[3~'], 'echo ']
+        ])('%s an emoji whole', async (_case, keys, expected) => {
+            const editor = renderCommandEditor();
+
+            try {
+                await waitFor(() => {
+                    expect(editor.output()).toContain('Enter command path:');
+                });
+                editor.stdin.write('echo \u{1F680}');
+                await waitFor(() => {
+                    expect(editor.output()).toContain('Enter command path: echo \u{1F680}');
+                });
+
+                // Each key moves the cursor or changes the command, so each
+                // waits for the redraw before the next one goes out
+                for (const key of keys) {
+                    const drawn = editor.output().length;
+                    editor.stdin.write(key);
+                    await waitFor(() => {
+                        expect(editor.output().length).toBeGreaterThan(drawn);
+                    });
+                }
+                editor.stdin.write('\r');
+                await waitFor(() => {
+                    expect(editor.onComplete).toHaveBeenCalledTimes(1);
+                });
+                expect(editor.onComplete.mock.calls[0]?.[0]).toMatchObject({ commandPath: expected });
+            } finally {
+                editor.cleanup();
+            }
+        });
+
+        it('draws the whole emoji under the cursor', async () => {
+            // Without colors the cursor cell has no codes around it, so a
+            // split emoji would rejoin in the frame and look whole
+            const colors = await forceInkColors();
+            const editor = renderCommandEditor();
+
+            try {
+                await waitFor(() => {
+                    expect(editor.output()).toContain('Enter command path:');
+                });
+                editor.stdin.write('echo \u{1F680}');
+                await waitFor(() => {
+                    expect(editor.output()).toContain('Enter command path: echo \u{1F680}');
+                });
+                editor.stdin.write(LEFT);
+                await waitFor(() => {
+                    expect(editor.rawOutput()).toContain(`echo ${colors.chalk.bgGray.black('\u{1F680}')}`);
+                });
+                expect(editor.rawOutput()).not.toContain('\uFFFD');
+            } finally {
+                editor.cleanup();
+                colors.restore();
             }
         });
     });

@@ -1096,7 +1096,7 @@ function getAlignmentColumns(preRenderedLine: PreRenderedWidget[], settings: Set
     const columns: AlignmentColumn[] = [];
     const defaultPadding = settings.defaultPadding ?? '';
     const { leading: sideLeadingPadding, trailing: sideTrailingPadding } = resolvePaddingSides(defaultPadding, settings.defaultPaddingSide);
-    const paddingPairLength = sideLeadingPadding.length + sideTrailingPadding.length;
+    const paddingPairLength = getVisibleWidth(sideLeadingPadding) + getVisibleWidth(sideTrailingPadding);
 
     const renderedWidgets = preRenderedLine
         .map((entry, originalIndex) => ({
