@@ -68,10 +68,12 @@ describe('SessionCostRateWidget', () => {
         const widget = new SessionCostRateWidget();
 
         expect(widget.getCustomKeybinds(item)).toEqual([
-            { key: 't', label: '(t)ime: use clock time', action: 'toggle-clock-time' }
+            { key: 't', label: '(t)ime: use clock time', action: 'toggle-clock-time' },
+            { key: 'v', label: '(v)alue colors', action: 'edit-value-colors' }
         ]);
         expect(widget.getCustomKeybinds(clockItem)).toEqual([
-            { key: 't', label: '(t)ime: use active time', action: 'toggle-clock-time' }
+            { key: 't', label: '(t)ime: use active time', action: 'toggle-clock-time' },
+            { key: 'v', label: '(v)alue colors', action: 'edit-value-colors' }
         ]);
         expect(widget.getEditorDisplay(item).modifierText).toBe('(active time)');
         expect(widget.getEditorDisplay(clockItem).modifierText).toBe('(clock time)');
