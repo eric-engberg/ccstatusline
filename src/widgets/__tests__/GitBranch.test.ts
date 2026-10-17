@@ -170,7 +170,7 @@ describe('GitBranchWidget', () => {
 
         expect(render({ hideNoGit: true })).toBe('⎇ (ddfb2de)');
         expect(mockExecFileSync.mock.calls[2]?.[0]).toBe('jj');
-        expect(mockExecFileSync.mock.calls[2]?.[1]).toEqual(['root']);
+        expect(mockExecFileSync.mock.calls[2]?.[1]).toEqual(['--color=never', 'root']);
         expect(mockExecFileSync.mock.calls[3]?.[1]).toEqual([...GIT_HARDENING_ARGS, 'rev-parse', '--short', 'HEAD']);
     });
 
