@@ -17,6 +17,7 @@ import {
     isCustomConfigPath,
     saveInstallationMetadata
 } from './config';
+import { getCommandResolutionPaths } from './global-command-resolution';
 
 // Re-export for backward compatibility
 export type { ClaudeSettings };
@@ -249,9 +250,12 @@ export async function isInstalled(): Promise<boolean> {
 }
 
 function isExecutableAvailable(executable: string): boolean {
+    if (process.platform !== 'win32') {
+        return getCommandResolutionPaths(executable).length > 0;
+    }
+
     try {
-        const command = process.platform === 'win32' ? `where ${executable}` : `which ${executable}`;
-        execSync(command, { stdio: 'ignore', windowsHide: true });
+        execSync(`where ${executable}`, { stdio: 'ignore', windowsHide: true });
         return true;
     } catch {
         return false;
