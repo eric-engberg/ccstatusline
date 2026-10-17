@@ -8,6 +8,7 @@ import { formatPercent } from '../../utils/number-format';
 
 import { drawWidgetBar } from './bar-draw';
 import {
+    getBarEmptyCellsKeybinds,
     getBarLayoutModifiers,
     getBarNumbersKeybinds,
     keepBarLayout,
@@ -95,7 +96,7 @@ export function getContextSliderKeybinds(item?: WidgetItem): CustomKeybind[] {
         return [SLIDER_TOGGLE_KEYBIND, ...getLevelGlyphKeybinds()];
     }
     const showsBar = item ? getContextSliderMode(item) !== 'none' : false;
-    return [SLIDER_TOGGLE_KEYBIND, ...getGradientKeybinds(showsBar), ...getBarWidthKeybinds(showsBar), ...getBarNumbersKeybinds(item, showsBar)];
+    return [SLIDER_TOGGLE_KEYBIND, ...getGradientKeybinds(showsBar), ...getBarWidthKeybinds(showsBar), ...getBarNumbersKeybinds(item, showsBar), ...getBarEmptyCellsKeybinds(item)];
 }
 
 // The slider and gradient actions; null for anything else

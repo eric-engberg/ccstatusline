@@ -11,7 +11,10 @@ import {
     getStoredBarSize,
     type BarSize
 } from './bar-width';
-import { removeMetadataKeys } from './metadata';
+import {
+    removeMetadataKeys,
+    setMetadataValue
+} from './metadata';
 
 // A widget's bar has a style (block "[███░░]", slider "▓▓▓░░" or cells "▮▮▮▮▮"),
 // a size (see bar-width.ts) and the numbers after it, some or all of which can
@@ -24,7 +27,7 @@ import { removeMetadataKeys } from './metadata';
 export type BarStyle = 'block' | 'slider' | 'cells';
 
 // A cell bar draws its filled and empty cells with the same character, the
-// empty ones faint
+// empty ones faint or dark gray
 const BAR_CELL_SHAPES = ['rectangle', 'square', 'seven-eighths', 'parallelogram'] as const;
 export type BarCellShape = typeof BAR_CELL_SHAPES[number];
 const BAR_CELL_GLYPHS: Record<BarCellShape, string> = {
@@ -34,6 +37,13 @@ const BAR_CELL_GLYPHS: Record<BarCellShape, string> = {
     'parallelogram': '▰'
 };
 const BAR_CELL_KEY = 'barCell';
+
+// How a cell bar draws its empty cells: faint, or the fixed dark gray the
+// gradient bars give theirs. Stored as barEmpty 'gray', nothing for faint.
+// Every other style ignores it and keeps it, so the next cell bar is gray again.
+export type BarEmptyCells = 'faint' | 'gray';
+const BAR_EMPTY_KEY = 'barEmpty';
+export const TOGGLE_BAR_EMPTY_CELLS_ACTION = 'toggle-bar-empty-cells';
 
 // Which numbers follow the bar: a percent, and on the Context Bar token counts
 export type BarNumbers = 'all' | 'percent' | 'counts' | 'none';
@@ -73,6 +83,22 @@ export function getBarCellShape(item: WidgetItem): BarCellShape {
 
 export function getBarCellGlyph(item: WidgetItem): string {
     return BAR_CELL_GLYPHS[getBarCellShape(item)];
+}
+
+// Faint unless gray is stored; a value this build doesn't know, say from a
+// later one, draws faint
+export function getBarEmptyCells(item: WidgetItem): BarEmptyCells {
+    return item.metadata?.[BAR_EMPTY_KEY] === 'gray' ? 'gray' : 'faint';
+}
+
+// (y): gray empty cells, or back to faint
+export function toggleBarEmptyCells(item: WidgetItem): WidgetItem {
+    return setMetadataValue(item, BAR_EMPTY_KEY, getBarEmptyCells(item) === 'gray' ? null : 'gray');
+}
+
+// Whether the widget shows a cell bar with gray empty cells
+export function showsGrayBarCells(item: WidgetItem): boolean {
+    return getBarStyle(item) === 'cells' && getBarEmptyCells(item) === 'gray';
 }
 
 export function getBarNumbers(item: WidgetItem): BarNumbers {
@@ -191,16 +217,28 @@ export function keepBarLayout(item: WidgetItem): WidgetItem {
     };
 }
 
-// The line editor's modifiers, e.g. "slider bar" or "cells ■", "long",
-// "numbers off"; none while the widget shows text
+// The line editor's modifiers, e.g. "slider bar" or "cells ■" (then "gray"
+// for gray empty cells), "long", "numbers off"; none while the widget shows text
 export function getBarLayoutModifiers(item: WidgetItem): string[] {
     const style = getBarStyle(item);
     if (style === null) {
         return [];
     }
     const numbersModifier = BAR_NUMBERS_MODIFIERS[getBarNumbers(item)];
-    const styleModifier = style === 'cells' ? `cells ${getBarCellGlyph(item)}` : `${style} bar`;
-    return [styleModifier, getBarSizeModifier(item), ...(numbersModifier ? [numbersModifier] : [])];
+    const styleModifiers = style === 'cells' ? [`cells ${getBarCellGlyph(item)}`] : [`${style} bar`];
+    if (showsGrayBarCells(item)) {
+        styleModifiers.push('gray');
+    }
+    return [...styleModifiers, getBarSizeModifier(item), ...(numbersModifier ? [numbersModifier] : [])];
+}
+
+// (y) on a cell bar, naming what it switches to
+export function getBarEmptyCellsKeybinds(item: WidgetItem | undefined): CustomKeybind[] {
+    if (!item || getBarStyle(item) !== 'cells') {
+        return [];
+    }
+    const label = getBarEmptyCells(item) === 'gray' ? '(y) faint empty cells' : '(y) gray empty cells';
+    return [{ key: 'y', label, action: TOGGLE_BAR_EMPTY_CELLS_ACTION }];
 }
 
 // A toggle for a bar with only a percent after it, a cycle for one with counts too

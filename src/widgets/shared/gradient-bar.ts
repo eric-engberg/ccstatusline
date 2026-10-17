@@ -1,3 +1,4 @@
+import type { ColorLevelString } from '../../types/ColorLevel';
 import type { Settings } from '../../types/Settings';
 import type {
     CustomKeybind,
@@ -8,6 +9,7 @@ import {
     type Rgb
 } from '../../utils/gradient';
 
+import { showsGrayBarCells } from './bar-layout';
 import { removeMetadataKeys } from './metadata';
 import type { BarCell } from './progress-bar';
 import {
@@ -53,6 +55,14 @@ export function isBarGradientPreset(value: string | undefined): value is BarGrad
 }
 
 const EMPTY_CELL_CODE = '\x1b[38;2;60;60;60m';
+// The same dark gray at each color level, for a cell bar's gray empty cells:
+// #3C3C3C in true RGB, the nearest 256-color entry (237, #3A3A3A), and bright
+// black, the 16 colors' dark gray
+const EMPTY_CELL_CODES: Record<ColorLevelString, string> = {
+    truecolor: EMPTY_CELL_CODE,
+    ansi256: '\x1b[38;5;237m',
+    ansi16: '\x1b[90m'
+};
 const DEFAULT_FOREGROUND = '\x1b[39m';
 const FAINT = '\x1b[2m';
 // Normal intensity ends faint, and bold with it
@@ -67,7 +77,7 @@ export interface BarGlyphs {
 
 const CURSOR_GLYPH = '│';
 
-/** How a bar's cells are painted: by a gradient preset or not at all, with faint empty cells or not. */
+/** How a bar's cells are painted: by a gradient preset or not at all, with faint or colored empty cells or neither. */
 export interface BarPaint {
     preset: BarGradientPreset | null;
     // Runs the gradient from the urgent end, for bars that fill with what's left
@@ -76,6 +86,14 @@ export interface BarPaint {
     // whose filled and empty cells are the same character. Ending faint ends
     // bold too, so a bold widget's bar turns bold back on after them.
     faintEmpty?: { bold: boolean };
+    // The empty cells' color code; with a preset, dark gray in true RGB unless
+    // given
+    emptyCode?: string;
+}
+
+// The dark gray of a cell bar's gray empty cells at a color level
+export function getEmptyCellCode(colorLevel: ColorLevelString): string {
+    return EMPTY_CELL_CODES[colorLevel];
 }
 
 // Draws a bar's cells. With a preset, filled cells are colored by where they sit
@@ -85,9 +103,11 @@ export interface BarPaint {
 // ends with the default-foreground code, which the renderer turns back into the
 // widget's own color. Faint empty cells take the color they would have filled
 // instead of the gray, and each faint run ends before the next cell that isn't
-// empty, so faint never reaches past the bar.
+// empty, so faint never reaches past the bar. A given empty-cell code colors
+// the empty cells with or without a preset, at any color level.
 export function paintBarCells(cells: readonly BarCell[], glyphs: BarGlyphs, paint: BarPaint): string {
     const gradient = paint.preset ? BAR_GRADIENTS[paint.preset] : null;
+    const emptyCode = paint.emptyCode ?? (gradient ? EMPTY_CELL_CODE : '');
     const endFaint = paint.faintEmpty?.bold ? NORMAL_INTENSITY_THEN_BOLD : NORMAL_INTENSITY;
     const isFaint = (index: number) => paint.faintEmpty !== undefined && cells[index] === 'empty';
     let activeCode = '';
@@ -99,8 +119,8 @@ export function paintBarCells(cells: readonly BarCell[], glyphs: BarGlyphs, pain
         if (gradient && (cell === 'filled' || cellFaint)) {
             const position = cells.length > 1 ? index / (cells.length - 1) : 0;
             code = gradientCodeAt(gradient.stops, paint.reversed ? 1 - position : position, 'truecolor');
-        } else if (gradient && cell === 'empty') {
-            code = EMPTY_CELL_CODE;
+        } else if (cell === 'empty') {
+            code = emptyCode;
         }
 
         if (cellFaint !== isFaint(index - 1)) {
@@ -183,19 +203,24 @@ export function noteGradientNeedsTruecolor(modifierText: string | undefined, set
     return modifierText.replace(/gradient: ([a-z-]+)/, 'gradient: $1, needs truecolor');
 }
 
-// A bar with a preset colors its own cells, so a gradient widget color has to
-// go around them instead of over them (Widget.colorsOnlyItsRuns). Below
-// truecolor or under a global foreground override nothing is painted, and there
-// is nothing to go around.
-export function paintsBarGradient(item: WidgetItem, showsBar: boolean): boolean {
-    return showsBar && getGradientPreset(item) !== null;
+// A bar with a preset colors its own cells, and a cell bar with gray empty
+// cells those, so a gradient widget color has to go around them instead of over
+// them (Widget.colorsOnlyItsRuns). Where the settings leave them unpainted,
+// there is nothing to go around.
+export function paintsBarCells(item: WidgetItem, showsBar: boolean): boolean {
+    return showsBar && (getGradientPreset(item) !== null || showsGrayBarCells(item));
+}
+
+// A global foreground override owns every widget's foreground
+export function overridesForeground(settings: Settings): boolean {
+    const override = settings.overrideForegroundColor;
+    return Boolean(override && override !== 'none');
 }
 
 // The widget's bar gradient, when the settings allow it. A global foreground
 // override owns every widget's foreground, so it wins.
 export function getBarPaintPreset(item: WidgetItem, settings: Settings): BarGradientPreset | null {
-    const override = settings.overrideForegroundColor;
-    if (!supportsBarGradient(settings) || (override && override !== 'none')) {
+    if (!supportsBarGradient(settings) || overridesForeground(settings)) {
         return null;
     }
     return getGradientPreset(item);

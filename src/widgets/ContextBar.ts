@@ -22,6 +22,7 @@ import { formatTokens } from '../utils/renderer';
 
 import { drawWidgetBar } from './shared/bar-draw';
 import {
+    getBarEmptyCellsKeybinds,
     getBarLayoutModifiers,
     getBarNumbersKeybinds,
     getBarStyle,
@@ -39,7 +40,7 @@ import {
     cycleGradientPreset,
     getGradientKeybinds,
     getGradientModifier,
-    paintsBarGradient
+    paintsBarCells
 } from './shared/gradient-bar';
 import {
     LIMIT_SCALE,
@@ -152,6 +153,7 @@ export class ContextBarWidget implements Widget {
             ...getGradientKeybinds(true),
             ...getBarWidthKeybinds(true),
             ...getBarNumbersKeybinds(item, true, true),
+            ...getBarEmptyCellsKeybinds(item),
             VALUE_COLORS_KEYBIND
         ];
     }
@@ -168,10 +170,10 @@ export class ContextBarWidget implements Widget {
     }
 
     // Value colors paint only the bar and its numbers (or the whole text), and
-    // a gradient preset only the bar, so the renderer colors the rest with the
-    // theme or widget color
+    // a gradient preset or gray empty cells only the bar, so the renderer
+    // colors the rest with the theme or widget color
     colorsOnlyItsRuns(item: WidgetItem): boolean {
-        return isValueColorsEnabled(item) || paintsBarGradient(item, true);
+        return isValueColorsEnabled(item) || paintsBarCells(item, true);
     }
 
     supportsRawValue(): boolean { return true; }

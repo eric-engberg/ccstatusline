@@ -14,6 +14,7 @@ import { formatPercent } from '../../utils/number-format';
 
 import { drawWidgetBar } from './bar-draw';
 import {
+    getBarEmptyCellsKeybinds,
     getBarLayoutModifiers,
     getBarNumbersKeybinds,
     getBarStyle,
@@ -309,7 +310,7 @@ export function getUsagePercentCustomKeybinds(item?: WidgetItem, includeCursor =
     }
 
     const showsBar = item ? showsUsageBar(item) : false;
-    keybinds.push(...getGradientKeybinds(showsBar), ...getBarWidthKeybinds(showsBar), ...getBarNumbersKeybinds(item, showsBar));
+    keybinds.push(...getGradientKeybinds(showsBar), ...getBarWidthKeybinds(showsBar), ...getBarNumbersKeybinds(item, showsBar), ...getBarEmptyCellsKeybinds(item));
 
     return keybinds;
 }
@@ -359,7 +360,7 @@ export function getUsageTimerCustomKeybinds(
     }
 
     const showsBar = item !== undefined && isBarMode;
-    keybinds.push(...getGradientKeybinds(showsBar), ...getBarWidthKeybinds(showsBar), ...getBarNumbersKeybinds(item, showsBar));
+    keybinds.push(...getGradientKeybinds(showsBar), ...getBarWidthKeybinds(showsBar), ...getBarNumbersKeybinds(item, showsBar), ...getBarEmptyCellsKeybinds(item));
 
     return keybinds;
 }

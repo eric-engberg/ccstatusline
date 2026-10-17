@@ -168,6 +168,32 @@ describe('paintBarCells with faint empty cells', () => {
     });
 });
 
+// A cell bar can draw its empty cells in a fixed color instead, the dark gray
+// the gradient bars give theirs
+describe('paintBarCells with a color for the empty cells', () => {
+    const CELL = { filled: '▮', empty: '▮' };
+    const GRAY = `${ESC}[38;5;237m`;
+
+    it('colors only the empty cells without a preset, ending on the default foreground', () => {
+        expect(paintBarCells(cellsOf('██░░'), CELL, { preset: null, emptyCode: GRAY })).toBe(`▮▮${GRAY}▮▮${DEFAULT_FG}`);
+    });
+
+    it('colors the filled cells by the preset and the empty ones in the given color', () => {
+        // The first two cells of a full bar, colored where they sit
+        const [first, second] = codes(paintBarCells(cellsOf('████'), CELL, { preset: 'traffic' }));
+
+        expect(paintBarCells(cellsOf('██░░'), CELL, { preset: 'traffic', emptyCode: GRAY })).toBe(`${first}▮${second}▮${GRAY}▮▮${DEFAULT_FG}`);
+    });
+
+    it('keeps the time cursor in the widget color', () => {
+        expect(paintBarCells(cellsOf('█░│░'), CELL, { preset: null, emptyCode: GRAY })).toBe(`▮${GRAY}▮${DEFAULT_FG}│${GRAY}▮${DEFAULT_FG}`);
+    });
+
+    it('leaves a full bar unpainted', () => {
+        expect(paintBarCells(cellsOf('███'), CELL, { preset: null, emptyCode: GRAY })).toBe('▮▮▮');
+    });
+});
+
 describe('the line editor\'s truecolor rule', () => {
     const gradientKey = { key: 'g', label: '(g)radient', action: 'cycle-gradient' };
     const progressKey = { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' };

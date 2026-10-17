@@ -7,9 +7,12 @@ import {
 import type { WidgetItem } from '../../../types/Widget';
 import {
     CYCLE_BAR_NUMBERS_ACTION,
+    TOGGLE_BAR_EMPTY_CELLS_ACTION,
     TOGGLE_BAR_NUMBERS_ACTION,
     cycleBarNumbers,
     getBarCellShape,
+    getBarEmptyCells,
+    getBarEmptyCellsKeybinds,
     getBarLayoutModifiers,
     getBarNumbers,
     getBarNumbersKeybinds,
@@ -20,6 +23,7 @@ import {
     showsBarCounts,
     showsBarPercent,
     stepBarStyle,
+    toggleBarEmptyCells,
     toggleBarNumbers
 } from '../bar-layout';
 
@@ -201,5 +205,60 @@ describe('cell styles', () => {
         expect(getBarLayoutModifiers(item({ display: 'cells', barCell: 'square', barWidth: 'long' }))).toEqual(['cells ■', 'long']);
         expect(getBarLayoutModifiers(item({ display: 'cells', barCell: 'seven-eighths', barNumbers: 'none' }))).toEqual(['cells ▉', 'medium', 'numbers off']);
         expect(getBarLayoutModifiers(item({ display: 'cells', barCell: 'parallelogram', barWidth: 'fill' }))).toEqual(['cells ▰', 'fill width']);
+    });
+});
+
+// A cell bar's empty cells are faint unless gray is chosen, stored as barEmpty
+describe('cell bar empty cells', () => {
+    it('reads faint unless gray is stored', () => {
+        expect(getBarEmptyCells(item({ display: 'cells' }))).toBe('faint');
+        expect(getBarEmptyCells(item({ display: 'cells', barEmpty: 'gray' }))).toBe('gray');
+        // A value this build doesn't know, e.g. from a later one
+        expect(getBarEmptyCells(item({ display: 'cells', barEmpty: 'checkered' }))).toBe('faint');
+    });
+
+    it('toggles gray on, and back off by removing the key', () => {
+        const gray = toggleBarEmptyCells(item({ display: 'cells', barCell: 'square' }));
+
+        expect(gray.metadata).toEqual({ display: 'cells', barCell: 'square', barEmpty: 'gray' });
+        expect(toggleBarEmptyCells(gray).metadata).toEqual({ display: 'cells', barCell: 'square' });
+        expect(toggleBarEmptyCells(item({ display: 'cells', barEmpty: 'checkered' })).metadata).toEqual({ display: 'cells', barEmpty: 'gray' });
+    });
+
+    it('keeps gray from shape to shape and through size and numbers changes', () => {
+        const gray = item({ display: 'cells', barEmpty: 'gray' });
+        const square = stepBarStyle(gray);
+
+        expect(square?.metadata).toEqual({ display: 'cells', barCell: 'square', barEmpty: 'gray' });
+        expect(setBarSize(gray, 'long').metadata).toEqual({ display: 'cells', barWidth: 'long', barEmpty: 'gray' });
+        expect(toggleBarNumbers(gray).metadata).toEqual({ display: 'cells', barEmpty: 'gray', barNumbers: 'none' });
+    });
+
+    // Another style or the text mode ignores the choice and keeps it, so the
+    // next cell bar is gray again
+    it('keeps gray through the other styles and the text mode', () => {
+        const block = setBarStyle(item({ display: 'cells', barCell: 'parallelogram', barEmpty: 'gray' }), 'block');
+        const text = keepBarLayout(item({ display: 'cells', barEmpty: 'gray' }));
+
+        expect(block.metadata).toEqual({ display: 'progress-short', barEmpty: 'gray' });
+        expect(getBarLayoutModifiers(block)).toEqual(['block bar', 'medium']);
+        expect(setBarStyle(block, 'cells').metadata).toEqual({ display: 'cells', barEmpty: 'gray' });
+        expect(text.metadata).toEqual({ display: 'cells', barEmpty: 'gray', barWidth: 'medium' });
+    });
+
+    it('names gray after the shape in the line editor, and faint not at all', () => {
+        expect(getBarLayoutModifiers(item({ display: 'cells', barEmpty: 'gray', barWidth: 'long' }))).toEqual(['cells ▮', 'gray', 'long']);
+        expect(getBarLayoutModifiers(item({ display: 'cells', barCell: 'square', barEmpty: 'gray', barNumbers: 'none' }))).toEqual(['cells ■', 'gray', 'medium', 'numbers off']);
+        expect(getBarLayoutModifiers(item({ display: 'cells', barEmpty: 'checkered' }))).toEqual(['cells ▮', 'medium']);
+        expect(getBarLayoutModifiers(item({ display: 'slider', barEmpty: 'gray' }))).toEqual(['slider bar', 'short']);
+    });
+
+    it('offers (y) only on a cell bar, naming what it switches to', () => {
+        expect(getBarEmptyCellsKeybinds(item({ display: 'cells' }))).toEqual([{ key: 'y', label: '(y) gray empty cells', action: TOGGLE_BAR_EMPTY_CELLS_ACTION }]);
+        expect(getBarEmptyCellsKeybinds(item({ display: 'cells', barEmpty: 'gray' }))).toEqual([{ key: 'y', label: '(y) faint empty cells', action: TOGGLE_BAR_EMPTY_CELLS_ACTION }]);
+        expect(getBarEmptyCellsKeybinds(item({ display: 'progress', barEmpty: 'gray' }))).toEqual([]);
+        expect(getBarEmptyCellsKeybinds(item({ display: 'slider' }))).toEqual([]);
+        expect(getBarEmptyCellsKeybinds(item({ barEmpty: 'gray' }))).toEqual([]);
+        expect(getBarEmptyCellsKeybinds(undefined)).toEqual([]);
     });
 });

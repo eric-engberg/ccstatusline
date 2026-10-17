@@ -21,7 +21,7 @@ import {
 import {
     CYCLE_GRADIENT_ACTION,
     cycleGradientPreset,
-    paintsBarGradient
+    paintsBarCells
 } from './shared/gradient-bar';
 import { isHidden } from './shared/hideable';
 import {
@@ -188,9 +188,10 @@ export class BlockResetTimerWidget implements Widget {
         return null;
     }
 
-    // A gradient preset paints only the bar, so the renderer colors the rest
+    // A gradient preset or gray empty cells paint only the bar, so the
+    // renderer colors the rest
     colorsOnlyItsRuns(item: WidgetItem): boolean {
-        return paintsBarGradient(item, showsUsageBar(item));
+        return paintsBarCells(item, showsUsageBar(item));
     }
 
     supportsRawValue(): boolean { return true; }
