@@ -9,9 +9,15 @@ import React, { useState } from 'react';
 import type { PowerlineConfig } from '../../types/PowerlineConfig';
 import type { Settings } from '../../types/Settings';
 import { getPlainInput } from '../../utils/input-guards';
-import { type PowerlineFontStatus } from '../../utils/powerline';
+import {
+    type FontInstallResult,
+    type PowerlineFontStatus
+} from '../../utils/powerline';
 import { isAnyLinePowerline } from '../../utils/powerline-lines';
-import { buildEnabledPowerlineSettings } from '../../utils/powerline-settings';
+import {
+    buildDisabledPowerlineSettings,
+    buildEnabledPowerlineSettings
+} from '../../utils/powerline-settings';
 
 import { ConfirmDialog } from './ConfirmDialog';
 import {
@@ -104,6 +110,12 @@ export function getThemeDisplay(powerlineConfig: PowerlineConfig): string {
     return theme.charAt(0).toUpperCase() + theme.slice(1);
 }
 
+// From the install's own result, not its wording: the Windows success message
+// doesn't say "success"
+export function getFontInstallMessageColor(result: FontInstallResult): 'green' | 'red' {
+    return result.success ? 'green' : 'red';
+}
+
 // The options apply to Powerline lines, so they're offered while any line is
 // Powerline, including one switched on in Edit Lines with Powerline off
 export function buildPowerlineSetupMenuItems(
@@ -151,7 +163,7 @@ export interface PowerlineSetupProps {
     onBack: () => void;
     onInstallFonts: () => void;
     installingFonts: boolean;
-    fontInstallMessage: string | null;
+    fontInstallMessage: FontInstallResult | null;
     onClearMessage: () => void;
 }
 
@@ -203,13 +215,7 @@ export const PowerlineSetup: React.FC<PowerlineSetupProps> = ({
                         onUpdate(buildEnabledPowerlineSettings(settings, false));
                     }
                 } else {
-                    onUpdate({
-                        ...settings,
-                        powerline: {
-                            ...powerlineConfig,
-                            enabled: false
-                        }
-                    });
+                    onUpdate(buildDisabledPowerlineSettings(settings));
                 }
             } else if (shortcut === 'i' || shortcut === 'I') {
                 setConfirmingFontInstall(true);
@@ -387,8 +393,8 @@ export const PowerlineSetup: React.FC<PowerlineSetupProps> = ({
                 </Box>
             ) : fontInstallMessage ? (
                 <Box flexDirection='column'>
-                    <Text color={fontInstallMessage.includes('success') ? 'green' : 'red'}>
-                        {fontInstallMessage}
+                    <Text color={getFontInstallMessageColor(fontInstallMessage)}>
+                        {fontInstallMessage.message}
                     </Text>
                     <Box marginTop={1}>
                         <Text dimColor>Press any key to continue...</Text>
