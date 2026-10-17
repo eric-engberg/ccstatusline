@@ -19,6 +19,7 @@ import {
     getGitChangeCounts,
     getGitFileStatusCounts,
     getGitStatus,
+    getGitUntrackedFileCount,
     isInsideGitWorkTree,
     resolveGitCwd,
     runGit
@@ -198,6 +199,40 @@ describe('git utils', () => {
                 'status',
                 '--ignore-submodules=dirty'
             ]));
+        });
+
+        it('sets diff.relative back to false for diff, so it covers the whole repository', () => {
+            const { root } = createGitRepo();
+            mockExecFileSync.mockReturnValueOnce(' 1 file changed, 1 insertion(+)\n');
+
+            expect(execGit(['diff', '--shortstat'], root)).toBe(' 1 file changed, 1 insertion(+)\n');
+
+            expect(mockExecFileSync.mock.calls[0]?.[1]).toEqual([
+                ...GIT_HARDENING_ARGS,
+                '-c',
+                'diff.relative=false',
+                'diff',
+                '--no-ext-diff',
+                '--no-textconv',
+                '--ignore-submodules=dirty',
+                '--shortstat'
+            ]);
+        });
+
+        it('turns pathspec magic back on for ls-files, so `:/` covers the whole repository', () => {
+            const { root } = createGitRepo();
+            mockExecFileSync.mockReturnValueOnce('');
+
+            execGit(['ls-files', '--unmerged', '--', ':/'], root);
+
+            expect(mockExecFileSync.mock.calls[0]?.[1]).toEqual([
+                ...GIT_HARDENING_ARGS,
+                '--no-literal-pathspecs',
+                'ls-files',
+                '--unmerged',
+                '--',
+                ':/'
+            ]);
         });
     });
 
@@ -924,13 +959,12 @@ describe('git utils', () => {
     });
 
     describe('getGitFileStatusCounts', () => {
-        it('counts staged, unstaged, and untracked files from porcelain status', () => {
+        it('counts staged and unstaged files from porcelain status, leaving untracked ones out', () => {
             mockExecFileSync.mockReturnValueOnce('M  staged-a.ts\0A  staged-b.ts\0 M unstaged-a.ts\0?? new-a.ts\0?? new-b.ts\0');
 
             expect(getGitFileStatusCounts({})).toEqual({
                 staged: 2,
-                unstaged: 1,
-                untracked: 2
+                unstaged: 1
             });
         });
 
@@ -939,8 +973,7 @@ describe('git utils', () => {
 
             expect(getGitFileStatusCounts({})).toEqual({
                 staged: 1,
-                unstaged: 1,
-                untracked: 0
+                unstaged: 1
             });
         });
 
@@ -949,8 +982,7 @@ describe('git utils', () => {
 
             expect(getGitFileStatusCounts({})).toEqual({
                 staged: 0,
-                unstaged: 0,
-                untracked: 0
+                unstaged: 0
             });
         });
 
@@ -959,8 +991,7 @@ describe('git utils', () => {
 
             expect(getGitFileStatusCounts({})).toEqual({
                 staged: 1,
-                unstaged: 0,
-                untracked: 1
+                unstaged: 0
             });
         });
 
@@ -969,8 +1000,7 @@ describe('git utils', () => {
 
             expect(getGitFileStatusCounts({})).toEqual({
                 staged: 1,
-                unstaged: 1,
-                untracked: 0
+                unstaged: 1
             });
         });
 
@@ -979,8 +1009,7 @@ describe('git utils', () => {
 
             expect(getGitFileStatusCounts({})).toEqual({
                 staged: 0,
-                unstaged: 1,
-                untracked: 1
+                unstaged: 1
             });
         });
 
@@ -989,8 +1018,7 @@ describe('git utils', () => {
 
             expect(getGitFileStatusCounts({})).toEqual({
                 staged: 0,
-                unstaged: 2,
-                untracked: 0
+                unstaged: 2
             });
         });
 
@@ -1006,8 +1034,7 @@ describe('git utils', () => {
 
             expect(getGitFileStatusCounts({})).toEqual({
                 staged: 25_000,
-                unstaged: 0,
-                untracked: 0
+                unstaged: 0
             });
         });
 
@@ -1015,6 +1042,87 @@ describe('git utils', () => {
             mockExecFileSync.mockImplementation(() => { throw new Error('git failed'); });
 
             expect(getGitFileStatusCounts({})).toBeNull();
+        });
+    });
+
+    describe('getGitUntrackedFileCount', () => {
+        it('counts each file the whole repository\'s untracked listing holds', () => {
+            mockExecFileSync.mockReturnValueOnce(' M changed.ts\0?? new.ts\0?? new-dir/\0');
+            mockExecFileSync.mockReturnValueOnce('new.ts\0new-dir/a.ts\0new-dir/b.ts\0');
+
+            expect(getGitUntrackedFileCount({ data: { cwd: '/tmp/repo' } })).toBe(3);
+            expect(mockExecFileSync.mock.calls[1]?.[1]).toEqual([...GIT_HARDENING_ARGS, '--no-literal-pathspecs', 'ls-files', '--others', '--exclude-standard', '-z', '--', ':/']);
+            expectGitExecOptions(mockExecFileSync.mock.calls[1]?.[2], '/tmp/repo');
+        });
+
+        // execFileSync's default of 1 MiB holds about 16,000 paths, which an
+        // untracked node_modules or .venv can pass
+        it('lets the listing run past execFileSync\'s 1 MiB default', () => {
+            mockExecFileSync.mockReturnValueOnce('?? node_modules/\0');
+            mockExecFileSync.mockReturnValueOnce('');
+
+            getGitUntrackedFileCount({});
+
+            expect((mockExecFileSync.mock.calls[1]?.[2] as { maxBuffer?: number }).maxBuffer).toBeGreaterThan(1024 * 1024);
+        });
+
+        // As under status.showUntrackedFiles=no, where git status lists no
+        // untracked files however many there are
+        it('runs no listing when git status lists nothing untracked', () => {
+            mockExecFileSync.mockReturnValueOnce('M  staged.ts\0 M changed.ts\0');
+
+            expect(getGitUntrackedFileCount({})).toBe(0);
+            expect(mockExecFileSync.mock.calls).toHaveLength(1);
+            expect(mockExecFileSync.mock.calls[0]?.[1]).toEqual([...GIT_HARDENING_ARGS, 'status', '--ignore-submodules=dirty', '--porcelain', '-z']);
+        });
+
+        it('returns zero when nothing is untracked', () => {
+            mockExecFileSync.mockReturnValueOnce('');
+
+            expect(getGitUntrackedFileCount({})).toBe(0);
+        });
+
+        it('returns null without listing when git status fails, as the staged and unstaged counts do', () => {
+            mockExecFileSync.mockImplementationOnce(() => { throw new Error('git status failed'); });
+
+            expect(getGitUntrackedFileCount({})).toBeNull();
+            expect(mockExecFileSync.mock.calls).toHaveLength(1);
+            expect(mockExecFileSync.mock.calls[0]?.[1]).toEqual([...GIT_HARDENING_ARGS, 'status', '--ignore-submodules=dirty', '--porcelain', '-z']);
+        });
+
+        // As when the listing runs past the timeout every git call has
+        it('returns null when the listing fails after git status lists something untracked', () => {
+            mockExecFileSync.mockReturnValueOnce('?? a.ts\0');
+            mockExecFileSync.mockImplementationOnce(() => { throw new Error('ls-files failed'); });
+
+            expect(getGitUntrackedFileCount({})).toBeNull();
+            expect(mockExecFileSync.mock.calls).toHaveLength(2);
+            expect(mockExecFileSync.mock.calls[1]?.[1]).toEqual([...GIT_HARDENING_ARGS, '--no-literal-pathspecs', 'ls-files', '--others', '--exclude-standard', '-z', '--', ':/']);
+        });
+
+        it('returns null, not zero, when git fails', () => {
+            mockExecFileSync.mockImplementation(() => { throw new Error('git failed'); });
+
+            expect(getGitUntrackedFileCount({})).toBeNull();
+        });
+
+        it('keeps the count in the persistent cache rather than the listing', () => {
+            vi.spyOn(Date, 'now').mockReturnValue(1000);
+            const home = useTempHome();
+            const { root } = createGitRepo();
+            const context: RenderContext = { data: { cwd: root }, gitCacheTtlSeconds: 5 };
+            mockExecFileSync.mockReturnValueOnce('?? a.ts\0?? b.ts\0');
+            mockExecFileSync.mockReturnValueOnce('a.ts\0b.ts\0');
+
+            expect(getGitUntrackedFileCount(context)).toBe(2);
+            expect(Object.values(readGitCacheJson(home).entries ?? {})).toEqual([
+                expect.objectContaining({ output: '?? a.ts\0?? b.ts\0' }),
+                expect.objectContaining({ output: '2' })
+            ]);
+
+            clearGitCache();
+            expect(getGitUntrackedFileCount(context)).toBe(2);
+            expect(mockExecFileSync.mock.calls).toHaveLength(2);
         });
     });
 });
