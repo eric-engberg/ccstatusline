@@ -7,7 +7,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import React, { useState } from 'react';
 
-import { shouldInsertInput } from '../../utils/input-guards';
+import { getInsertableText } from '../../utils/input-guards';
 import { BlinkingCursor } from '../../widgets/shared/BlinkingCursor';
 
 interface ExportConfigDialogProps {
@@ -21,14 +21,15 @@ export function ExportConfigDialog({ onExport, onCancel }: ExportConfigDialogPro
     const [inputValue, setInputValue] = useState(DEFAULT_EXPORT_PATH);
 
     useInput((input, key) => {
+        const text = getInsertableText(input, key);
         if (key.return) {
             onExport(inputValue);
         } else if (key.escape) {
             onCancel();
         } else if (key.backspace) {
             setInputValue(inputValue.slice(0, -1));
-        } else if (shouldInsertInput(input, key)) {
-            setInputValue(inputValue + input);
+        } else if (text) {
+            setInputValue(inputValue + text);
         }
     });
 

@@ -7,8 +7,8 @@ import React, { useState } from 'react';
 
 import type { Settings } from '../../types/Settings';
 import {
-    getPlainInput,
-    shouldInsertInput
+    getInsertableHexDigits,
+    getPlainInput
 } from '../../utils/input-guards';
 import { BlinkingCursor } from '../../widgets/shared/BlinkingCursor';
 
@@ -145,9 +145,12 @@ export const PowerlineSeparatorEditor: React.FC<PowerlineSeparatorEditorProps> =
             } else if (key.backspace && cursorPos > 0) {
                 setHexInput(hexInput.slice(0, cursorPos - 1) + hexInput.slice(cursorPos));
                 setCursorPos(cursorPos - 1);
-            } else if (shouldInsertInput(input, key) && /[0-9a-fA-F]/.test(input) && hexInput.length < 6) {
-                setHexInput(hexInput.slice(0, cursorPos) + input.toUpperCase() + hexInput.slice(cursorPos));
-                setCursorPos(cursorPos + 1);
+            } else {
+                const digits = getInsertableHexDigits(input, key, 6 - hexInput.length);
+                if (digits) {
+                    setHexInput(hexInput.slice(0, cursorPos) + digits + hexInput.slice(cursorPos));
+                    setCursorPos(cursorPos + digits.length);
+                }
             }
         } else {
             // Normal mode

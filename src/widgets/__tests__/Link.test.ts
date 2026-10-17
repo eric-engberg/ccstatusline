@@ -1,13 +1,57 @@
+import { render } from 'ink';
+import { PassThrough } from 'node:stream';
+import stripAnsi from 'strip-ansi';
 import {
     describe,
     expect,
-    it
+    it,
+    vi
 } from 'vitest';
 
+import { waitFor } from '../../tui/__tests__/helpers/wait-for-ink';
 import type { RenderContext } from '../../types/RenderContext';
 import { DEFAULT_SETTINGS } from '../../types/Settings';
 import type { WidgetItem } from '../../types/Widget';
 import { LinkWidget } from '../Link';
+
+class MockTtyStream extends PassThrough {
+    isTTY = true;
+    columns = 120;
+    rows = 40;
+
+    setRawMode() {
+        return this;
+    }
+
+    ref() {
+        return this;
+    }
+
+    unref() {
+        return this;
+    }
+}
+
+interface CapturedWriteStream extends NodeJS.WriteStream { getOutput: () => string }
+
+function createMockStdin(): NodeJS.ReadStream {
+    return new MockTtyStream() as unknown as NodeJS.ReadStream;
+}
+
+function createMockStdout(): CapturedWriteStream {
+    const stream = new MockTtyStream();
+    const chunks: string[] = [];
+
+    stream.on('data', (chunk: Buffer | string) => {
+        chunks.push(chunk.toString());
+    });
+
+    return Object.assign(stream as unknown as NodeJS.WriteStream, {
+        getOutput() {
+            return chunks.join('');
+        }
+    });
+}
 
 function renderLink(
     metadata: Record<string, string> | undefined,
@@ -154,5 +198,55 @@ describe('LinkWidget', () => {
 
         expect(widget.supportsColors(item)).toBe(true);
         expect(widget.supportsRawValue()).toBe(true);
+    });
+});
+
+describe('LinkWidget editor', () => {
+    // A URL copied with its line ending arrives in the same input chunk
+    it('inserts a pasted URL without its trailing line break', async () => {
+        const stdin = createMockStdin();
+        const stdout = createMockStdout();
+        const stderr = createMockStdout();
+        const onComplete = vi.fn();
+        const instance = render(
+            new LinkWidget().renderEditor({
+                widget: { id: 'link', type: 'link' },
+                onComplete,
+                onCancel: vi.fn(),
+                action: 'edit-url'
+            }),
+            {
+                stdin,
+                stdout,
+                stderr,
+                debug: true,
+                exitOnCtrlC: false,
+                patchConsole: false
+            }
+        );
+
+        try {
+            await waitFor(() => {
+                expect(stripAnsi(stdout.getOutput())).toContain('Enter URL (http/https):');
+            });
+
+            stdin.write('https://example.com/docs\n');
+            await waitFor(() => {
+                expect(stripAnsi(stdout.getOutput())).toContain('Enter URL (http/https): https://example.com/docs');
+            });
+            // The pasted line break doesn't save the link; Enter does
+            expect(onComplete).not.toHaveBeenCalled();
+            stdin.write('\r');
+            await waitFor(() => {
+                expect(onComplete).toHaveBeenCalledTimes(1);
+            });
+            expect(onComplete.mock.calls[0]?.[0]).toMatchObject({ metadata: { url: 'https://example.com/docs' } });
+        } finally {
+            instance.unmount();
+            instance.cleanup();
+            stdin.destroy();
+            stdout.destroy();
+            stderr.destroy();
+        }
     });
 });

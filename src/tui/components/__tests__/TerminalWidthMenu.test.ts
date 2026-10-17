@@ -167,4 +167,72 @@ describe('TerminalWidthMenu helpers', () => {
             stderr.destroy();
         }
     });
+
+    // A number copied with its line ending arrives in the same input chunk
+    it('takes a pasted compact threshold', async () => {
+        const stdin = createMockStdin();
+        const stdout = createMockStdout();
+        const stderr = createMockStdout();
+        const onUpdate = vi.fn();
+        const onBack = vi.fn();
+        const instance = render(
+            React.createElement(TerminalWidthMenu, {
+                settings: {
+                    ...DEFAULT_SETTINGS,
+                    flexMode: 'full-until-compact',
+                    compactThreshold: 60
+                },
+                onUpdate,
+                onBack
+            }),
+            {
+                stdin,
+                stdout,
+                stderr,
+                debug: true,
+                exitOnCtrlC: false,
+                patchConsole: false
+            }
+        );
+
+        try {
+            await waitFor(() => {
+                expect(stdout.getOutput()).toContain('▶  Full width until compact');
+            });
+            stdin.write('\r');
+            await waitFor(() => {
+                expect(stdout.getOutput()).toContain('Enter compact threshold (1-99): 60%');
+            });
+            stdin.write('\x7f');
+            await waitFor(() => {
+                expect(stdout.getOutput()).toContain('Enter compact threshold (1-99): 6%');
+            });
+            stdin.write('\x7f');
+            await waitFor(() => {
+                expect(stdout.getOutput()).toContain('Enter compact threshold (1-99): %');
+            });
+
+            // Picking the option already saved it once, with the old threshold
+            onUpdate.mockClear();
+            stdin.write('75\r');
+            await waitFor(() => {
+                expect(stdout.getOutput()).toContain('Enter compact threshold (1-99): 75%');
+            });
+            // The pasted line break doesn't confirm the threshold; Enter does
+            expect(onUpdate).not.toHaveBeenCalled();
+            stdin.write('\r');
+            await waitFor(() => {
+                expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({
+                    flexMode: 'full-until-compact',
+                    compactThreshold: 75
+                }));
+            });
+        } finally {
+            instance.unmount();
+            instance.cleanup();
+            stdin.destroy();
+            stdout.destroy();
+            stderr.destroy();
+        }
+    });
 });
