@@ -344,30 +344,82 @@ function getIntervalsDurationMs(intervals: SpeedInterval[]): number {
     return intervals.reduce((total, interval) => total + (interval.endMs - interval.startMs), 0);
 }
 
+function clipIntervalToWindow(interval: SpeedInterval, windowStartMs: number, windowEndMs: number): SpeedInterval | null {
+    const startMs = Math.max(interval.startMs, windowStartMs);
+    const endMs = Math.min(interval.endMs, windowEndMs);
+    return endMs > startMs ? { startMs, endMs } : null;
+}
+
+/**
+ * Gathers the intervals of every record of each logged API response.
+ *
+ * One record's interval can cover only part of the time its response ran. A
+ * response that runs tools in parallel logs a tool result between its records,
+ * so a later record's interval starts at that result. A forked subagent's
+ * transcript opens with a copy of the response that spawned it, with no user
+ * record before it and so no interval at all. Together, a response's records
+ * across the main transcript and its subagent transcripts cover its time.
+ */
+function collectResponseIntervals(requests: SpeedRequest[]): Map<string, SpeedInterval[]> {
+    const intervalsByMessageId = new Map<string, SpeedInterval[]>();
+    for (const request of requests) {
+        if (request.messageId === null || !request.interval) {
+            continue;
+        }
+
+        const intervals = intervalsByMessageId.get(request.messageId);
+        if (intervals) {
+            intervals.push(request.interval);
+        } else {
+            intervalsByMessageId.set(request.messageId, [request.interval]);
+        }
+    }
+
+    return intervalsByMessageId;
+}
+
+function getResponseIntervals(request: SpeedRequest, intervalsByMessageId: Map<string, SpeedInterval[]>): SpeedInterval[] {
+    if (request.messageId !== null) {
+        return intervalsByMessageId.get(request.messageId) ?? [];
+    }
+
+    return request.interval ? [request.interval] : [];
+}
+
 /**
  * Cuts a request down to the part of its interval inside the window.
  *
- * A request's tokens are produced across its whole interval, so one that started
- * before the window produced only some of them inside it. It keeps the share of
- * its tokens that matches its share of time inside the window: all of its tokens
- * over only the clipped time would overstate the speed.
+ * A request's tokens are produced across the time its response ran, so one that
+ * started before the window produced only some of them inside it. It keeps the
+ * share of its tokens that matches the share of that time inside the window: all
+ * of its tokens over only the clipped time would overstate the speed. That time
+ * is the union of the intervals of the response's records; when none of them has
+ * one, the request keeps all of its tokens.
  */
-function clipRequestToWindow(request: SpeedRequest, windowStartMs: number, windowEndMs: number): SpeedRequest {
-    const { interval } = request;
-    if (!interval) {
-        return request;
+function clipRequestToWindow(
+    request: SpeedRequest,
+    windowStartMs: number,
+    windowEndMs: number,
+    responseIntervals: SpeedInterval[]
+): SpeedRequest {
+    const interval = request.interval ? clipIntervalToWindow(request.interval, windowStartMs, windowEndMs) : null;
+    const responseTime = mergeIntervals(responseIntervals);
+    const fullMs = getIntervalsDurationMs(responseTime);
+    if (fullMs === 0) {
+        return { ...request, interval };
     }
 
-    const startMs = Math.max(interval.startMs, windowStartMs);
-    const endMs = Math.min(interval.endMs, windowEndMs);
-    const insideMs = Math.max(endMs - startMs, 0);
-    const fullMs = interval.endMs - interval.startMs;
+    let insideMs = 0;
+    for (const part of responseTime) {
+        const inside = clipIntervalToWindow(part, windowStartMs, windowEndMs);
+        insideMs += inside ? inside.endMs - inside.startMs : 0;
+    }
 
     return {
         ...request,
         inputTokens: request.inputTokens * insideMs / fullMs,
         outputTokens: request.outputTokens * insideMs / fullMs,
-        interval: insideMs > 0 ? { startMs, endMs } : null
+        interval
     };
 }
 
@@ -516,12 +568,21 @@ function buildSpeedMetrics(
         ? windowEndMs - (normalizedWindowSeconds * 1000)
         : null;
 
-    const selectedRequests = normalizedWindowSeconds !== null && windowStartMs !== null && windowEndMs !== null
-        ? collected.requests.filter(request => request.assistantTimestampMs !== null
+    let selectedRequests = collected.requests;
+    if (normalizedWindowSeconds !== null && windowStartMs !== null && windowEndMs !== null) {
+        // A response's share comes from all of its records, including those
+        // logged before the window
+        const intervalsByMessageId = collectResponseIntervals(collected.requests);
+        selectedRequests = collected.requests.filter(request => request.assistantTimestampMs !== null
             && request.assistantTimestampMs >= windowStartMs
             && request.assistantTimestampMs <= windowEndMs
-        ).map(request => clipRequestToWindow(request, windowStartMs, windowEndMs))
-        : collected.requests;
+        ).map(request => clipRequestToWindow(
+            request,
+            windowStartMs,
+            windowEndMs,
+            getResponseIntervals(request, intervalsByMessageId)
+        ));
+    }
 
     const intervals: SpeedInterval[] = [];
 
