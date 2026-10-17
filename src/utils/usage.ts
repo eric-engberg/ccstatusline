@@ -3,6 +3,7 @@ export {
     getUsageAccountKey,
     getUsageFetchedAt,
     lookUpUsageAccount,
+    type PayloadResetAt,
     type UsageAccount
 } from './usage-fetch';
 export {
