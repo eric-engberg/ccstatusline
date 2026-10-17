@@ -346,7 +346,7 @@ describe('WeeklyResetTimerWidget', () => {
                 display: 'progress',
                 hours: 'true'
             }
-        }).modifierText).toBe('(long bar)');
+        }).modifierText).toBe('(block bar, long)');
     });
 
     it('hides hours-only keybind while timestamp mode is active', () => {
@@ -360,7 +360,7 @@ describe('WeeklyResetTimerWidget', () => {
                 hours: 'true'
             }
         })).toEqual([
-            { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
+            { key: 'p', label: '(p) bar style', action: 'toggle-progress' },
             { key: 's', label: '(s)hort time', action: 'toggle-compact' },
             { key: 't', label: '(t)imestamp', action: 'toggle-date' },
             { key: 'f', label: '12/24 (f)ormat', action: 'toggle-hour-format' },
@@ -435,8 +435,11 @@ describe('WeeklyResetTimerWidget', () => {
             type: 'weekly-reset-timer',
             metadata: { display: 'slider' }
         })).toEqual([
-            { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
-            { key: 'v', label: 'in(v)ert fill', action: 'toggle-invert' }
+            { key: 'p', label: '(p) bar style', action: 'toggle-progress' },
+            { key: 'v', label: 'in(v)ert fill', action: 'toggle-invert' },
+            { key: 'g', label: '(g)radient', action: 'cycle-gradient' },
+            { key: 'b', label: '(b)ar size', action: 'edit-bar-width' },
+            { key: 'n', label: '(n) hide numbers', action: 'toggle-bar-numbers' }
         ]);
     });
 
@@ -447,12 +450,12 @@ describe('WeeklyResetTimerWidget', () => {
             id: 'weekly-reset',
             type: 'weekly-reset-timer',
             metadata: { display: 'slider' }
-        }).modifierText).toBe('(short bar)');
+        }).modifierText).toBe('(slider bar, short)');
         expect(widget.getEditorDisplay({
             id: 'weekly-reset',
             type: 'weekly-reset-timer',
             metadata: { display: 'slider-only' }
-        }).modifierText).toBe('(short bar only)');
+        }).modifierText).toBe('(slider bar, short, numbers off)');
     });
 
     it('ignores stale hours-only metadata in slider modes', () => {
@@ -462,7 +465,7 @@ describe('WeeklyResetTimerWidget', () => {
             id: 'weekly-reset',
             type: 'weekly-reset-timer',
             metadata: { display: 'slider', hours: 'true' }
-        }).modifierText).toBe('(short bar)');
+        }).modifierText).toBe('(slider bar, short)');
     });
 
     runUsageTimerEditorSuite({
@@ -470,17 +473,20 @@ describe('WeeklyResetTimerWidget', () => {
         createWidget: () => new WeeklyResetTimerWidget(),
         expectedDisplayName: 'Weekly Reset Timer',
         expectedTimeKeybinds: [
-            { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
+            { key: 'p', label: '(p) bar style', action: 'toggle-progress' },
             { key: 's', label: '(s)hort time', action: 'toggle-compact' },
             { key: 't', label: '(t)imestamp', action: 'toggle-date' },
             { key: 'o', label: '(o)nly hours', action: 'toggle-hours' }
         ],
         supportsDateMode: true,
         supportsSliderMode: true,
-        expectedModifierText: '(medium bar, inverted)',
+        expectedModifierText: '(block bar, medium, inverted)',
         expectedProgressKeybinds: [
-            { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' },
-            { key: 'v', label: 'in(v)ert fill', action: 'toggle-invert' }
+            { key: 'p', label: '(p) bar style', action: 'toggle-progress' },
+            { key: 'v', label: 'in(v)ert fill', action: 'toggle-invert' },
+            { key: 'g', label: '(g)radient', action: 'cycle-gradient' },
+            { key: 'b', label: '(b)ar size', action: 'edit-bar-width' },
+            { key: 'n', label: '(n) hide numbers', action: 'toggle-bar-numbers' }
         ],
         modifierItem: {
             id: 'weekly-reset',

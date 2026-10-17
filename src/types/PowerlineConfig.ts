@@ -11,7 +11,9 @@ export const PowerlineConfigSchema = z.object({
     // The Default Padding that turning Powerline on replaced, put back when it's turned off
     paddingToRestore: z.string().optional(),
     autoAlign: z.boolean().default(false),
-    continueThemeAcrossLines: z.boolean().default(false)
+    continueThemeAcrossLines: z.boolean().default(false),
+    // Per line: true or false sets that line's mode, null or missing follows `enabled`
+    lineEnabled: z.array(z.boolean().nullable()).optional()
 });
 
 // Inferred type from schema
