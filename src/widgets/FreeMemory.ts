@@ -1,12 +1,15 @@
 import { execSync } from 'node:child_process';
 import os from 'node:os';
+import type React from 'react';
 
 import type { NumberFormat } from '../types/NumberFormat';
 import type { RenderContext } from '../types/RenderContext';
 import type { Settings } from '../types/Settings';
 import type {
+    CustomKeybind,
     Widget,
     WidgetEditorDisplay,
+    WidgetEditorProps,
     WidgetItem
 } from '../types/Widget';
 import {
@@ -14,9 +17,30 @@ import {
     resolveNumberFormat
 } from '../utils/number-format';
 
-import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
+import { makeModifierText } from './shared/editor-display';
+import {
+    LIMIT_SCALE,
+    formatColoredValue,
+    getValueColorsModifier,
+    getValueFormatOptions,
+    isValueColorsEnabled
+} from './shared/value-coloring';
+import {
+    VALUE_COLORS_KEYBIND,
+    renderValueColorsEditor,
+    type ValueColorsEditorOptions
+} from './shared/value-colors-editor';
 
 const LABEL = 'Mem: ';
+const DEFAULT_COLOR = 'cyan';
+const VALUE_COLORS_EDITOR: ValueColorsEditorOptions = {
+    title: 'Memory Usage: value colors',
+    scale: LIMIT_SCALE,
+    sampleNote: 'of memory used',
+    defaultColor: DEFAULT_COLOR,
+    maxPercent: 100,
+    label: LABEL
+};
 
 function formatBytes(bytes: number, format: NumberFormat): string {
     const GB = 1024 ** 3;
@@ -71,20 +95,37 @@ function getUsedMemoryMacOS(): number | null {
 }
 
 export class FreeMemoryWidget implements Widget {
-    getDefaultColor(): string { return 'cyan'; }
+    getDefaultColor(): string { return DEFAULT_COLOR; }
     getDescription(): string { return 'Shows system memory usage (used/total)'; }
     getDisplayName(): string { return 'Memory Usage'; }
     getCategory(): string { return 'Environment'; }
     getLabelPrefix(): string { return LABEL; }
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
-        return { displayText: this.getDisplayName() };
+        const valueColors = getValueColorsModifier(item);
+        return { displayText: this.getDisplayName(), modifierText: makeModifierText(valueColors ? [valueColors] : []) };
     }
 
+    getCustomKeybinds(): CustomKeybind[] {
+        return [VALUE_COLORS_KEYBIND];
+    }
+
+    renderEditor(props: WidgetEditorProps): React.ReactElement {
+        return renderValueColorsEditor(props, VALUE_COLORS_EDITOR);
+    }
+
+    // Value colors paint only the value (or the whole text), so the renderer
+    // colors the rest with the theme or widget color
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
+        return isValueColorsEnabled(item);
+    }
+
+    // Value colors measure the share of memory used
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
         const format = resolveNumberFormat('memory', item, settings);
+        const formatOptions = getValueFormatOptions(settings);
         if (context.isPreview) {
             const value = `${formatBytes(12.4 * 1024 ** 3, format)}/${formatBytes(16 * 1024 ** 3, format)}`;
-            return formatRawOrLabeledValue(item, this.getLabelPrefix(), value);
+            return formatColoredValue(item, this.getLabelPrefix(), value, 12.4 / 16 * 100, LIMIT_SCALE, formatOptions);
         }
 
         const total = os.totalmem();
@@ -99,8 +140,7 @@ export class FreeMemoryWidget implements Widget {
         }
 
         const value = `${formatBytes(used, format)}/${formatBytes(total, format)}`;
-
-        return formatRawOrLabeledValue(item, this.getLabelPrefix(), value);
+        return formatColoredValue(item, this.getLabelPrefix(), value, total > 0 ? used / total * 100 : null, LIMIT_SCALE, formatOptions);
     }
 
     supportsRawValue(): boolean { return true; }
