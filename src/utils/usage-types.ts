@@ -27,6 +27,11 @@ export interface UsageData {
     extraUsageCurrency?: string;   // ISO 4217 currency code (e.g. 'USD', 'EUR')
     extraUsageUsedToday?: number;  // in cents, spent since 00:00 UTC; worked out per render, never cached
     error?: UsageError;
+    // Set with an api-error that clears up on its own: a 5xx or 408
+    // response, a network error or a request past its deadline. A request
+    // the API or a proxy refused, such as a rejected token, and a server
+    // certificate that doesn't verify leave it unset.
+    errorTransient?: boolean;
 }
 
 export interface UsageWindowMetrics {
@@ -39,7 +44,7 @@ export interface UsageWindowMetrics {
 
 // Fields a usage fetch can supply and the cache stores. extraUsageUsedToday is
 // worked out from them per render, so it can't be required from a fetch.
-export type UsageDataField = Exclude<keyof UsageData, 'error' | 'extraUsageUsedToday'>;
+export type UsageDataField = Exclude<keyof UsageData, 'error' | 'errorTransient' | 'extraUsageUsedToday'>;
 
 // Fields that exist only in the statusline payload, never in the usage API
 // response or its on-disk cache.
