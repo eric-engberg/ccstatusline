@@ -845,6 +845,36 @@ describe('jsonl transcript metrics', () => {
         });
     });
 
+    it('keeps token and speed metrics for a transcript with more usage rows than a call takes arguments', async () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-jsonl-metrics-'));
+        tempRoots.push(root);
+        const transcriptPath = path.join(root, 'many-usage-rows.jsonl');
+
+        // More rows than Node (about 125k) or Bun (about 640k) accepts as
+        // arguments to a single function call
+        const rowCount = 700_000;
+        fs.writeFileSync(transcriptPath, `${JSON.stringify({
+            type: 'assistant',
+            message: {
+                usage: {
+                    input_tokens: 1,
+                    output_tokens: 2
+                }
+            }
+        })}\n`.repeat(rowCount));
+
+        const analysis = await getTranscriptAnalysis(transcriptPath, { includeSpeedMetrics: true });
+
+        expect(analysis.tokenMetrics.outputTokens).toBe(rowCount * 2);
+        expect(analysis.speedMetricsCollection?.sessionAverage).toEqual({
+            totalDurationMs: 0,
+            inputTokens: rowCount,
+            outputTokens: rowCount * 2,
+            totalTokens: rowCount * 3,
+            requestCount: rowCount
+        });
+    }, 30000);
+
     it('collects configured transcript metrics in one combined analysis', async () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-jsonl-metrics-'));
         tempRoots.push(root);
@@ -1145,11 +1175,12 @@ describe('jsonl transcript metrics', () => {
 
         const metrics = await getSpeedMetrics(transcriptPath, { windowSeconds: 5 });
 
+        // msg-2 ran 6s, 5s of it inside the window: 5/6 of its tokens, once
         expect(metrics).toEqual({
             totalDurationMs: 5000,
-            inputTokens: 150,
-            outputTokens: 90,
-            totalTokens: 240,
+            inputTokens: 125,
+            outputTokens: 75,
+            totalTokens: 200,
             requestCount: 1
         });
     });
@@ -1238,11 +1269,129 @@ describe('jsonl transcript metrics', () => {
 
         const metrics = await getSpeedMetrics(transcriptPath, { windowSeconds: 5 });
 
+        // msg-1's final usage ran 6s, 2s of it inside the window; msg-2 ran 9s,
+        // 5s of it inside. Each keeps that share of its tokens
+        const inputTokens = 50 * 2 / 6 + 70 * 5 / 9;
+        const outputTokens = 500 * 2 / 6 + 100 * 5 / 9;
         expect(metrics).toEqual({
             totalDurationMs: 5000,
-            inputTokens: 120,
-            outputTokens: 600,
-            totalTokens: 720,
+            inputTokens,
+            outputTokens,
+            totalTokens: inputTokens + outputTokens,
+            requestCount: 2
+        });
+    });
+
+    it('shares a response running tools in parallel by the time all its records cover inside a window', async () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-jsonl-speed-'));
+        tempRoots.push(root);
+        const transcriptPath = path.join(root, 'speed-window-parallel-tools.jsonl');
+
+        // msg-1 runs two tools in parallel, and the first tool's result is logged
+        // between its records. Its last record's interval starts at that result, so
+        // it covers only the last 4s of the response.
+        fs.writeFileSync(transcriptPath, [
+            makeTranscriptLine({
+                timestamp: '2026-01-01T10:00:00.000Z',
+                type: 'user'
+            }),
+            makeTranscriptLine({
+                timestamp: '2026-01-01T10:00:04.000Z',
+                type: 'assistant',
+                messageId: 'msg-1',
+                input: 120,
+                output: 600
+            }),
+            makeTranscriptLine({
+                timestamp: '2026-01-01T10:00:06.000Z',
+                type: 'user'
+            }),
+            makeTranscriptLine({
+                timestamp: '2026-01-01T10:00:10.000Z',
+                type: 'assistant',
+                messageId: 'msg-1',
+                input: 120,
+                output: 600
+            })
+        ].join('\n'));
+
+        const metrics = await getSpeedMetrics(transcriptPath, { windowSeconds: 5 });
+
+        // msg-1's records cover 8s (0-4s and 6-10s), 4s of it inside the window:
+        // half of its tokens, the speed it ran at over its whole time
+        expect(metrics).toEqual({
+            totalDurationMs: 4000,
+            inputTokens: 60,
+            outputTokens: 300,
+            totalTokens: 360,
+            requestCount: 1
+        });
+    });
+
+    it('shares a response copied into a subagent transcript by the original record\'s time inside a window', async () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-jsonl-speed-'));
+        tempRoots.push(root);
+        const transcriptPath = path.join(root, 'speed-window-forked-response.jsonl');
+        const subagentsDir = path.join(root, 'subagents');
+
+        fs.writeFileSync(transcriptPath, [
+            makeTranscriptLine({
+                timestamp: '2026-01-01T10:00:00.000Z',
+                type: 'user'
+            }),
+            makeTranscriptLine({
+                timestamp: '2026-01-01T10:00:10.000Z',
+                type: 'assistant',
+                messageId: 'msg-1',
+                input: 100,
+                output: 400
+            }),
+            JSON.stringify({
+                type: 'progress',
+                data: { agentId: 'fork' }
+            })
+        ].join('\n'));
+
+        // A forked subagent's transcript opens with a copy of the response that
+        // spawned it. No user record comes before the copy there, so the copy,
+        // the response's last record, has no interval of its own.
+        fs.mkdirSync(subagentsDir, { recursive: true });
+        fs.writeFileSync(path.join(subagentsDir, 'agent-fork.jsonl'), [
+            makeTranscriptLine({
+                timestamp: '2026-01-01T10:00:10.000Z',
+                type: 'assistant',
+                messageId: 'msg-1',
+                input: 100,
+                output: 400,
+                isSidechain: true
+            }),
+            makeTranscriptLine({
+                timestamp: '2026-01-01T10:00:11.000Z',
+                type: 'user',
+                isSidechain: true
+            }),
+            makeTranscriptLine({
+                timestamp: '2026-01-01T10:00:14.000Z',
+                type: 'assistant',
+                messageId: 'msg-2',
+                input: 30,
+                output: 90,
+                isSidechain: true
+            })
+        ].join('\n'));
+
+        const metrics = await getSpeedMetrics(transcriptPath, {
+            includeSubagents: true,
+            windowSeconds: 5
+        });
+
+        // msg-1 ran 10s in the parent transcript, 1s of it inside the window: 1/10
+        // of its tokens. msg-2 ran 3s, all of it inside
+        expect(metrics).toEqual({
+            totalDurationMs: 4000,
+            inputTokens: 40,
+            outputTokens: 130,
+            totalTokens: 170,
             requestCount: 2
         });
     });
@@ -1346,6 +1495,57 @@ describe('jsonl transcript metrics', () => {
             outputTokens: 150,
             totalTokens: 450,
             requestCount: 2
+        });
+    });
+
+    it('counts only the in-window share of tokens for a request that started before the window', async () => {
+        const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-jsonl-speed-'));
+        tempRoots.push(root);
+        const transcriptPath = path.join(root, 'speed-window-straddle.jsonl');
+
+        // One 80s request at 50 output t/s, then its tool result 5s later, which
+        // ends the window. Only the last part of the request falls inside it.
+        fs.writeFileSync(transcriptPath, [
+            makeTranscriptLine({
+                timestamp: '2026-01-01T10:00:00.000Z',
+                type: 'user'
+            }),
+            makeTranscriptLine({
+                timestamp: '2026-01-01T10:01:20.000Z',
+                type: 'assistant',
+                input: 80,
+                output: 4000
+            }),
+            makeTranscriptLine({
+                timestamp: '2026-01-01T10:01:25.000Z',
+                type: 'user'
+            })
+        ].join('\n'));
+
+        const metricsCollection = await getSpeedMetricsCollection(transcriptPath, { windowSeconds: [10, 40] });
+
+        expect(metricsCollection.sessionAverage).toEqual({
+            totalDurationMs: 80000,
+            inputTokens: 80,
+            outputTokens: 4000,
+            totalTokens: 4080,
+            requestCount: 1
+        });
+        // 5s of the request's 80s fall inside the 10s window: 1/16 of its tokens
+        expect(metricsCollection.windowed['10']).toEqual({
+            totalDurationMs: 5000,
+            inputTokens: 5,
+            outputTokens: 250,
+            totalTokens: 255,
+            requestCount: 1
+        });
+        // 35s of its 80s fall inside the 40s window: 7/16 of its tokens
+        expect(metricsCollection.windowed['40']).toEqual({
+            totalDurationMs: 35000,
+            inputTokens: 35,
+            outputTokens: 1750,
+            totalTokens: 1785,
+            requestCount: 1
         });
     });
 
@@ -1555,11 +1755,12 @@ describe('jsonl transcript metrics', () => {
             windowSeconds: 4
         });
 
+        // The subagent request ran 5s, 4s of it inside the window: 4/5 of its tokens
         expect(metrics).toEqual({
             totalDurationMs: 4000,
-            inputTokens: 30,
-            outputTokens: 60,
-            totalTokens: 90,
+            inputTokens: 24,
+            outputTokens: 48,
+            totalTokens: 72,
             requestCount: 1
         });
     });
