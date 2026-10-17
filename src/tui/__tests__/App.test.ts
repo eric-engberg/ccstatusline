@@ -758,6 +758,36 @@ describe('App Powerline per line', () => {
             rendered.cleanup();
         }
     });
+
+    // As turning Powerline off in Powerline Setup does. The padding was unset,
+    // which renders the same as none
+    it('puts the padding back when p switches the only Powerline line back to plain', async () => {
+        fs.writeFileSync(sandbox.settingsPath, JSON.stringify({
+            ...DEFAULT_SETTINGS,
+            lines: [
+                [{ id: 'a', type: 'custom-text', customText: 'LineOne' }],
+                [{ id: 'b', type: 'custom-text', customText: 'LineTwo' }]
+            ]
+        }));
+        const rendered = renderApp();
+
+        try {
+            await waitFor(() => {
+                expect(rendered.getFrame()).toContain('Main Menu');
+            });
+            await pressKey(rendered, KEYS.enter, 'Select Line to Edit Items');
+            await pressKey(rendered, 'p', 'Line 1 (1 widget, Powerline)');
+            await pressKey(rendered, 'p', 'Line 1 (1 widget)');
+            await pressKey(rendered, KEYS.ctrlS, '✓ Configuration saved');
+
+            const saved = JSON.parse(fs.readFileSync(sandbox.settingsPath, 'utf-8')) as { defaultPadding?: string; powerline: { lineEnabled?: unknown; paddingToRestore?: string } };
+            expect(saved.powerline.lineEnabled).toBeUndefined();
+            expect(saved.powerline.paddingToRestore).toBeUndefined();
+            expect(saved.defaultPadding).toBe('');
+        } finally {
+            rendered.cleanup();
+        }
+    });
 });
 
 describe('App save guard for an invalid settings.json', () => {
