@@ -23,13 +23,10 @@ import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
 import {
     cycleUsageDisplayMode,
     formatUsageBar,
-    getUsageDisplayMode,
     getUsageDisplayModifierText,
     getUsageTimerCustomKeybinds,
     isUsageCompact,
     isUsageInverted,
-    isUsageProgressMode,
-    isUsageSliderMode,
     showsUsageBar,
     toggleUsageCompact,
     toggleUsageInverted
@@ -46,8 +43,7 @@ export class BlockTimerWidget implements Widget {
     getDisplayName(): string { return 'Block Timer'; }
     getCategory(): string { return 'Usage'; }
     getLabelPrefix(item: WidgetItem): string {
-        const displayMode = getUsageDisplayMode(item);
-        return isUsageProgressMode(displayMode) || isUsageSliderMode(displayMode) ? BAR_LABEL : LABEL;
+        return showsUsageBar(item) ? BAR_LABEL : LABEL;
     }
 
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {

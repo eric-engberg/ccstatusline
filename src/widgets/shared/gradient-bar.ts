@@ -54,6 +54,10 @@ export function isBarGradientPreset(value: string | undefined): value is BarGrad
 
 const EMPTY_CELL_CODE = '\x1b[38;2;60;60;60m';
 const DEFAULT_FOREGROUND = '\x1b[39m';
+const FAINT = '\x1b[2m';
+// Normal intensity ends faint, and bold with it
+const NORMAL_INTENSITY = '\x1b[22m';
+const NORMAL_INTENSITY_THEN_BOLD = '\x1b[22;1m';
 
 /** The characters a bar draws its filled and empty cells with; the time cursor is always │. */
 export interface BarGlyphs {
@@ -63,11 +67,15 @@ export interface BarGlyphs {
 
 const CURSOR_GLYPH = '│';
 
-/** How a bar's cells are painted: by a gradient preset, or not at all. */
+/** How a bar's cells are painted: by a gradient preset or not at all, with faint empty cells or not. */
 export interface BarPaint {
     preset: BarGradientPreset | null;
     // Runs the gradient from the urgent end, for bars that fill with what's left
     reversed?: boolean;
+    // Draws the empty cells as they would look filled, but faint, for a bar
+    // whose filled and empty cells are the same character. Ending faint ends
+    // bold too, so a bold widget's bar turns bold back on after them.
+    faintEmpty?: { bold: boolean };
 }
 
 // Draws a bar's cells. With a preset, filled cells are colored by where they sit
@@ -75,21 +83,29 @@ export interface BarPaint {
 // empty cells dark gray; the time cursor keeps the widget color. Truecolor only:
 // the 256-color palette is too coarse for a smooth gradient. Each colored run
 // ends with the default-foreground code, which the renderer turns back into the
-// widget's own color.
+// widget's own color. Faint empty cells take the color they would have filled
+// instead of the gray, and each faint run ends before the next cell that isn't
+// empty, so faint never reaches past the bar.
 export function paintBarCells(cells: readonly BarCell[], glyphs: BarGlyphs, paint: BarPaint): string {
     const gradient = paint.preset ? BAR_GRADIENTS[paint.preset] : null;
+    const endFaint = paint.faintEmpty?.bold ? NORMAL_INTENSITY_THEN_BOLD : NORMAL_INTENSITY;
+    const isFaint = (index: number) => paint.faintEmpty !== undefined && cells[index] === 'empty';
     let activeCode = '';
     let painted = '';
 
     cells.forEach((cell, index) => {
+        const cellFaint = isFaint(index);
         let code = '';
-        if (gradient && cell === 'filled') {
+        if (gradient && (cell === 'filled' || cellFaint)) {
             const position = cells.length > 1 ? index / (cells.length - 1) : 0;
             code = gradientCodeAt(gradient.stops, paint.reversed ? 1 - position : position, 'truecolor');
         } else if (gradient && cell === 'empty') {
             code = EMPTY_CELL_CODE;
         }
 
+        if (cellFaint !== isFaint(index - 1)) {
+            painted += cellFaint ? FAINT : endFaint;
+        }
         if (code !== activeCode) {
             painted += code || DEFAULT_FOREGROUND;
             activeCode = code;
@@ -97,6 +113,9 @@ export function paintBarCells(cells: readonly BarCell[], glyphs: BarGlyphs, pain
         painted += cell === 'cursor' ? CURSOR_GLYPH : glyphs[cell];
     });
 
+    if (isFaint(cells.length - 1)) {
+        painted += endFaint;
+    }
     return activeCode ? painted + DEFAULT_FOREGROUND : painted;
 }
 

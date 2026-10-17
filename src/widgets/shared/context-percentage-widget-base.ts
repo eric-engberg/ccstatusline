@@ -131,8 +131,8 @@ export abstract class ContextPercentageWidgetBase implements Widget {
         });
     }
 
-    // Value colors paint only the value or slider (or the whole text), and a gradient
-    // preset only the slider, so the renderer colors the rest with the theme
+    // Value colors paint only the value or bar (or the whole text), and a gradient
+    // preset only the bar, so the renderer colors the rest with the theme
     // or widget color
     colorsOnlyItsRuns(item: WidgetItem): boolean {
         return (isValueColorsEnabled(item) && !isLevelGlyphMode(item)) || paintsBarGradient(item, getContextSliderMode(item) !== 'none');

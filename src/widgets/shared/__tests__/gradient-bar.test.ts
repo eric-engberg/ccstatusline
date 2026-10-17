@@ -128,6 +128,46 @@ describe('paintBarCells', () => {
     });
 });
 
+// A cell bar draws its filled and empty cells with one character, so its
+// empty cells are drawn as they would look filled, but faint
+describe('paintBarCells with faint empty cells', () => {
+    const CELL = { filled: '▮', empty: '▮' };
+    const FAINT = `${ESC}[2m`;
+    const NORMAL = `${ESC}[22m`;
+    const withoutFaint = (painted: string) => painted.replaceAll(FAINT, '').replaceAll(NORMAL, '');
+
+    it('wraps the empty cells in faint and nothing else without a preset', () => {
+        expect(paintBarCells(cellsOf('██░░'), CELL, { preset: null, faintEmpty: { bold: false } })).toBe(`▮▮${FAINT}▮▮${NORMAL}`);
+    });
+
+    it('colors each empty cell as it would be colored filled', () => {
+        const painted = paintBarCells(cellsOf('██░░'), CELL, { preset: 'traffic', faintEmpty: { bold: false } });
+        const full = paintBarCells(cellsOf('████'), CELL, { preset: 'traffic' });
+
+        expect(codes(painted).filter(code => code !== FAINT && code !== NORMAL)).toEqual(codes(full));
+        expect(painted.endsWith(`${ESC}[38;2;220;40;20m▮${NORMAL}${DEFAULT_FG}`)).toBe(true);
+        expect(withoutFaint(painted)).toBe(full);
+    });
+
+    it('runs the empty cells\' colors from the urgent end too when reversed', () => {
+        const painted = paintBarCells(cellsOf('░░██'), CELL, { preset: 'traffic', reversed: true, faintEmpty: { bold: false } });
+        expect(painted.startsWith(`${FAINT}${ESC}[38;2;220;40;20m▮`)).toBe(true);
+    });
+
+    // SGR 22 ends bold as well as faint
+    it('turns bold back on after the empty cells of a bold widget', () => {
+        expect(paintBarCells(cellsOf('█░█'), CELL, { preset: null, faintEmpty: { bold: true } })).toBe(`▮${FAINT}▮${ESC}[22;1m▮`);
+    });
+
+    it('keeps the time cursor at full intensity', () => {
+        expect(paintBarCells(cellsOf('█░│░'), CELL, { preset: null, faintEmpty: { bold: false } })).toBe(`▮${FAINT}▮${NORMAL}│${FAINT}▮${NORMAL}`);
+    });
+
+    it('leaves a full bar without faint', () => {
+        expect(paintBarCells(cellsOf('███'), CELL, { preset: null, faintEmpty: { bold: false } })).toBe('▮▮▮');
+    });
+});
+
 describe('the line editor\'s truecolor rule', () => {
     const gradientKey = { key: 'g', label: '(g)radient', action: 'cycle-gradient' };
     const progressKey = { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' };

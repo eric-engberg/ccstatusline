@@ -397,6 +397,36 @@ function nextOsc8Terminator(escape: ParsedEscapeSequence, current: OscTerminator
     return current;
 }
 
+// Foreground colors: 30-37 and 90-97, 38 (with its arguments) and 39, the default
+function isForegroundParam(param: number): boolean {
+    return (param >= 30 && param <= 39) || (param >= 90 && param <= 97);
+}
+
+// Remove the foreground colors from the text's color codes and keep the rest
+// of what they set: bold, faint, backgrounds and resets. A code that sets only
+// a foreground goes entirely.
+export function stripForegroundCodes(text: string): string {
+    return text.replace(SGR_REGEX, (sequence) => {
+        const introducerLength = sequence.startsWith(C1_CSI) ? 1 : 2;
+        const params = sequence.slice(introducerLength, -1).split(';');
+        const kept: string[] = [];
+        let index = 0;
+        while (index < params.length) {
+            const param = Number.parseInt(params[index] ?? '', 10);
+            // An extended color's arguments follow it: 5;n or 2;r;g;b
+            let length = 1;
+            if (param === 38 || param === 48 || param === 58) {
+                length = params[index + 1] === '5' ? 3 : 5;
+            }
+            if (!isForegroundParam(param)) {
+                kept.push(...params.slice(index, index + length));
+            }
+            index += length;
+        }
+        return kept.length > 0 ? `${sequence.slice(0, introducerLength)}${kept.join(';')}m` : '';
+    });
+}
+
 export function stripSgrCodes(text: string): string {
     return text.replace(SGR_REGEX, '');
 }

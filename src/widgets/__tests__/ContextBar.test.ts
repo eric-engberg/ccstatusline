@@ -188,18 +188,20 @@ describe('ContextBarWidget', () => {
         expect(widget.getEditorDisplay(item).modifierText).toBe('(block bar, medium, % only)');
     });
 
-    // (p) switches between a block bar and a slider of the same size
-    it('switches between a block bar and a slider, keeping the size', () => {
+    // (p) steps through a block bar, a slider and the cell bars, all the same size
+    it('steps through a block bar, a slider and the cell bars, keeping the size', () => {
         const widget = new ContextBarWidget();
         const base: WidgetItem = { id: 'ctx', type: 'context-bar' };
 
         const slider = widget.handleEditorAction('toggle-progress', base);
-        const block = widget.handleEditorAction('toggle-progress', slider ?? base);
+        const cells = widget.handleEditorAction('toggle-progress', slider ?? base);
+        const block = widget.handleEditorAction('toggle-progress', { ...base, metadata: { display: 'cells', barCell: 'parallelogram' } });
 
         expect(slider?.metadata).toEqual({ display: 'slider', barWidth: 'medium' });
+        expect(cells?.metadata).toEqual({ display: 'cells' });
         expect(block?.metadata).toEqual({ display: 'progress-short' });
         expect(widget.handleEditorAction('toggle-progress', { ...base, metadata: { display: 'slider-only' } })?.metadata)
-            .toEqual({ display: 'progress-short', barWidth: 'short', barNumbers: 'none' });
+            .toEqual({ display: 'cells', barWidth: 'short', barNumbers: 'none' });
     });
 
     it('formats context preview samples with the selected styles', () => {

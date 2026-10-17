@@ -9,6 +9,7 @@ import {
     CYCLE_BAR_NUMBERS_ACTION,
     TOGGLE_BAR_NUMBERS_ACTION,
     cycleBarNumbers,
+    getBarCellShape,
     getBarLayoutModifiers,
     getBarNumbers,
     getBarNumbersKeybinds,
@@ -18,6 +19,7 @@ import {
     setBarStyle,
     showsBarCounts,
     showsBarPercent,
+    stepBarStyle,
     toggleBarNumbers
 } from '../bar-layout';
 
@@ -29,6 +31,7 @@ describe('bar style', () => {
         expect(getBarStyle(item({ display: 'progress-short' }))).toBe('block');
         expect(getBarStyle(item({ display: 'slider' }))).toBe('slider');
         expect(getBarStyle(item({ display: 'slider-only' }))).toBe('slider');
+        expect(getBarStyle(item({ display: 'cells' }))).toBe('cells');
         expect(getBarStyle(item({ display: 'time' }))).toBeNull();
         expect(getBarStyle(item())).toBeNull();
     });
@@ -145,5 +148,58 @@ describe('getBarLayoutModifiers', () => {
         expect(getBarLayoutModifiers(item({ display: 'progress', barNumbers: 'percent' }))).toEqual(['block bar', 'long', '% only']);
         expect(getBarLayoutModifiers(item({ display: 'slider', barNumbers: 'counts' }))).toEqual(['slider bar', 'short', 'counts only']);
         expect(getBarLayoutModifiers(item())).toEqual([]);
+    });
+});
+
+describe('cell styles', () => {
+    it('reads the cell shape, the first one unless another is stored', () => {
+        expect(getBarCellShape(item({ display: 'cells' }))).toBe('rectangle');
+        expect(getBarCellShape(item({ display: 'cells', barCell: 'square' }))).toBe('square');
+        expect(getBarCellShape(item({ display: 'cells', barCell: 'seven-eighths' }))).toBe('seven-eighths');
+        expect(getBarCellShape(item({ display: 'cells', barCell: 'parallelogram' }))).toBe('parallelogram');
+        // A shape this build doesn't know, e.g. from a later one
+        expect(getBarCellShape(item({ display: 'cells', barCell: 'hexagon' }))).toBe('rectangle');
+    });
+
+    // (p) steps through the styles; null after the last
+    it('steps from block to slider to each cell shape, keeping the size and numbers', () => {
+        const block = item({ display: 'progress', barNumbers: 'none' });
+        const steps = [block];
+        for (let next = stepBarStyle(block); next; next = stepBarStyle(next)) {
+            steps.push(next);
+        }
+
+        expect(steps.map(step => step.metadata)).toEqual([
+            { display: 'progress', barNumbers: 'none' },
+            { display: 'slider', barWidth: 'long', barNumbers: 'none' },
+            { display: 'cells', barWidth: 'long', barNumbers: 'none' },
+            { display: 'cells', barWidth: 'long', barNumbers: 'none', barCell: 'square' },
+            { display: 'cells', barWidth: 'long', barNumbers: 'none', barCell: 'seven-eighths' },
+            { display: 'cells', barWidth: 'long', barNumbers: 'none', barCell: 'parallelogram' }
+        ]);
+        expect(stepBarStyle(item({ display: 'time' }))).toBeNull();
+    });
+
+    // A cell bar has no older display mode that sizes it, so medium, the
+    // size a bar takes when nothing else says, stores nothing
+    it('stores a cell bar\'s size only when it isn\'t medium', () => {
+        expect(setBarStyle(item({ display: 'progress-short' }), 'cells').metadata).toEqual({ display: 'cells' });
+        expect(setBarSize(item({ display: 'cells', barCell: 'square' }), 'short').metadata).toEqual({ display: 'cells', barWidth: 'short', barCell: 'square' });
+        expect(setBarSize(item({ display: 'cells', barWidth: 'short' }), 'medium').metadata).toEqual({ display: 'cells' });
+    });
+
+    it('keeps the shape through size and numbers changes, and drops it with the style', () => {
+        const square = item({ display: 'cells', barCell: 'square' });
+
+        expect(toggleBarNumbers(square).metadata).toEqual({ display: 'cells', barCell: 'square', barNumbers: 'none' });
+        expect(setBarStyle(square, 'block').metadata).toEqual({ display: 'progress-short' });
+        expect(keepBarLayout(square).metadata).toEqual({ display: 'cells', barWidth: 'medium' });
+    });
+
+    it('names the shape in the line editor', () => {
+        expect(getBarLayoutModifiers(item({ display: 'cells' }))).toEqual(['cells ▮', 'medium']);
+        expect(getBarLayoutModifiers(item({ display: 'cells', barCell: 'square', barWidth: 'long' }))).toEqual(['cells ■', 'long']);
+        expect(getBarLayoutModifiers(item({ display: 'cells', barCell: 'seven-eighths', barNumbers: 'none' }))).toEqual(['cells ▉', 'medium', 'numbers off']);
+        expect(getBarLayoutModifiers(item({ display: 'cells', barCell: 'parallelogram', barWidth: 'fill' }))).toEqual(['cells ▰', 'fill width']);
     });
 });

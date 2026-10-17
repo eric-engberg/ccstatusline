@@ -37,7 +37,6 @@ import {
     USAGE_NO_DATA_HIDEABLE_STATE,
     cycleUsageDisplayMode,
     formatUsageBar,
-    getUsageDisplayMode,
     getUsageDisplayModifierText,
     getUsageLocale,
     getUsageTimerCustomKeybinds,
@@ -46,8 +45,6 @@ import {
     isUsageCompact,
     isUsageDateMode,
     isUsageInverted,
-    isUsageProgressMode,
-    isUsageSliderMode,
     showsUsageBar,
     toggleUsageCompact,
     toggleUsageDateMode,
@@ -67,8 +64,7 @@ export class BlockResetTimerWidget implements Widget {
     getDisplayName(): string { return 'Block Reset Timer'; }
     getCategory(): string { return 'Usage'; }
     getLabelPrefix(item: WidgetItem): string {
-        const displayMode = getUsageDisplayMode(item);
-        return isUsageProgressMode(displayMode) || isUsageSliderMode(displayMode) ? BAR_LABEL : LABEL;
+        return showsUsageBar(item) ? BAR_LABEL : LABEL;
     }
 
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {

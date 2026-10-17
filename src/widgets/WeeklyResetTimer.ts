@@ -44,7 +44,6 @@ import {
     USAGE_NO_DATA_HIDEABLE_STATE,
     cycleUsageDisplayMode,
     formatUsageBar,
-    getUsageDisplayMode,
     getUsageLocale,
     getUsageLocaleModifier,
     getUsageTimerCustomKeybinds,
@@ -54,8 +53,6 @@ import {
     isUsageCompact,
     isUsageDateMode,
     isUsageInverted,
-    isUsageProgressMode,
-    isUsageSliderMode,
     isUsageWeekdayEnabled,
     showsUsageBar,
     toggleUsageCompact,
@@ -81,9 +78,8 @@ function toggleWeeklyResetHoursOnly(item: WidgetItem): WidgetItem {
 }
 
 function getWeeklyResetModifierText(item: WidgetItem): string | undefined {
-    const displayMode = getUsageDisplayMode(item);
     const dateMode = isUsageDateMode(item);
-    const isBarMode = isUsageProgressMode(displayMode) || isUsageSliderMode(displayMode);
+    const isBarMode = showsUsageBar(item);
     const modifiers = getBarLayoutModifiers(item);
 
     if (isUsageInverted(item)) {
@@ -134,8 +130,7 @@ export class WeeklyResetTimerWidget implements Widget {
     getDisplayName(): string { return 'Weekly Reset Timer'; }
     getCategory(): string { return 'Usage'; }
     getLabelPrefix(item: WidgetItem): string {
-        const displayMode = getUsageDisplayMode(item);
-        return isUsageProgressMode(displayMode) || isUsageSliderMode(displayMode) ? BAR_LABEL : LABEL;
+        return showsUsageBar(item) ? BAR_LABEL : LABEL;
     }
 
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
@@ -262,8 +257,7 @@ export class WeeklyResetTimerWidget implements Widget {
             includeTimezone: true
         });
 
-        const mode = item ? getUsageDisplayMode(item) : 'time';
-        const isBarMode = isUsageProgressMode(mode) || isUsageSliderMode(mode);
+        const isBarMode = item ? showsUsageBar(item) : false;
         if (!item || (!isBarMode && !isUsageDateMode(item))) {
             keybinds.push({ key: 'o', label: '(o)nly hours', action: 'toggle-hours' });
         }

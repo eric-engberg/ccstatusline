@@ -12,7 +12,8 @@ import {
     getBarNumbersKeybinds,
     keepBarLayout,
     setBarStyle,
-    showsBarPercent
+    showsBarPercent,
+    stepBarStyle
 } from './bar-layout';
 import {
     getBarWidthKeybinds,
@@ -30,22 +31,28 @@ import {
     isLevelGlyphMode
 } from './level-glyph';
 
-export type ContextSliderMode = 'none' | 'slider' | 'slider-only';
+// The percentage, or a bar: a slider, or a cell bar in one of its shapes
+export type ContextSliderMode = 'none' | 'slider' | 'slider-only' | 'cells';
 
 const SLIDER_TOGGLE_KEYBIND: CustomKeybind = { key: 'p', label: '(p) bar style', action: 'toggle-slider' };
 
 export function getContextSliderMode(item: WidgetItem): ContextSliderMode {
     const mode = item.metadata?.display;
-    if (mode === 'slider' || mode === 'slider-only') {
+    if (mode === 'slider' || mode === 'slider-only' || mode === 'cells') {
         return mode;
     }
     return 'none';
 }
 
-// (p) cycles the percentage, a slider and the level glyph. The slider keeps
-// the size it had through the other two.
+// (p) cycles the percentage, a slider, the cell bars in each shape and the
+// level glyph, the order the usage widgets have after their block bar. The
+// bar keeps the size it had through all of them.
 export function cycleContextSliderMode(item: WidgetItem): WidgetItem {
     if (getContextSliderMode(item) !== 'none') {
+        const nextStyle = stepBarStyle(item);
+        if (nextStyle) {
+            return nextStyle;
+        }
         const kept = keepBarLayout(item);
         return { ...kept, metadata: { ...kept.metadata, display: LEVEL_GLYPH_DISPLAY } };
     }
@@ -61,7 +68,7 @@ export function cycleContextSliderMode(item: WidgetItem): WidgetItem {
     };
 }
 
-// The slider and the percent after it, painted with the widget's gradient
+// The bar and the percent after it, painted with the widget's gradient
 // preset; reversed when it fills with what's left
 export function renderContextSlider(item: WidgetItem, percent: number, settings: Settings, format: NumberFormat = {}, cells?: number, reversed = false): string | null {
     if (getContextSliderMode(item) === 'none') {
