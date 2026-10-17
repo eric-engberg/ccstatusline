@@ -3,6 +3,8 @@ import type {
     StatusJSON
 } from '../types/StatusJSON';
 import type { WidgetItem } from '../types/Widget';
+import { isHidden } from '../widgets/shared/hideable';
+import { SESSION_UNDER_LIMIT_HIDEABLE_STATE } from '../widgets/shared/usage-display';
 
 import { observeExtraUsageSpend } from './daily-spend';
 import type { UsageData } from './usage';
@@ -10,6 +12,7 @@ import {
     fetchUsageData,
     getUsageAccountKey,
     getUsageFetchedAt,
+    isStaleUsageFallback,
     lookUpUsageAccount
 } from './usage';
 import type { UsageDataField } from './usage-types';
@@ -61,6 +64,8 @@ const USAGE_DATA_FIELDS: UsageDataField[] = [
 interface UsageFieldRequirement {
     alternatives?: UsageDataField[];
     field: UsageDataField;
+    // Fetch the field from the usage API even when the payload has it
+    fromApi?: boolean;
     suppressFetchError?: boolean;
 }
 
@@ -155,6 +160,21 @@ const USAGE_CURSOR_REQUIREMENTS: Record<string, UsageFieldRequirement> = {
 // of the monthly limit when the day began
 const VALUE_COLORS_REQUIREMENTS: Record<string, UsageFieldRequirement> = { 'extra-usage-today': { field: 'extraUsageLimit' } };
 
+// Block Reset Timer's under-limit hide state reads the 5-hour block's percent
+// from the usage API, kept as apiSessionUsage. The payload's percent comes from
+// this session's last response, so in a session left idle while others use up
+// the limit it never reaches 100%. Like the timer's own reset requirement, a failed
+// fetch made only for it isn't an error, and the payload's percent stands in.
+const UNDER_LIMIT_HIDE_REQUIREMENT: UsageFieldRequirement = { field: 'sessionUsage', fromApi: true, suppressFetchError: true };
+
+// A cached answer can outlive its block: the cache is reused for minutes, and
+// for as long as the API keeps failing. Once its block has reset, its percent
+// says nothing about the current one.
+function isFromCurrentBlock(apiData: UsageData): boolean {
+    const resetAtMs = apiData.sessionResetAt === undefined ? Number.NaN : Date.parse(apiData.sessionResetAt);
+    return Number.isNaN(resetAtMs) || resetAtMs > Date.now();
+}
+
 export function hasUsageDependentWidgets(lines: WidgetItem[][]): boolean {
     return lines.some(line => line.some(item => USAGE_WIDGET_TYPES.has(item.type) || isBilledDailyCostRate(item)));
 }
@@ -187,6 +207,10 @@ function getUsageFieldRequirements(lines: WidgetItem[][]): UsageFieldRequirement
             if (valueColorsRequirement && isValueColorsEnabled(item)) {
                 requirements.push(valueColorsRequirement);
             }
+
+            if (item.type === 'reset-timer' && isHidden(item, SESSION_UNDER_LIMIT_HIDEABLE_STATE.key)) {
+                requirements.push(UNDER_LIMIT_HIDE_REQUIREMENT);
+            }
         }
     }
 
@@ -213,7 +237,7 @@ function getMissingFetchRequirements(
     let hasUnsuppressedMissingRequirement = false;
 
     for (const requirement of requirements) {
-        if (!isUsageRequirementSatisfied(data, requirement)) {
+        if (requirement.fromApi || !isUsageRequirementSatisfied(data, requirement)) {
             missing.add(requirement.field);
             if (!requirement.suppressFetchError) {
                 hasUnsuppressedMissingRequirement = true;
@@ -322,5 +346,11 @@ export async function prefetchUsageDataIfNeeded(lines: WidgetItem[][], data?: St
         return rateLimitsData;
     }
 
-    return withSpendToday(mergeUsageData(rateLimitsData, apiData), lines);
+    const usageData = await withSpendToday(mergeUsageData(rateLimitsData, apiData), lines);
+    // A stale fallback is the last good cache, served while the API can't be reached
+    // once it has outlived a refresh, so like a failed fetch it leaves the payload's percent to decide
+    if (requirements.includes(UNDER_LIMIT_HIDE_REQUIREMENT) && apiData.sessionUsage !== undefined && isFromCurrentBlock(apiData) && !isStaleUsageFallback(apiData)) {
+        usageData.apiSessionUsage = apiData.sessionUsage;
+    }
+    return usageData;
 }
