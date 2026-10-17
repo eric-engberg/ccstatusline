@@ -57,6 +57,7 @@ bun run docs
 - `~/.cache/ccstatusline/terminal-width.json` - per-session no-width probe results; detected numeric widths are not persisted by the renderer
 - `~/.cache/ccstatusline/usage.json` and `~/.cache/ccstatusline/usage.lock` - usage API data cache and fetch backoff lock
 - `~/.cache/ccstatusline/usage-credentials.lock` - 30-second backoff after a usage credential lookup finds no OAuth login, tagged with the profile it applies to
+- `~/.cache/ccstatusline/usage-account.json` - the account each usage login fingerprint belongs to (itself fingerprinted), looked up from `/api/oauth/profile` for today's extra usage spend, and each fingerprint's backoff after a failed lookup
 - `~/.cache/ccstatusline/usage-login.json` - per profile, the fingerprint of the login its credentials held when last read, with a stat stamp of its `.credentials.json` and, on macOS, `~/Library/Keychains/login.keychain-db`, and whether a Keychain read has failed since
 - `~/.cache/ccstatusline/usage-keychain.lock` - per-profile five-minute Keychain backoff after a `security` call fails for any reason other than a missing item, with the stat of `~/Library/Keychains/login.keychain-db` it holds for
 - `~/.cache/ccstatusline/claude-status.json` and `~/.cache/ccstatusline/claude-status.lock` - Claude service-status cache and failed-fetch backoff lock
@@ -100,7 +101,7 @@ After a complete successful usage fetch, the process clears the lock only if its
 - **Sandbox Status** reads `sandbox.enabled` from Claude Code's layered project-local, project, user-local, and user settings on every refresh. This reflects `/sandbox` file updates but remains a best-effort indicator when managed or CLI settings take precedence.
 - **Skills** reads only logs for session IDs accepted by `getSkillsFilePath()`. Rejected IDs return no metrics, and the hook handler exits before creating directories or writing a log.
 
-Both usage and service-status requests honor uppercase `HTTPS_PROXY` and share `isExcludedFromProxy()` for the `NO_PROXY`/`no_proxy` rules described in [Usage](USAGE.md#proxy-settings). Each request has a total five-second deadline in addition to its socket timeout. On expiry, `createProxyAgent().close()` aborts the pending proxy connection when `AbortController` is available; on older runtimes without it, that connection can remain open. The proxy integration tests require permission to listen on a local socket.
+Usage, account profile, and service-status requests honor uppercase `HTTPS_PROXY` and share `isExcludedFromProxy()` for the `NO_PROXY`/`no_proxy` rules described in [Usage](USAGE.md#proxy-settings). Each request has a total five-second deadline in addition to its socket timeout. On expiry, `createProxyAgent().close()` aborts the pending proxy connection when `AbortController` is available; on older runtimes without it, that connection can remain open. The proxy integration tests require permission to listen on a local socket.
 
 ## Widget Implementation
 
