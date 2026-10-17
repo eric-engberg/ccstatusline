@@ -37,8 +37,13 @@ export function getConfigLoadError(): string | null {
     return lastLoadError;
 }
 
+// The settings file that `--config <filePath>` loads, or the default one without it
+export function resolveConfigPath(filePath?: string): string {
+    return filePath ? path.resolve(filePath) : DEFAULT_SETTINGS_PATH;
+}
+
 export function initConfigPath(filePath?: string): void {
-    settingsPath = filePath ? path.resolve(filePath) : DEFAULT_SETTINGS_PATH;
+    settingsPath = resolveConfigPath(filePath);
 }
 
 export function getConfigPath(): string {

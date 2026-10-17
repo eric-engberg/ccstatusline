@@ -3,9 +3,11 @@ import type { Widget } from '../types/Widget';
 
 import {
     getExistingStatusLine,
+    getStatusLineConfigPath,
     loadClaudeSettings,
     saveClaudeSettings
 } from './claude-settings';
+import { getConfigPath } from './config';
 import { getWidget } from './widgets';
 
 export interface WidgetHookDef {
@@ -113,6 +115,12 @@ export async function syncWidgetHooks(settings: Settings): Promise<void> {
     if (!statusCommand?.includes('ccstatusline')) {
         claudeSettings.hooks = Object.keys(hooks).length > 0 ? hooks : undefined;
         await saveClaudeSettings(claudeSettings);
+        return;
+    }
+    // The hooks serve the config that command loads. Another one, opened with
+    // --config or the default while the command names a --config, doesn't
+    // decide them, so they stay as they are.
+    if (getStatusLineConfigPath(statusCommand) !== getConfigPath()) {
         return;
     }
     const hookCommand = `${statusCommand} --hook`;
