@@ -189,7 +189,7 @@ Usage API requests read credentials from the active Claude config directory's `.
 
 The usage cache uses a fingerprint of the refresh token when available, falling back to the access token. Access-token rotation with an unchanged refresh token preserves fresh and stale usage snapshots, including during rate-limit backoff; a changed login fingerprint invalidates the old account's cache.
 
-Each macOS Keychain command has a five-second timeout. When no OAuth credentials are found, the lookup backs off for 30 seconds for that profile, so a newly signed-in account may take up to 30 seconds to appear. Usage cache files dated more than 180 seconds into the future are treated as stale.
+Credentials are read only when usage is about to be fetched from the API, when the profile's credentials file or the macOS login keychain has changed since the last read, or after a Keychain read has failed. A fresh cache costs no Keychain call, and neither does cached usage shown while requests are backed off (offline or rate limited). Each macOS Keychain command has a five-second timeout. If one times out or fails for any reason other than a missing item (for example, a locked keychain), the Keychain lookup stops there, the credentials file is still used if there is one, and that profile's Keychain is left alone for five minutes, or until the login keychain is next written (by a sign-in, for example); cached usage is shown meanwhile. When no OAuth credentials are found, the lookup backs off for 30 seconds for that profile, so a newly signed-in account may take up to 30 seconds to appear. Usage cache files dated more than 180 seconds into the future are treated as stale.
 
 ### Proxy Settings
 
