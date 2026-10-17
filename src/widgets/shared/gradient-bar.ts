@@ -9,6 +9,10 @@ import {
 } from '../../utils/gradient';
 
 import { removeMetadataKeys } from './metadata';
+import {
+    isValueColorsEnabled,
+    setValueColorsFlag
+} from './value-colors-flag';
 
 export const BAR_GRADIENT_PRESETS = ['traffic', 'thermal', 'viridis', 'cividis', 'blue-orange', 'mono'] as const;
 export type BarGradientPreset = typeof BAR_GRADIENT_PRESETS[number];
@@ -96,8 +100,13 @@ export const CYCLE_GRADIENT_ACTION = 'cycle-gradient';
 const GRADIENT_KEY = 'gradient';
 const GRADIENT_KEYBIND: CustomKeybind = { key: 'g', label: '(g)radient', action: CYCLE_GRADIENT_ACTION };
 
-// "true" is the earlier on/off setting, from before there were presets
+// "true" is the earlier on/off setting, from before there were presets. Value
+// colors give the whole bar one color for its level, so while they're on a
+// saved preset is set aside.
 export function getGradientPreset(item: WidgetItem): BarGradientPreset | null {
+    if (isValueColorsEnabled(item)) {
+        return null;
+    }
     const value = item.metadata?.[GRADIENT_KEY];
     if (value === 'true') {
         return 'traffic';
@@ -105,14 +114,20 @@ export function getGradientPreset(item: WidgetItem): BarGradientPreset | null {
     return isBarGradientPreset(value) ? value : null;
 }
 
-// Off, then each preset in turn, then off again
+// Off, then each preset in turn, then off again. Turning a preset on turns
+// value colors off, keeping their settings.
 export function cycleGradientPreset(item: WidgetItem): WidgetItem {
     const current = getGradientPreset(item);
     const next = current === null ? BAR_GRADIENT_PRESETS[0] : BAR_GRADIENT_PRESETS[BAR_GRADIENT_PRESETS.indexOf(current) + 1];
     if (!next) {
-        return removeMetadataKeys(item, [GRADIENT_KEY]);
+        return clearGradientPreset(item);
     }
-    return { ...item, metadata: { ...(item.metadata ?? {}), [GRADIENT_KEY]: next } };
+    const base = setValueColorsFlag(item, false);
+    return { ...base, metadata: { ...(base.metadata ?? {}), [GRADIENT_KEY]: next } };
+}
+
+export function clearGradientPreset(item: WidgetItem): WidgetItem {
+    return removeMetadataKeys(item, [GRADIENT_KEY]);
 }
 
 // The 256-color palette is too coarse for a smooth gradient, so it needs truecolor
