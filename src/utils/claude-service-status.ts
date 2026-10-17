@@ -1,25 +1,23 @@
 import * as fs from 'node:fs';
 import * as https from 'node:https';
-import * as os from 'node:os';
 import * as path from 'node:path';
 import { z } from 'zod';
 
 import type { ColorLevelString } from '../types/ColorLevel';
 import type { WidgetItem } from '../types/Widget';
 
+import { getWritableCacheDir } from './cache-dir';
 import { getColorAnsiCode } from './colors';
 import { isExcludedFromProxy } from './no-proxy';
 import {
     createProxyAgent,
     type ClosableProxyAgent
 } from './proxy-agent';
+import { replaceFileSync } from './replace-file';
 
 // Cache configuration mirrors usage-fetch.ts: a short-lived disk cache shared
 // across statusline invocations, plus a failure lock so an unreachable status
 // page cannot trigger a network attempt on every render.
-const CACHE_DIR = path.join(os.homedir(), '.cache', 'ccstatusline');
-const CACHE_FILE = path.join(CACHE_DIR, 'claude-status.json');
-const LOCK_FILE = path.join(CACHE_DIR, 'claude-status.lock');
 const CACHE_MAX_AGE = 300;       // seconds - refresh service status every ~5 minutes
 const FAILURE_BACKOFF = 30;      // seconds - wait before retrying after a failed fetch
 
@@ -214,15 +212,24 @@ type CachedClaudeStatus = z.infer<typeof CachedClaudeStatusSchema>;
 // Memory cache so multiple lines in one invocation share a single lookup
 let memoryCache: CachedClaudeStatus | null = null;
 
+function getCacheFile(): string {
+    return path.join(getWritableCacheDir(), 'claude-status.json');
+}
+
+function getLockFile(): string {
+    return path.join(getWritableCacheDir(), 'claude-status.lock');
+}
+
 function ensureCacheDirExists(): void {
-    if (!fs.existsSync(CACHE_DIR)) {
-        fs.mkdirSync(CACHE_DIR, { recursive: true });
+    const cacheDir = getWritableCacheDir();
+    if (!fs.existsSync(cacheDir)) {
+        fs.mkdirSync(cacheDir, { recursive: true });
     }
 }
 
 function readCachedClaudeStatus(): CachedClaudeStatus | null {
     try {
-        return parseJsonWithSchema(fs.readFileSync(CACHE_FILE, 'utf8'), CachedClaudeStatusSchema);
+        return parseJsonWithSchema(fs.readFileSync(getCacheFile(), 'utf8'), CachedClaudeStatusSchema);
     } catch {
         return null;
     }
@@ -231,7 +238,7 @@ function readCachedClaudeStatus(): CachedClaudeStatus | null {
 function writeCachedClaudeStatus(cache: CachedClaudeStatus): void {
     try {
         ensureCacheDirExists();
-        fs.writeFileSync(CACHE_FILE, JSON.stringify(cache));
+        replaceFileSync(getCacheFile(), JSON.stringify(cache));
     } catch {
         // Best-effort caching
     }
@@ -239,7 +246,7 @@ function writeCachedClaudeStatus(cache: CachedClaudeStatus): void {
 
 function isFailureLockActive(nowSeconds: number): boolean {
     try {
-        const lockMtime = Math.floor(fs.statSync(LOCK_FILE).mtimeMs / 1000);
+        const lockMtime = Math.floor(fs.statSync(getLockFile()).mtimeMs / 1000);
         return nowSeconds - lockMtime < FAILURE_BACKOFF;
     } catch {
         return false;
@@ -249,7 +256,7 @@ function isFailureLockActive(nowSeconds: number): boolean {
 function writeFailureLock(): void {
     try {
         ensureCacheDirExists();
-        fs.writeFileSync(LOCK_FILE, '');
+        replaceFileSync(getLockFile(), '');
     } catch {
         // Ignore lock file errors
     }
@@ -257,7 +264,7 @@ function writeFailureLock(): void {
 
 function clearFailureLock(): void {
     try {
-        fs.rmSync(LOCK_FILE, { force: true });
+        fs.rmSync(getLockFile(), { force: true });
     } catch {
         // Ignore lock file errors
     }
