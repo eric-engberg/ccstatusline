@@ -280,6 +280,24 @@ describe('glyph picker', () => {
             }
         });
 
+        // A terminal paste reaches Ink as one input chunk, line break and all
+        it('searches for pasted words without picking on their line break', async () => {
+            const editor = renderWidgetEditor(singleGlyphEditor, cwd);
+
+            try {
+                await editor.ready();
+                await openPicker(editor);
+                await editor.press('pull req create\r');
+                const output = editor.takeOutput();
+                expect(output).toMatch(/Pick a glyph: "pull req create" \(\d+ match/);
+                expect(output).not.toContain('Glyph:');
+                await editor.press(ENTER, ENTER);
+                expect(savedWidget(editor)?.character).toBe('');
+            } finally {
+                editor.cleanup();
+            }
+        });
+
         it('edits the search with Backspace, clears it with ESC, and goes back on a second ESC', async () => {
             const editor = renderWidgetEditor(singleGlyphEditor, cwd);
 

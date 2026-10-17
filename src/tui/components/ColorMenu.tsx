@@ -18,7 +18,6 @@ import {
 import { GRADIENT_PRESET_NAMES } from '../../utils/gradient';
 import {
     getInsertableHexDigits,
-    getInsertableText,
     getPlainInput
 } from '../../utils/input-guards';
 import {
