@@ -1,3 +1,5 @@
+import type React from 'react';
+
 import type {
     RenderContext,
     RenderUsageData
@@ -8,6 +10,7 @@ import type {
     HideableState,
     Widget,
     WidgetEditorDisplay,
+    WidgetEditorProps,
     WidgetItem
 } from '../types/Widget';
 import {
@@ -34,6 +37,29 @@ import {
     showsUsageBar,
     toggleUsageInverted
 } from './shared/usage-display';
+import {
+    LIMIT_SCALE,
+    formatColoredValue,
+    getValueColorsModifier,
+    getValueFormatOptions,
+    isValueColorsEnabled
+} from './shared/value-coloring';
+import {
+    VALUE_COLORS_KEYBIND,
+    renderValueColorsEditor,
+    type ValueColorsEditorOptions
+} from './shared/value-colors-editor';
+
+const DEFAULT_COLOR = 'green';
+const LABEL = 'Overage: ';
+const VALUE_COLORS_EDITOR: ValueColorsEditorOptions = {
+    title: 'Extra Usage Utilization: value colors',
+    scale: LIMIT_SCALE,
+    sampleNote: 'used',
+    defaultColor: DEFAULT_COLOR,
+    maxPercent: 100,
+    label: LABEL
+};
 
 // The usage API reports `utilization: null` until the first charge of the month,
 // while still reporting the amount spent and the monthly limit (both in cents).
@@ -46,10 +72,29 @@ function getExtraUsageUtilization(data: RenderUsageData): number | undefined {
     }
     return data.extraUsageUsed / data.extraUsageLimit * 100;
 }
-const LABEL = 'Overage: ';
+
+// Value colors apply to the plain percent; the bar modes have bar gradients
+function showsValueColors(item: WidgetItem): boolean {
+    return isValueColorsEnabled(item) && !showsUsageBar(item);
+}
+
+// The bar, or the percent in its value color. Value colors follow the used
+// percent, even while the widget shows what's left.
+function formatUsedPercent(item: WidgetItem, label: string, usedPercent: number, settings: Settings, context: RenderContext): string {
+    const format = resolveNumberFormat('percent', item, settings);
+    const renderedPercent = isUsageInverted(item) ? 100 - usedPercent : usedPercent;
+
+    const bar = formatUsageBar(item, renderedPercent, format, settings, context);
+    if (bar !== null) {
+        return formatRawOrLabeledValue(item, label, bar);
+    }
+
+    const formatOptions = getValueFormatOptions(settings);
+    return formatColoredValue(item, label, formatPercent(renderedPercent, format), usedPercent, LIMIT_SCALE, formatOptions);
+}
 
 export class ExtraUsageUtilizationWidget implements Widget {
-    getDefaultColor(): string { return 'green'; }
+    getDefaultColor(): string { return DEFAULT_COLOR; }
     getDescription(): string { return 'Shows extra usage as a percentage of your monthly limit (Pro/Max overage or Enterprise spend)'; }
     getDisplayName(): string { return 'Extra Usage Utilization'; }
     getCategory(): string { return 'Usage'; }
@@ -58,7 +103,10 @@ export class ExtraUsageUtilizationWidget implements Widget {
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         return {
             displayText: this.getDisplayName(),
-            modifierText: getUsageDisplayModifierText(item, { showUsageDirection: true })
+            modifierText: getUsageDisplayModifierText(item, {
+                showUsageDirection: true,
+                extraModifiers: showsUsageBar(item) ? [] : [getValueColorsModifier(item)].filter((modifier): modifier is string => modifier !== null)
+            })
         };
     }
 
@@ -83,19 +131,8 @@ export class ExtraUsageUtilizationWidget implements Widget {
     }
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
-        const inverted = isUsageInverted(item);
-        const format = resolveNumberFormat('percent', item, settings);
-
         if (context.isPreview) {
-            const previewPercent = 85;
-            const renderedPercent = inverted ? 100 - previewPercent : previewPercent;
-
-            const bar = formatUsageBar(item, renderedPercent, format, settings, context);
-            if (bar !== null) {
-                return formatRawOrLabeledValue(item, this.getLabelPrefix(), bar);
-            }
-
-            return formatRawOrLabeledValue(item, this.getLabelPrefix(), formatPercent(renderedPercent, format));
+            return formatUsedPercent(item, this.getLabelPrefix(), 85, settings, context);
         }
 
         const data = context.usageData ?? {};
@@ -115,24 +152,25 @@ export class ExtraUsageUtilizationWidget implements Widget {
         }
 
         // utilization is a percentage (0-100), not a fraction
-        const percent = Math.max(0, Math.min(100, utilization));
-        const renderedPercent = inverted ? 100 - percent : percent;
-
-        const bar = formatUsageBar(item, renderedPercent, format, settings, context);
-        if (bar !== null) {
-            return formatRawOrLabeledValue(item, this.getLabelPrefix(), bar);
-        }
-
-        return formatRawOrLabeledValue(item, this.getLabelPrefix(), formatPercent(renderedPercent, format));
+        return formatUsedPercent(item, this.getLabelPrefix(), Math.max(0, Math.min(100, utilization)), settings, context);
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
-        return getUsagePercentCustomKeybinds(item, false);
+        const keybinds = getUsagePercentCustomKeybinds(item, false);
+        return item && showsUsageBar(item) ? keybinds : [...keybinds, VALUE_COLORS_KEYBIND];
     }
 
-    // A gradient preset paints only the bar, so the renderer colors the rest
+    // While the widget shows what's left, the sample does too
+    renderEditor(props: WidgetEditorProps): React.ReactElement {
+        const showsRemaining = isUsageInverted(props.widget);
+        return renderValueColorsEditor(props, { ...VALUE_COLORS_EDITOR, showsRemaining, sampleNote: showsRemaining ? 'left' : 'used' });
+    }
+
+    // Value colors paint only the value (or the whole text), and a gradient
+    // preset only the bar, so the renderer colors the rest with the theme
+    // or widget color
     colorsOnlyItsRuns(item: WidgetItem): boolean {
-        return paintsBarGradient(item, showsUsageBar(item));
+        return showsValueColors(item) || paintsBarGradient(item, showsUsageBar(item));
     }
 
     supportsRawValue(): boolean { return true; }
