@@ -26,10 +26,7 @@ import {
     handleContextSliderAction,
     renderContextSlider
 } from './context-slider';
-import {
-    paintWidgetBar,
-    paintsBarGradient
-} from './gradient-bar';
+import { paintsBarCells } from './gradient-bar';
 import {
     getLevelGlyph,
     isLevelGlyphMode
@@ -101,8 +98,8 @@ export abstract class ContextPercentageWidgetBase implements Widget {
 
         const displayPercentage = isInverse ? 100 - usedPercentage : usedPercentage;
         const format = resolveNumberFormat('percent', item, settings);
-        const slider = renderContextSlider(item, displayPercentage, format, context.barCells);
-        const shown = slider === null ? formatPercent(displayPercentage, format) : paintWidgetBar(slider, item, settings, isInverse);
+        const slider = renderContextSlider(item, displayPercentage, settings, format, context.barCells, isInverse);
+        const shown = slider ?? formatPercent(displayPercentage, format);
         // Value colors follow the used percent, even while the widget shows
         // what's left, and give a slider, and the percent after it, its level's color
         const formatOptions = getValueFormatOptions(settings);
@@ -134,11 +131,11 @@ export abstract class ContextPercentageWidgetBase implements Widget {
         });
     }
 
-    // Value colors paint only the value or slider (or the whole text), and a gradient
-    // preset only the slider, so the renderer colors the rest with the theme
-    // or widget color
+    // Value colors paint only the value or bar (or the whole text), and a gradient
+    // preset or gray empty cells only the bar, so the renderer colors the rest
+    // with the theme or widget color
     colorsOnlyItsRuns(item: WidgetItem): boolean {
-        return (isValueColorsEnabled(item) && !isLevelGlyphMode(item)) || paintsBarGradient(item, getContextSliderMode(item) !== 'none');
+        return (isValueColorsEnabled(item) && !isLevelGlyphMode(item)) || paintsBarCells(item, getContextSliderMode(item) !== 'none');
     }
 
     supportsRawValue(): boolean { return true; }

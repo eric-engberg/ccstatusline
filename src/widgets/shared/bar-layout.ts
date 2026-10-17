@@ -11,15 +11,39 @@ import {
     getStoredBarSize,
     type BarSize
 } from './bar-width';
-import { removeMetadataKeys } from './metadata';
+import {
+    removeMetadataKeys,
+    setMetadataValue
+} from './metadata';
 
-// A widget's bar has a style (block "[███░░]" or slider "▓▓▓░░"), a size (see
-// bar-width.ts) and the numbers after it, some or all of which can be turned
-// off. They are stored in the display modes saved configs already use: block
-// bars as 'progress' (long) or 'progress-short', sliders as 'slider', with
-// barWidth only for a size the display mode doesn't already mean. The older
-// 'slider-only' mode reads as a slider with its numbers off.
-export type BarStyle = 'block' | 'slider';
+// A widget's bar has a style (block "[███░░]", slider "▓▓▓░░" or cells "▮▮▮▮▮"),
+// a size (see bar-width.ts) and the numbers after it, some or all of which can
+// be turned off. They are stored in the display modes saved configs already
+// use: block bars as 'progress' (long) or 'progress-short', sliders as 'slider',
+// with barWidth only for a size the display mode doesn't already mean. The
+// older 'slider-only' mode reads as a slider with its numbers off. Cell bars
+// are 'cells', with barCell naming any shape but the first; builds without
+// them show the widget's text instead.
+export type BarStyle = 'block' | 'slider' | 'cells';
+
+// A cell bar draws its filled and empty cells with the same character, the
+// empty ones faint or dark gray
+const BAR_CELL_SHAPES = ['rectangle', 'square', 'seven-eighths', 'parallelogram'] as const;
+export type BarCellShape = typeof BAR_CELL_SHAPES[number];
+const BAR_CELL_GLYPHS: Record<BarCellShape, string> = {
+    'rectangle': '▮',
+    'square': '■',
+    'seven-eighths': '▉',
+    'parallelogram': '▰'
+};
+const BAR_CELL_KEY = 'barCell';
+
+// How a cell bar draws its empty cells: faint, or the fixed dark gray the
+// gradient bars give theirs. Stored as barEmpty 'gray', nothing for faint.
+// Every other style ignores it and keeps it, so the next cell bar is gray again.
+export type BarEmptyCells = 'faint' | 'gray';
+const BAR_EMPTY_KEY = 'barEmpty';
+export const TOGGLE_BAR_EMPTY_CELLS_ACTION = 'toggle-bar-empty-cells';
 
 // Which numbers follow the bar: a percent, and on the Context Bar token counts
 export type BarNumbers = 'all' | 'percent' | 'counts' | 'none';
@@ -44,7 +68,37 @@ export function getBarStyle(item: WidgetItem): BarStyle | null {
     if (display === 'progress' || display === 'progress-short') {
         return 'block';
     }
+    if (display === 'cells') {
+        return 'cells';
+    }
     return display === 'slider' || display === 'slider-only' ? 'slider' : null;
+}
+
+// The first shape unless another one is stored; a shape this build doesn't
+// know, say from a later one, draws as the first
+export function getBarCellShape(item: WidgetItem): BarCellShape {
+    const value = item.metadata?.[BAR_CELL_KEY];
+    return BAR_CELL_SHAPES.find(shape => shape === value) ?? 'rectangle';
+}
+
+export function getBarCellGlyph(item: WidgetItem): string {
+    return BAR_CELL_GLYPHS[getBarCellShape(item)];
+}
+
+// Faint unless gray is stored; a value this build doesn't know, say from a
+// later one, draws faint
+export function getBarEmptyCells(item: WidgetItem): BarEmptyCells {
+    return item.metadata?.[BAR_EMPTY_KEY] === 'gray' ? 'gray' : 'faint';
+}
+
+// (y): gray empty cells, or back to faint
+export function toggleBarEmptyCells(item: WidgetItem): WidgetItem {
+    return setMetadataValue(item, BAR_EMPTY_KEY, getBarEmptyCells(item) === 'gray' ? null : 'gray');
+}
+
+// Whether the widget shows a cell bar with gray empty cells
+export function showsGrayBarCells(item: WidgetItem): boolean {
+    return getBarStyle(item) === 'cells' && getBarEmptyCells(item) === 'gray';
 }
 
 export function getBarNumbers(item: WidgetItem): BarNumbers {
@@ -82,26 +136,50 @@ function getBlockDisplay(item: WidgetItem, size: BarSize): string {
     return item.metadata?.display === 'progress' ? 'progress' : 'progress-short';
 }
 
-function writeBarLayout(item: WidgetItem, style: BarStyle, size: BarSize, numbers: BarNumbers): WidgetItem {
-    const display = style === 'block' ? getBlockDisplay(item, size) : 'slider';
+// The stored form of a cell shape: nothing for the first, or for another style
+function getBarCellMetadata(style: BarStyle, shape: BarCellShape): Record<string, string> {
+    return style === 'cells' && shape !== BAR_CELL_SHAPES[0] ? { [BAR_CELL_KEY]: shape } : {};
+}
+
+function writeBarLayout(item: WidgetItem, style: BarStyle, size: BarSize, numbers: BarNumbers, shape = getBarCellShape(item)): WidgetItem {
+    const display = style === 'block' ? getBlockDisplay(item, size) : style;
     const barWidth = getBarSizeMetadata(size, getImpliedBarSize({ ...item, metadata: { display } }));
-    const cleared = removeMetadataKeys(item, ['barWidth', BAR_NUMBERS_KEY, BAR_ONLY_KEY]);
+    const cleared = removeMetadataKeys(item, ['barWidth', BAR_NUMBERS_KEY, BAR_ONLY_KEY, BAR_CELL_KEY]);
     return {
         ...cleared,
         metadata: {
             ...cleared.metadata,
             display,
             ...(barWidth === null ? {} : { barWidth }),
-            ...getBarNumbersMetadata(numbers)
+            ...getBarNumbersMetadata(numbers),
+            ...getBarCellMetadata(style, shape)
         }
     };
 }
 
 // The bar keeps its size; from the text mode it takes the size it had last,
-// or the one given
+// or the one given. A cell bar starts with the first shape.
 export function setBarStyle(item: WidgetItem, style: BarStyle, sizeFromText: BarSize = 'medium'): WidgetItem {
     const size = getBarStyle(item) === null ? (getStoredBarSize(item) ?? sizeFromText) : getBarSize(item);
-    return writeBarLayout(item, style, size, getBarNumbers(item));
+    return writeBarLayout(item, style, size, getBarNumbers(item), BAR_CELL_SHAPES[0]);
+}
+
+function setBarCellShape(item: WidgetItem, shape: BarCellShape): WidgetItem {
+    return writeBarLayout(item, 'cells', getBarSize(item), getBarNumbers(item), shape);
+}
+
+// (p)'s next bar style, keeping the size and numbers: block, slider, then
+// each cell shape in turn. Null after the last one, or without a bar.
+export function stepBarStyle(item: WidgetItem): WidgetItem | null {
+    const style = getBarStyle(item);
+    if (style === 'block') {
+        return setBarStyle(item, 'slider');
+    }
+    if (style === 'slider') {
+        return setBarStyle(item, 'cells');
+    }
+    const next = style === 'cells' ? BAR_CELL_SHAPES[BAR_CELL_SHAPES.indexOf(getBarCellShape(item)) + 1] : undefined;
+    return next ? setBarCellShape(item, next) : null;
 }
 
 export function setBarSize(item: WidgetItem, size: BarSize): WidgetItem {
@@ -125,9 +203,10 @@ export function cycleBarNumbers(item: WidgetItem): WidgetItem {
 
 // Leaving the bar for the text mode, the size and numbers setting are stored
 // outright, since the display mode that implied them goes, so (p) brings the
-// bar back as it was
+// bar back as it was. It comes back in the first style (p) offers, so a cell
+// shape goes.
 export function keepBarLayout(item: WidgetItem): WidgetItem {
-    const cleared = removeMetadataKeys(item, ['barWidth', BAR_NUMBERS_KEY, BAR_ONLY_KEY]);
+    const cleared = removeMetadataKeys(item, ['barWidth', BAR_NUMBERS_KEY, BAR_ONLY_KEY, BAR_CELL_KEY]);
     return {
         ...cleared,
         metadata: {
@@ -138,15 +217,28 @@ export function keepBarLayout(item: WidgetItem): WidgetItem {
     };
 }
 
-// The line editor's modifiers, e.g. "slider bar", "long", "numbers off"; none
-// while the widget shows text
+// The line editor's modifiers, e.g. "slider bar" or "cells ■" (then "gray"
+// for gray empty cells), "long", "numbers off"; none while the widget shows text
 export function getBarLayoutModifiers(item: WidgetItem): string[] {
     const style = getBarStyle(item);
     if (style === null) {
         return [];
     }
     const numbersModifier = BAR_NUMBERS_MODIFIERS[getBarNumbers(item)];
-    return [`${style} bar`, getBarSizeModifier(item), ...(numbersModifier ? [numbersModifier] : [])];
+    const styleModifiers = style === 'cells' ? [`cells ${getBarCellGlyph(item)}`] : [`${style} bar`];
+    if (showsGrayBarCells(item)) {
+        styleModifiers.push('gray');
+    }
+    return [...styleModifiers, getBarSizeModifier(item), ...(numbersModifier ? [numbersModifier] : [])];
+}
+
+// (y) on a cell bar, naming what it switches to
+export function getBarEmptyCellsKeybinds(item: WidgetItem | undefined): CustomKeybind[] {
+    if (!item || getBarStyle(item) !== 'cells') {
+        return [];
+    }
+    const label = getBarEmptyCells(item) === 'gray' ? '(y) faint empty cells' : '(y) gray empty cells';
+    return [{ key: 'y', label, action: TOGGLE_BAR_EMPTY_CELLS_ACTION }];
 }
 
 // A toggle for a bar with only a percent after it, a cycle for one with counts too

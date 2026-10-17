@@ -12,13 +12,16 @@ import {
 } from '../../utils/locales';
 import { formatPercent } from '../../utils/number-format';
 
+import { drawWidgetBar } from './bar-draw';
 import {
+    getBarEmptyCellsKeybinds,
     getBarLayoutModifiers,
     getBarNumbersKeybinds,
     getBarStyle,
     keepBarLayout,
     setBarStyle,
-    showsBarPercent
+    showsBarPercent,
+    stepBarStyle
 } from './bar-layout';
 import {
     getBarWidthKeybinds,
@@ -27,8 +30,7 @@ import {
 import { makeModifierText } from './editor-display';
 import {
     getGradientKeybinds,
-    getGradientModifier,
-    paintWidgetBar
+    getGradientModifier
 } from './gradient-bar';
 import {
     LEVEL_GLYPH_DISPLAY,
@@ -40,9 +42,9 @@ import {
     removeMetadataKeys,
     toggleMetadataFlag
 } from './metadata';
-import { makeTimerProgressBar } from './progress-bar';
+import { layoutBar } from './progress-bar';
 
-export type UsageDisplayMode = 'time' | 'progress' | 'progress-short' | 'slider' | 'slider-only';
+export type UsageDisplayMode = 'time' | 'progress' | 'progress-short' | 'slider' | 'slider-only' | 'cells';
 
 // Shared by the usage percentage widgets and the reset timers, which render the
 // same error placeholders
@@ -65,7 +67,7 @@ const LOCALE_KEYBIND: CustomKeybind = { key: 'l', label: '(l)ocale', action: 'ed
 
 export function getUsageDisplayMode(item: WidgetItem): UsageDisplayMode {
     const mode = item.metadata?.display;
-    if (mode === 'progress' || mode === 'progress-short' || mode === 'slider' || mode === 'slider-only') {
+    if (mode === 'progress' || mode === 'progress-short' || mode === 'slider' || mode === 'slider-only' || mode === 'cells') {
         return mode;
     }
     return 'time';
@@ -75,15 +77,11 @@ export function isUsageProgressMode(mode: UsageDisplayMode): boolean {
     return mode === 'progress' || mode === 'progress-short';
 }
 
-export function isUsageSliderMode(mode: UsageDisplayMode): boolean {
-    return mode === 'slider' || mode === 'slider-only';
-}
-
 interface SliderBarOptions { cursorPercent?: number }
 
-// The bar modes' text, e.g. "[████░░░░] 50.0%" or "▓▓▓▓░░░░", with the
-// widget's gradient, if any. Null in the text mode, without calling getCursor,
-// which can be costly to resolve.
+// The bar modes' text, e.g. "[████░░░░] 50.0%", "▓▓▓▓░░░░" or "▮▮▮▮▮▮▮▮ 50.0%",
+// with the widget's gradient, if any. Null in the text mode, without calling
+// getCursor, which can be costly to resolve.
 export function formatUsageBar(
     item: WidgetItem,
     percent: number,
@@ -92,37 +90,18 @@ export function formatUsageBar(
     context: RenderContext,
     getCursor: () => SliderBarOptions | undefined = () => undefined
 ): string | null {
-    const style = getBarStyle(item);
-    if (style === null) {
+    if (getBarStyle(item) === null) {
         return null;
     }
     const cells = context.barCells ?? getFixedBarCells(item);
-    const bar = style === 'block'
-        ? `[${makeTimerProgressBar(percent, cells, getCursor())}]`
-        : makeSliderBar(percent, cells, getCursor());
-    const text = showsBarPercent(item) ? `${bar} ${formatPercent(percent, format)}` : bar;
-    return paintWidgetBar(text, item, settings, isUsageInverted(item));
+    const bar = drawWidgetBar(item, percent, cells, settings, { ...getCursor(), reversed: isUsageInverted(item) });
+    return showsBarPercent(item) ? `${bar} ${formatPercent(percent, format)}` : bar;
 }
 
+const SLIDER_CELL_GLYPHS = { filled: '▓', empty: '░', cursor: '│' } as const;
+
 export function makeSliderBar(percent: number, width: number = SLIDER_WIDTH, options?: SliderBarOptions): string {
-    const clamped = Math.max(0, Math.min(100, percent));
-    const filled = Math.round((clamped / 100) * width);
-    const cursorPos = options?.cursorPercent !== undefined
-        ? Math.min(Math.floor((Math.max(0, Math.min(100, options.cursorPercent)) / 100) * width), width - 1)
-        : -1;
-
-    let bar = '';
-    for (let i = 0; i < width; i++) {
-        if (i === cursorPos) {
-            bar += '│';
-        } else if (i < filled) {
-            bar += '▓';
-        } else {
-            bar += '░';
-        }
-    }
-
-    return bar;
+    return layoutBar(percent, width, options).map(cell => SLIDER_CELL_GLYPHS[cell]).join('');
 }
 
 export function isUsageInverted(item: WidgetItem): boolean {
@@ -248,7 +227,7 @@ export function getUsageDisplayModifierText(
         modifiers.push('inverted');
     }
 
-    if (options.includeCursor && isUsageCursorEnabled(item) && (isUsageProgressMode(mode) || isUsageSliderMode(mode))) {
+    if (options.includeCursor && isUsageCursorEnabled(item) && showsUsageBar(item)) {
         modifiers.push('time cursor');
     }
 
@@ -284,21 +263,22 @@ export function getUsageDisplayModifierText(
 }
 
 export function showsUsageBar(item: WidgetItem): boolean {
-    const mode = getUsageDisplayMode(item);
-    return isUsageProgressMode(mode) || isUsageSliderMode(mode);
+    return getBarStyle(item) !== null;
 }
 
 // (p) cycles the style, not the size, which is (b)'s: text, then a block bar
-// (long, the first time), then a slider, then text again
-// The percent widgets add the level glyph after the slider (includeGlyph). The
+// (long, the first time), then with includeSlider a slider and the cell bars
+// in each shape, then text again
+// The percent widgets add the level glyph after the bars (includeGlyph). The
 // others take a glyph carried over by a type change as the text it renders as.
 export function cycleUsageDisplayMode(item: WidgetItem, disabledInProgressKeys: string[] = [], includeSlider = false, preserveInvertInTime = false, includeGlyph = false): WidgetItem {
     const style = getBarStyle(item);
     if (style === null && !(includeGlyph && isLevelGlyphMode(item))) {
         return setBarStyle(removeMetadataKeys(item, disabledInProgressKeys), 'block', 'long');
     }
-    if (style === 'block' && includeSlider) {
-        return setBarStyle(item, 'slider');
+    const nextStyle = includeSlider ? stepBarStyle(item) : null;
+    if (nextStyle) {
+        return nextStyle;
     }
 
     // Leaving the bar, its size and numbers setting are kept for when it comes back
@@ -325,15 +305,12 @@ export function getUsagePercentCustomKeybinds(item?: WidgetItem, includeCursor =
         { key: 'u', label: `(u) show ${nextDirection}`, action: 'toggle-invert' }
     ];
 
-    if (item && includeCursor) {
-        const mode = getUsageDisplayMode(item);
-        if (isUsageProgressMode(mode) || isUsageSliderMode(mode)) {
-            keybinds.push(CURSOR_TOGGLE_KEYBIND);
-        }
+    if (item && includeCursor && showsUsageBar(item)) {
+        keybinds.push(CURSOR_TOGGLE_KEYBIND);
     }
 
     const showsBar = item ? showsUsageBar(item) : false;
-    keybinds.push(...getGradientKeybinds(showsBar), ...getBarWidthKeybinds(showsBar), ...getBarNumbersKeybinds(item, showsBar));
+    keybinds.push(...getGradientKeybinds(showsBar), ...getBarWidthKeybinds(showsBar), ...getBarNumbersKeybinds(item, showsBar), ...getBarEmptyCellsKeybinds(item));
 
     return keybinds;
 }
@@ -352,8 +329,7 @@ export function getUsageTimerCustomKeybinds(
 ): CustomKeybind[] {
     const keybinds = [PROGRESS_TOGGLE_KEYBIND];
 
-    const mode = item ? getUsageDisplayMode(item) : 'time';
-    const isBarMode = isUsageProgressMode(mode) || isUsageSliderMode(mode);
+    const isBarMode = item ? showsUsageBar(item) : false;
 
     if (item && isBarMode) {
         keybinds.push(INVERT_TOGGLE_KEYBIND);
@@ -384,7 +360,7 @@ export function getUsageTimerCustomKeybinds(
     }
 
     const showsBar = item !== undefined && isBarMode;
-    keybinds.push(...getGradientKeybinds(showsBar), ...getBarWidthKeybinds(showsBar), ...getBarNumbersKeybinds(item, showsBar));
+    keybinds.push(...getGradientKeybinds(showsBar), ...getBarWidthKeybinds(showsBar), ...getBarNumbersKeybinds(item, showsBar), ...getBarEmptyCellsKeybinds(item));
 
     return keybinds;
 }

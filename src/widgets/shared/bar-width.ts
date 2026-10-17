@@ -41,7 +41,8 @@ for (let percent = MIN_PERCENT; percent <= MAX_PERCENT; percent += PERCENT_STEP)
 STEPS.push('fill');
 
 // The size a display mode has always meant, for bars with no size of their own:
-// long and medium block bars, short sliders
+// long and medium block bars, short sliders, and medium for anything else, cell
+// bars included
 export function getImpliedBarSize(item: WidgetItem): NamedBarSize {
     const display = item.metadata?.display;
     if (display === 'progress') {
