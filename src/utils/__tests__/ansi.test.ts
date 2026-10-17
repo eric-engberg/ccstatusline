@@ -8,6 +8,7 @@ import {
     getVisibleText,
     getVisibleWidth,
     restoreStyleAfterResets,
+    stripForegroundCodes,
     stripOscCodes,
     stripSgrCodes,
     truncateStyledText
@@ -137,6 +138,29 @@ describe('truncateStyledText', () => {
         // through as-is and must not trigger an extra hyperlink close.
         expect(truncateStyledText('\x1b]8;\x07abcdefgh', 5)).toBe('\x1b]8;\x07ab...');
         expect(truncateStyledText('\x1b]0;title\x07abcdefgh', 5)).toBe('\x1b]0;title\x07ab...');
+    });
+});
+
+describe('stripForegroundCodes', () => {
+    it('removes foreground colors in every form', () => {
+        expect(stripForegroundCodes('\x1b[31ma\x1b[39mb\x1b[97mc\x1b[38;5;208md\x1b[38;2;1;2;3me\x9b32mf')).toBe('abcdef');
+    });
+
+    it('keeps intensity, backgrounds and resets', () => {
+        const text = '\x1b[2ma\x1b[22mb\x1b[1mc\x1b[22;1md\x1b[44me\x1b[48;2;0;38;0mf\x1b[49mg\x1b[0mh\x1b[mi';
+
+        expect(stripForegroundCodes(text)).toBe(text);
+    });
+
+    it('drops only the foreground from a sequence that sets more', () => {
+        expect(stripForegroundCodes('\x1b[1;31;44ma\x1b[38;5;2;2mb\x1b[2;38;2;0;0;0mc\x9b39;49md'))
+            .toBe('\x1b[1;44ma\x1b[2mb\x1b[2mc\x9b49md');
+    });
+
+    it('leaves other CSI sequences and hyperlinks alone', () => {
+        const text = `\x1b[2K\x9b2J${OSC8_OPEN}link${OSC8_CLOSE}`;
+
+        expect(stripForegroundCodes(text)).toBe(text);
     });
 });
 

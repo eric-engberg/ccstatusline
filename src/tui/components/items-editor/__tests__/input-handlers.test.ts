@@ -1141,6 +1141,44 @@ describe('items-editor input handlers', () => {
         });
     });
 
+    describe('cell bar empty cells keybind', () => {
+        // Every bar widget offers it on a cell bar, so the handler applies it
+        // itself rather than delegating to handleEditorAction
+        const pressEmptyCells = (widgets: WidgetItem[], onUpdate: (widgets: WidgetItem[]) => void) => {
+            handleNormalInputMode({
+                input: 'y',
+                key: {},
+                widgets,
+                selectedIndex: 0,
+                separatorChars: ['|'],
+                onBack: vi.fn(),
+                onUpdate,
+                setSelectedIndex: vi.fn(),
+                setMoveMode: vi.fn(),
+                setShowClearConfirm: vi.fn(),
+                openWidgetPicker: vi.fn(),
+                getCustomKeybindsForWidget: (widgetImpl, widget) => widgetImpl.getCustomKeybinds ? widgetImpl.getCustomKeybinds(widget) : [],
+                setCustomEditorWidget: vi.fn()
+            });
+        };
+
+        it('toggles gray empty cells on a cell bar, and back to faint', () => {
+            const onUpdate = vi.fn();
+            pressEmptyCells([{ id: '1', type: 'context-bar', metadata: { display: 'cells' } }], onUpdate);
+            pressEmptyCells([{ id: '2', type: 'block-timer', metadata: { display: 'cells', barEmpty: 'gray' } }], onUpdate);
+
+            expect(onUpdate).toHaveBeenNthCalledWith(1, [{ id: '1', type: 'context-bar', metadata: { display: 'cells', barEmpty: 'gray' } }]);
+            expect(onUpdate).toHaveBeenNthCalledWith(2, [{ id: '2', type: 'block-timer', metadata: { display: 'cells' } }]);
+        });
+
+        it('leaves a block bar untouched', () => {
+            const onUpdate = vi.fn();
+            pressEmptyCells([{ id: '1', type: 'weekly-usage', metadata: { display: 'progress' } }], onUpdate);
+
+            expect(onUpdate).not.toHaveBeenCalled();
+        });
+    });
+
     describe('modifier combos', () => {
         function pressInNormalMode(input: string, key: Record<string, boolean>, widgets: WidgetItem[]) {
             const onUpdate = vi.fn();
