@@ -6,6 +6,7 @@ import {
     vi
 } from 'vitest';
 
+import { waitFor } from '../../../tui/__tests__/helpers/wait-for-ink';
 import { LabelEditor } from '../../../tui/components/LabelEditor';
 import type { SkinTone } from '../../../types/SkinTone';
 import type {
@@ -59,20 +60,16 @@ function savedWidget(editor: Editor): WidgetItem | undefined {
 }
 
 // The picker loads its glyphs when it opens, so it draws "Loading glyphs…"
-// first; this waits for the text it draws once they're in
+// first; this waits for the text it draws once they're in. React attaches the
+// grid's key handler only after drawing it, so waitFor also lets React catch
+// up, or the next key could arrive before the handler and be dropped.
 async function waitForOutput(editor: Editor, text: string): Promise<string> {
     let output = '';
-    const deadline = Date.now() + 3000;
-    do {
+    await waitFor(() => {
         output += editor.takeOutput();
-        if (output.includes(text)) {
-            return output;
-        }
-        await new Promise((resolve) => {
-            setTimeout(resolve, 10);
-        });
-    } while (Date.now() < deadline);
-    throw new Error(`The picker never showed ${JSON.stringify(text)}`);
+        expect(output, `The picker never showed ${JSON.stringify(text)}`).toContain(text);
+    });
+    return output;
 }
 
 // → opens the picker for the highlighted row; returns what it drew
