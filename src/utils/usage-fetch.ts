@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as https from 'node:https';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { z } from 'zod';
 
@@ -40,6 +41,17 @@ const MACOS_USAGE_CREDENTIALS_SERVICE = 'Claude Code-credentials';
 // Keychain reads normally take milliseconds. A `security` call blocked on an
 // unlock prompt must not hold the status line until someone answers it.
 const MACOS_SECURITY_TIMEOUT_MS = 5000;
+// `security` exits with the low byte of the OSStatus it failed with: 44 for
+// errSecItemNotFound (-25300), the one failure that means the item isn't there.
+const MACOS_SECURITY_ITEM_NOT_FOUND = 44;
+// How long the keychain is left alone after a `security` call fails any
+// other way. A keychain that timed out or is locked stays that way while
+// nobody is at the machine, and each further call queues one more unlock
+// request in securityd.
+const MACOS_KEYCHAIN_BACKOFF = 300; // seconds
+// The login keychain's database file, which changes whenever an item in it
+// is added, changed or deleted. Only its stat is read, never the file.
+const MACOS_LOGIN_KEYCHAIN_FILE = path.join(os.homedir(), 'Library', 'Keychains', 'login.keychain-db');
 
 // How much later than a cached usage API answer's reset end the statusline
 // payload's end for the same window may be before that answer counts as one
@@ -499,6 +511,12 @@ function getStaleUsageOrError(
     return setCachedUsageError(error, now, errorCacheMaxAge, transient);
 }
 
+function isMissingKeychainItem(error: unknown): boolean {
+    return (error as { status?: unknown } | null)?.status === MACOS_SECURITY_ITEM_NOT_FOUND;
+}
+
+// Null for a missing item. Any other failure throws, which ends the keychain
+// lookup (see lookUpUsageCredentials).
 function readMacKeychainSecret(service: string): string | null {
     try {
         return execFileSync(
@@ -506,8 +524,11 @@ function readMacKeychainSecret(service: string): string | null {
             ['find-generic-password', '-s', service, '-w'],
             { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: MACOS_SECURITY_TIMEOUT_MS, windowsHide: true }
         ).trim();
-    } catch {
-        return null;
+    } catch (error) {
+        if (isMissingKeychainItem(error)) {
+            return null;
+        }
+        throw error;
     }
 }
 
@@ -544,20 +565,36 @@ export function getMacKeychainConfigDirService(): string | null {
     return `${MACOS_USAGE_CREDENTIALS_SERVICE}-${suffix}`;
 }
 
-export function getUsageCredentials(): UsageCredentials | null {
-    if (process.platform !== 'darwin') {
-        return readUsageCredentialsFromCredentialsFile();
-    }
-
+function readUsageCredentialsFromMacKeychain(): UsageCredentials | null {
     // Every profile, the default one included, owns exactly one keychain
     // service name, the only one Claude Code reads for it. On a miss, the
     // remaining "Claude Code-credentials" items belong to other profiles (or
     // hold only MCP tokens), so fall through only to the profile's own
     // .credentials.json, Claude Code's fallback store, rather than surface
     // another account's usage.
-    const service = getMacKeychainConfigDirService() ?? MACOS_USAGE_CREDENTIALS_SERVICE;
-    return readUsageCredentialsFromMacKeychainService(service)
-        ?? readUsageCredentialsFromCredentialsFile();
+    return readUsageCredentialsFromMacKeychainService(getMacKeychainConfigDirService() ?? MACOS_USAGE_CREDENTIALS_SERVICE);
+}
+
+// A `security` call that fails other than for a missing item (it timed out,
+// the keychain is locked, a prompt was refused) ends the keychain lookup:
+// every later call would meet the same keychain, each one another request
+// for securityd to answer. The credentials file is still read.
+function lookUpUsageCredentials(skipKeychain: boolean): { credentials: UsageCredentials | null; keychainFailed: boolean } {
+    let credentials: UsageCredentials | null = null;
+    let keychainFailed = false;
+    if (process.platform === 'darwin' && !skipKeychain) {
+        try {
+            credentials = readUsageCredentialsFromMacKeychain();
+        } catch {
+            keychainFailed = true;
+        }
+    }
+
+    return { credentials: credentials ?? readUsageCredentialsFromCredentialsFile(), keychainFailed };
+}
+
+export function getUsageCredentials(): UsageCredentials | null {
+    return lookUpUsageCredentials(false).credentials;
 }
 
 export function getUsageToken(): string | null {
@@ -582,8 +619,143 @@ function getUsageCredentialsSource(): string {
     return JSON.stringify([getMacKeychainConfigDirService(), getClaudeConfigDir()]);
 }
 
-function getUsageCredentialsWithBackoff(now: number): UsageCredentials | null {
-    const source = getUsageCredentialsSource();
+// From stat alone: a write to the file changes its inode, size, mtime or
+// ctime. Empty when there is no such file.
+function getFileStamp(filePath: string): string {
+    try {
+        const stat = fs.statSync(filePath);
+        return `${stat.ino}:${stat.size}:${stat.mtimeMs}:${stat.ctimeMs}`;
+    } catch {
+        return '';
+    }
+}
+
+function getLoginKeychainStamp(): string {
+    return process.platform === 'darwin' ? getFileStamp(MACOS_LOGIN_KEYCHAIN_FILE) : '';
+}
+
+// Stamps of the files a login is kept in: the profile's credentials file
+// and, on macOS, the login keychain. Writing a login to either one (a
+// logout, a login, a token refresh) changes its stamp.
+const UsageCredentialsStampSchema = z.object({
+    credentialsFile: z.string(),
+    loginKeychain: z.string()
+});
+
+type UsageCredentialsStamp = z.infer<typeof UsageCredentialsStampSchema>;
+
+function getUsageCredentialsStamp(): UsageCredentialsStamp {
+    return {
+        credentialsFile: getFileStamp(path.join(getClaudeConfigDir(), '.credentials.json')),
+        loginKeychain: getLoginKeychainStamp()
+    };
+}
+
+function isSameUsageCredentialsStamp(a: UsageCredentialsStamp, b: UsageCredentialsStamp): boolean {
+    return a.credentialsFile === b.credentialsFile && a.loginKeychain === b.loginKeychain;
+}
+
+// The fingerprint of the login each credential source held when last read,
+// and the stamp of its files then. While the stamp is the same, so is the
+// login, and a fresh cache for it can be served without reading the
+// credentials again: on macOS each read runs `security`, which a locked
+// keychain turns into an unlock request nobody may be there to answer.
+// A keychain read that fails later is noted: requests then use the login in
+// the credentials file, which may be another one, so until the keychain
+// answers again the recorded login only decides which stale cache stands in
+// when no credentials are found.
+function getUsageLoginFile(): string {
+    return path.join(getWritableCacheDir(), 'usage-login.json');
+}
+// Room for the profiles used side by side; the one recorded longest ago goes first.
+const MAX_USAGE_LOGINS = 16;
+const UsageLoginSchema = z.object({
+    source: z.string(),
+    stamp: UsageCredentialsStampSchema,
+    preferredHash: z.string(),
+    accessTokenHash: z.string(),
+    keychainFailed: z.boolean()
+});
+const UsageLoginsSchema = z.array(UsageLoginSchema);
+
+interface KnownUsageLogin {
+    identity: UsageCacheIdentity;
+    keychainFailed: boolean;
+}
+
+function readUsageLogins(): z.infer<typeof UsageLoginsSchema> {
+    try {
+        return parseJsonWithSchema(fs.readFileSync(getUsageLoginFile(), 'utf8'), UsageLoginsSchema) ?? [];
+    } catch {
+        return [];
+    }
+}
+
+function readKnownUsageLogin(source: string, stamp: UsageCredentialsStamp): KnownUsageLogin | null {
+    const login = readUsageLogins().find(entry => entry.source === source);
+    return login && isSameUsageCredentialsStamp(login.stamp, stamp)
+        ? { identity: { preferredHash: login.preferredHash, accessTokenHash: login.accessTokenHash }, keychainFailed: login.keychainFailed }
+        : null;
+}
+
+function writeUsageLogin(logins: z.infer<typeof UsageLoginsSchema>, login: z.infer<typeof UsageLoginSchema>): void {
+    try {
+        ensureCacheDirExists();
+        replaceFileSync(getUsageLoginFile(), JSON.stringify([
+            login,
+            ...logins.filter(entry => entry.source !== login.source)
+        ].slice(0, MAX_USAGE_LOGINS)));
+    } catch {
+        // Ignore cache write errors: the next render reads the credentials again
+    }
+}
+
+function rememberUsageLogin(source: string, stamp: UsageCredentialsStamp, identity: UsageCacheIdentity): void {
+    const logins = readUsageLogins();
+    const known = logins.find(entry => entry.source === source);
+    if (known && !known.keychainFailed && isSameUsageCredentialsStamp(known.stamp, stamp) && known.preferredHash === identity.preferredHash && known.accessTokenHash === identity.accessTokenHash) {
+        return;
+    }
+
+    writeUsageLogin(logins, { source, stamp, ...identity, keychainFailed: false });
+}
+
+function rememberUsageLoginKeychainFailure(source: string, stamp: UsageCredentialsStamp): void {
+    const logins = readUsageLogins();
+    const known = logins.find(entry => entry.source === source);
+    if (known && !known.keychainFailed && isSameUsageCredentialsStamp(known.stamp, stamp)) {
+        writeUsageLogin(logins, { ...known, keychainFailed: true });
+    }
+}
+
+// After a failed keychain lookup (see lookUpUsageCredentials), renders skip
+// that profile's keychain for MACOS_KEYCHAIN_BACKOFF and read only its
+// credentials file, while the login keychain file stays as it was then. A
+// locked keychain isn't written, so there the backoff holds. A write to it
+// (a login, another profile's token refresh, another app saving an item)
+// may be the account switch the backoff would hide, so the next render
+// reads the keychain once. Each credential source keeps its own entry, so
+// one profile's failure never suppresses another profile's lookup.
+function getKeychainLockFile(): string {
+    return path.join(getWritableCacheDir(), 'usage-keychain.lock');
+}
+const KeychainLockSchema = z.record(z.string(), z.object({
+    blockedUntil: z.number(),
+    keychainStamp: z.string()
+}));
+
+function readKeychainLocks(now: number): z.infer<typeof KeychainLockSchema> {
+    try {
+        const locks = parseJsonWithSchema(fs.readFileSync(getKeychainLockFile(), 'utf8'), KeychainLockSchema) ?? {};
+        // Bounded so a deadline written before the clock was set back cannot
+        // stretch the backoff; expired ones are dropped on the next write.
+        return Object.fromEntries(Object.entries(locks).filter(([, lock]) => lock.blockedUntil > now && lock.blockedUntil <= now + MACOS_KEYCHAIN_BACKOFF));
+    } catch {
+        return {};
+    }
+}
+
+function getUsageCredentialsWithBackoff(now: number, source: string, stamp: UsageCredentialsStamp): UsageCredentials | null {
     try {
         const lock = parseJsonWithSchema(fs.readFileSync(getNoCredentialsLockFile(), 'utf8'), NoCredentialsLockSchema);
         // Bounded like the usage lock, so a deadline written before the clock
@@ -595,7 +767,28 @@ function getUsageCredentialsWithBackoff(now: number): UsageCredentials | null {
         // No recorded miss - look the credentials up
     }
 
-    const credentials = getUsageCredentials();
+    const skipKeychain = readKeychainLocks(now)[source]?.keychainStamp === stamp.loginKeychain;
+    const { credentials, keychainFailed } = lookUpUsageCredentials(skipKeychain);
+    if (keychainFailed) {
+        try {
+            ensureCacheDirExists();
+            // Read again: other profiles' renders may have recorded their
+            // own failures while this read waited, up to its timeout
+            replaceFileSync(getKeychainLockFile(), JSON.stringify({
+                ...readKeychainLocks(now),
+                [source]: { blockedUntil: now + MACOS_KEYCHAIN_BACKOFF, keychainStamp: stamp.loginKeychain }
+            }));
+        } catch {
+            // Ignore lock file errors
+        }
+        rememberUsageLoginKeychainFailure(source, stamp);
+    } else if (credentials && !skipKeychain) {
+        // A lookup that skipped the keychain for its backoff, or failed it,
+        // doesn't name the login: the credentials file it fell back to may
+        // hold an older login than the keychain item that takes precedence.
+        rememberUsageLogin(source, stamp, getUsageCacheIdentity(credentials));
+    }
+
     if (!credentials) {
         try {
             ensureCacheDirExists();
@@ -606,6 +799,30 @@ function getUsageCredentialsWithBackoff(now: number): UsageCredentials | null {
     }
 
     return credentials;
+}
+
+function readFreshUsageCache(now: number, cacheIdentity: UsageCacheIdentity | null, options: FetchUsageDataOptions): { data: UsageData; fetchedAtMs: number } | null {
+    try {
+        const stat = fs.statSync(getCacheFile());
+        const fileAge = now - Math.floor(stat.mtimeMs / 1000);
+        // A file dated ahead of now still counts within one cache lifetime: a
+        // concurrent render may have written it after this one read the clock.
+        // Further ahead, it was written under a clock since set back, and
+        // trusting it would keep that data on screen until real time caught up.
+        if (Math.abs(fileAge) < CACHE_MAX_AGE) {
+            const rawCache = fs.readFileSync(getCacheFile(), 'utf8');
+            const fileData = parseCachedUsageData(rawCache);
+            if (fileData && !fileData.error
+                && tokenHashMatches(readCachedTokenHash(rawCache), cacheIdentity)
+                && answersUsageRequest(fileData, options)) {
+                return { data: fileData, fetchedAtMs: stat.mtimeMs };
+            }
+        }
+    } catch {
+        // File doesn't exist or read error - continue to API call
+    }
+
+    return null;
 }
 
 function readStaleUsageCache(cacheIdentity: UsageCacheIdentity | null): { data: UsageData; fetchedAtMs: number } | null {
@@ -727,6 +944,17 @@ function readActiveUsageLock(now: number): { blockedUntil: number; error: UsageL
     }
 
     return null;
+}
+
+// While the lock holds requests off, the login's cached snapshot stands in,
+// or else the lock's error until it runs out.
+function getStaleUsageDuringLock(
+    lock: { blockedUntil: number; error: UsageLockError; transient: boolean },
+    now: number,
+    cacheIdentity: UsageCacheIdentity | null,
+    requiredFields: readonly UsageDataField[]
+): UsageData {
+    return getStaleUsageOrError(lock.error, now, cacheIdentity, Math.max(1, lock.blockedUntil - now), requiredFields, lock.transient);
 }
 
 function parseRetryAfterSeconds(headerValue: string | string[] | undefined, nowMs = Date.now()): number | null {
@@ -932,8 +1160,10 @@ async function fetchFromUsageApi(token: string, deadlineMs = USAGE_API_TIMEOUT_M
 // The fingerprint of the login fetchUsageData last resolved, so per-login
 // state outside the usage cache (today's spend) stays with that login.
 let lastUsageAccountKey: string | null = null;
-// That login's credentials, which lookUpUsageAccount asks about.
-let lastUsageCredentials: UsageCredentials | null = null;
+// That login's credentials, which lookUpUsageAccount asks about, or
+// undefined when fetchUsageData answered for a known login without reading
+// them (see readKnownUsageLogin).
+let lastUsageCredentials: UsageCredentials | null | undefined;
 
 /** The token fingerprint of the login the last usage fetch used, or null when none was found. */
 export function getUsageAccountKey(): string | null {
@@ -962,35 +1192,45 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
         }
     }
 
-    // Resolve the credentials up front (before lock/rate-limit checks so auth
-    // failures are not masked as timeout) and fingerprint them so the file cache
-    // can be invalidated on an account switch: a different login, written by a
-    // logout/login, no longer matches the cached fingerprint.
-    const credentials = getUsageCredentialsWithBackoff(now);
+    // While nothing has written a login since the credentials were last read,
+    // and no keychain read has failed since, the login they held is still the
+    // one in use, and they are read only for a request: a fresh cache for that
+    // login is served as is, and so is its stale fallback while the lock holds
+    // requests off. The stamp is taken first, so a login written during the
+    // read below changes it for the next render.
+    const credentialsSource = getUsageCredentialsSource();
+    const credentialsStamp = getUsageCredentialsStamp();
+    const knownLogin = readKnownUsageLogin(credentialsSource, credentialsStamp);
+    if (knownLogin && !knownLogin.keychainFailed) {
+        lastUsageAccountKey = knownLogin.identity.preferredHash;
+        lastUsageCredentials = undefined;
+        const knownFileData = readFreshUsageCache(now, knownLogin.identity, options);
+        if (knownFileData) {
+            return cacheUsageData(knownFileData.data, now, knownFileData.fetchedAtMs);
+        }
+
+        const knownLoginLock = readActiveUsageLock(now);
+        if (knownLoginLock) {
+            return getStaleUsageDuringLock(knownLoginLock, now, knownLogin.identity, requiredFields);
+        }
+    }
+
+    // Resolve the credentials (before lock/rate-limit checks so auth failures
+    // are not masked as timeout: a logout changes the stamp, so the render
+    // after it reads them) and fingerprint them so the file cache can be
+    // invalidated on an account switch: a different login, written by a
+    // logout/login, no longer matches the cached fingerprint. Without them,
+    // as while the keychain is backed off, the known login still decides
+    // which stale cache may stand in.
+    const credentials = getUsageCredentialsWithBackoff(now, credentialsSource, credentialsStamp);
     const token = credentials?.accessToken ?? null;
-    const cacheIdentity = credentials ? getUsageCacheIdentity(credentials) : null;
+    const cacheIdentity = credentials ? getUsageCacheIdentity(credentials) : knownLogin?.identity ?? null;
     lastUsageAccountKey = cacheIdentity?.preferredHash ?? null;
     lastUsageCredentials = credentials;
 
-    // Check file cache
-    try {
-        const stat = fs.statSync(getCacheFile());
-        const fileAge = now - Math.floor(stat.mtimeMs / 1000);
-        // A file dated ahead of now still counts within one cache lifetime: a
-        // concurrent render may have written it after this one read the clock.
-        // Further ahead, it was written under a clock since set back, and
-        // trusting it would keep that data on screen until real time caught up.
-        if (Math.abs(fileAge) < CACHE_MAX_AGE) {
-            const rawCache = fs.readFileSync(getCacheFile(), 'utf8');
-            const fileData = parseCachedUsageData(rawCache);
-            if (fileData && !fileData.error
-                && tokenHashMatches(readCachedTokenHash(rawCache), cacheIdentity)
-                && answersUsageRequest(fileData, options)) {
-                return cacheUsageData(fileData, now, stat.mtimeMs);
-            }
-        }
-    } catch {
-        // File doesn't exist or read error - continue to API call
+    const fileData = readFreshUsageCache(now, cacheIdentity, options);
+    if (fileData) {
+        return cacheUsageData(fileData.data, now, fileData.fetchedAtMs);
     }
 
     if (!token) {
@@ -999,14 +1239,7 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
 
     const activeLock = readActiveUsageLock(now);
     if (activeLock) {
-        return getStaleUsageOrError(
-            activeLock.error,
-            now,
-            cacheIdentity,
-            Math.max(1, activeLock.blockedUntil - now),
-            requiredFields,
-            activeLock.transient
-        );
+        return getStaleUsageDuringLock(activeLock, now, cacheIdentity, requiredFields);
     }
 
     const inFlightLock = writeUsageLock(now + LOCK_MAX_AGE, 'timeout');
@@ -1161,17 +1394,33 @@ function storeUsageAccountEntry(entry: UsageAccountEntry): void {
  * failure, or a 429's Retry-After, up to a day.
  */
 export async function lookUpUsageAccount(): Promise<UsageAccount | null> {
-    const credentials = lastUsageCredentials;
     const tokenHash = lastUsageAccountKey;
-    if (!credentials || tokenHash === null) {
+    if (tokenHash === null || lastUsageCredentials === null) {
         return null;
     }
 
     const now = Math.floor(Date.now() / 1000);
     const cached = findUsageAccount(tokenHash);
-    if (cached || !claimUsageAccountLookup(tokenHash, now)) {
+    if (cached) {
+        return cached;
+    }
+
+    // Held off after a failed lookup, there is nothing to ask yet
+    if (isUsageAccountLookupBlocked(readUsageAccountEntries().find(entry => entry.tokenHash === tokenHash), now)) {
+        return null;
+    }
+
+    // Served for a known login, the fetch didn't read the credentials: only
+    // a lookup still to be made reads them, under the same backoffs
+    const credentials = lastUsageCredentials
+        ?? getUsageCredentialsWithBackoff(now, getUsageCredentialsSource(), getUsageCredentialsStamp());
+    if (!credentials || getUsageCacheIdentity(credentials).preferredHash !== tokenHash) {
+        return null;
+    }
+
+    if (!claimUsageAccountLookup(tokenHash, now)) {
         // Another render may have just named it
-        return cached ?? findUsageAccount(tokenHash);
+        return findUsageAccount(tokenHash);
     }
 
     const response = await fetchFromUsageApi(credentials.accessToken, USAGE_API_TIMEOUT_MS, PROFILE_API_PATH)
