@@ -432,7 +432,8 @@ export function isStaleUsageFallback(data: UsageData): boolean {
 
 type UsageLockError = z.infer<typeof UsageLockErrorSchema>;
 
-type UsageApiFetchResult = { kind: 'success'; body: string } | { kind: 'rate-limited'; retryAfterSeconds: number } | { kind: 'error'; transient: boolean };
+// statusCode is the API's answer's, for a request the API answered
+type UsageApiFetchResult = { kind: 'success'; body: string } | { kind: 'rate-limited'; retryAfterSeconds: number } | { kind: 'error'; transient: boolean; statusCode?: number };
 
 type MacKeychainSecretResult = { kind: 'found'; secret: string }
     | { kind: 'miss' }
@@ -1187,6 +1188,9 @@ async function fetchFromUsageApi(token: string, deadlineMs = USAGE_API_TIMEOUT_M
     return new Promise((resolve) => {
         let settled = false;
         let answeredStatus: number | undefined;
+        // A proxy that refuses CONNECT has its answer handed to the request as
+        // the response, so that answer's status isn't the API's
+        let proxyRefused = false;
 
         const finish = (value: UsageApiFetchResult) => {
             if (settled) {
@@ -1232,7 +1236,8 @@ async function fetchFromUsageApi(token: string, deadlineMs = USAGE_API_TIMEOUT_M
                     return;
                 }
 
-                finish({ kind: 'error', transient: isTransientUsageApiStatus(response.statusCode) });
+                const transient = isTransientUsageApiStatus(response.statusCode);
+                finish(proxyRefused ? { kind: 'error', transient } : { kind: 'error', transient, statusCode: response.statusCode });
             });
             // A connection dropped mid-body ends neither the response nor the
             // request, and the idle timeout can't fire on a closed socket
@@ -1240,6 +1245,9 @@ async function fetchFromUsageApi(token: string, deadlineMs = USAGE_API_TIMEOUT_M
             response.on('error', failRequest);
         });
 
+        request.on('proxyConnect', (connect: { statusCode: number }) => {
+            proxyRefused = connect.statusCode !== 200;
+        });
         request.on('error', failRequest);
         request.on('timeout', () => {
             request.destroy();
@@ -1619,11 +1627,24 @@ function writeAccountEmailLock(tokenHash: string, blockedUntil: number): void {
     }
 }
 
+// How long a failed lookup holds its fingerprint off. A 401 or 403 refuses
+// the token itself, and asking again with it only meets the same answer: a
+// refresh or a login replaces the token, and with it the fingerprint, which
+// isn't held off. Kept within the horizon isUsageAccountLookupBlocked trusts,
+// or a Retry-After further off would be read back as no backoff at all.
+function getUsageAccountLookupBackoff(response: UsageApiFetchResult): number {
+    if (response.kind === 'rate-limited') {
+        return Math.min(response.retryAfterSeconds, MAX_LOCK_HORIZON);
+    }
+    return response.kind === 'error' && (response.statusCode === 401 || response.statusCode === 403) ? MAX_LOCK_HORIZON : LOCK_MAX_AGE;
+}
+
 /**
  * The account and organization the last usage fetch's credentials belong to,
  * or null without credentials, with an expired access token or while the
  * lookup fails. Asks the profile endpoint at most once per token fingerprint
- * per backoff: 30 seconds after a failure, or a 429's Retry-After, up to a day.
+ * per backoff: 30 seconds after a failure, a day after a 401 or 403, or a
+ * 429's Retry-After, up to a day.
  */
 export async function lookUpUsageAccount(): Promise<UsageAccount | null> {
     const tokenHash = lastUsageAccountKey;
@@ -1659,12 +1680,7 @@ export async function lookUpUsageAccount(): Promise<UsageAccount | null> {
         .catch((): UsageApiFetchResult => ({ kind: 'error', transient: false }));
     const profile = response.kind === 'success' ? parseJsonWithSchema(response.body, ProfileAccountIdsSchema) : null;
     if (!profile) {
-        // Kept within the horizon isUsageAccountLookupBlocked trusts, or a
-        // Retry-After further off would be read back as no backoff at all
-        storeUsageAccountEntry({
-            tokenHash,
-            blockedUntil: now + (response.kind === 'rate-limited' ? Math.min(response.retryAfterSeconds, MAX_LOCK_HORIZON) : LOCK_MAX_AGE)
-        });
+        storeUsageAccountEntry({ tokenHash, blockedUntil: now + getUsageAccountLookupBackoff(response) });
         return null;
     }
 

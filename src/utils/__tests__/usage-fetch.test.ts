@@ -4921,7 +4921,7 @@ describe('lookUpUsageAccount', () => {
 
     it.each([
         { name: 'the request fails', reply: { mode: 'error' as const } },
-        { name: 'the endpoint rejects the token', reply: { mode: 'status' as const, statusCode: 401 } },
+        { name: 'the endpoint fails', reply: { mode: 'status' as const, statusCode: 500 } },
         { name: 'the response names no organization', reply: { mode: 'success' as const, responseBody: JSON.stringify({ account: { uuid: 'account-uuid' } }) } }
     ])('has no account and holds that login off for 30 seconds when $name', ({ reply }) => {
         const harness = createProbeHarness();
@@ -5064,6 +5064,50 @@ describe('lookUpUsageAccount', () => {
             expect(result.first).toEqual({ account: null });
             expect(result.requestCount).toBe(0);
             expect(result.accountCache).toBeNull();
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    // A token the profile endpoint refuses stays refused until a refresh or
+    // a login replaces it, and so changes its fingerprint.
+    it.each([401, 403])('holds off for a day a lookup the profile endpoint refuses with %i', (statusCode) => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome(`account-refused-${statusCode}`);
+            writeUsageCredentials(home.claudeConfig, { accessToken: 'access-a', refreshToken: 'refresh-a' });
+            const refused: ProbeReply = {
+                mode: 'status',
+                statusCode,
+                responseBody: JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'OAuth access token has expired' } })
+            };
+
+            const result = lookUpAt(harness, home, nowMs, refused);
+
+            expect(result.first).toEqual({ account: null });
+            expect(result.accountCache).toEqual([{ tokenHash: fingerprint('refresh-a'), blockedUntil: nowSeconds + 24 * 60 * 60 }]);
+            expect(profileRequests(lookUpAt(harness, home, nowMs + 60 * 60 * 1000, refused))).toBe(0);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('asks as soon as a refused login\'s tokens are replaced', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome('account-refused-refreshed');
+            writeUsageCredentials(home.claudeConfig, { accessToken: 'access-a', refreshToken: 'refresh-a' });
+
+            expect(profileRequests(lookUpAt(harness, home, nowMs, { mode: 'status', statusCode: 401 }))).toBe(1);
+
+            writeUsageCredentials(home.claudeConfig, { accessToken: 'access-b', refreshToken: 'refresh-b' });
+            const refreshed = lookUpAt(harness, home, nowMs + 5000, { mode: 'success', responseBody: profileResponseBody() });
+
+            expect(profileRequests(refreshed)).toBe(1);
+            expect(refreshed.profileAuthorization).toBe('Bearer access-b');
+            expect((refreshed.first as { account: unknown }).account).not.toBeNull();
         } finally {
             harness.cleanup();
         }
