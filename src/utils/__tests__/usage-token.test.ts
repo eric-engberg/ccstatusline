@@ -307,6 +307,15 @@ describe('getUsageToken', () => {
         expect(getSecurityCallLog()).toEqual([FIND_DEFAULT_ITEM]);
     });
 
+    it('reads the token\'s expiry, and a login whose expiry isn\'t a number as one without', () => {
+        vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
+        mockCredentialsFile(JSON.stringify({ claudeAiOauth: { accessToken: 'linux-file-token', expiresAt: 2200000000000 } }));
+        expect(getUsageCredentials()).toEqual({ accessToken: 'linux-file-token', expiresAt: 2200000000000 });
+
+        mockCredentialsFile(JSON.stringify({ claudeAiOauth: { accessToken: 'linux-file-token', expiresAt: '2039-09-20T00:00:00Z' } }));
+        expect(getUsageCredentials()).toEqual({ accessToken: 'linux-file-token' });
+    });
+
     it('uses the credentials file on non-macOS', () => {
         vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
         mockCredentialsFile(makeTokenPayload('linux-file-token'));

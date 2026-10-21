@@ -77,9 +77,11 @@ export interface FetchUsageDataOptions {
 
 // The access token is what the API is called with; the refresh token is kept
 // alongside it only to fingerprint the account (see getUsageCacheIdentity).
+// expiresAt is when the access token expires (ms), as Claude Code saves it.
 interface UsageCredentials {
     accessToken: string;
     refreshToken?: string;
+    expiresAt?: number;
 }
 
 interface UsageCacheIdentity {
@@ -114,7 +116,8 @@ const WINDOW_RESET_FIELD_SENTINELS: Partial<Record<UsageDataField, UsageDataFiel
 const UsageCredentialsSchema = z.object({
     claudeAiOauth: z.object({
         accessToken: z.string().nullable().optional(),
-        refreshToken: z.string().nullable().optional()
+        refreshToken: z.string().nullable().optional(),
+        expiresAt: z.number().nullable().catch(null).optional()
     }).optional()
 });
 const UsageLockErrorSchema = z.enum(['timeout', 'rate-limited', 'api-error', 'parse-error']);
@@ -265,8 +268,18 @@ function parseUsageCredentials(rawJson: string): UsageCredentials | null {
 
     return {
         accessToken: oauth.accessToken,
-        refreshToken: oauth.refreshToken ?? undefined
+        refreshToken: oauth.refreshToken ?? undefined,
+        expiresAt: oauth.expiresAt ?? undefined
     };
+}
+
+// Claude Code refreshes its access token only when it makes a request of its
+// own, so one that has expired stays that way until Claude Code is used
+// again, or for good if nothing refreshes it. The usage API answers it with a
+// 429, which would read as a rate limit and hold requests off for up to an
+// hour, and the profile endpoint with a 401, so neither is asked.
+function hasUsageTokenExpired(expiresAt: number | undefined, now: number): boolean {
+    return expiresAt !== undefined && expiresAt <= now * 1000;
 }
 
 function parseCachedUsageData(rawJson: string): UsageData | null {
@@ -690,12 +703,14 @@ const UsageLoginSchema = z.object({
     stamp: UsageCredentialsStampSchema,
     preferredHash: z.string(),
     accessTokenHash: z.string(),
+    expiresAt: z.number().optional(),
     keychainFailed: z.boolean()
 });
 const UsageLoginsSchema = z.array(UsageLoginSchema);
 
 interface KnownUsageLogin {
     identity: UsageCacheIdentity;
+    expiresAt?: number;
     keychainFailed: boolean;
 }
 
@@ -710,7 +725,7 @@ function readUsageLogins(): z.infer<typeof UsageLoginsSchema> {
 function readKnownUsageLogin(source: string, stamp: UsageCredentialsStamp): KnownUsageLogin | null {
     const login = readUsageLogins().find(entry => entry.source === source);
     return login && isSameUsageCredentialsStamp(login.stamp, stamp)
-        ? { identity: { preferredHash: login.preferredHash, accessTokenHash: login.accessTokenHash }, keychainFailed: login.keychainFailed }
+        ? { identity: { preferredHash: login.preferredHash, accessTokenHash: login.accessTokenHash }, expiresAt: login.expiresAt, keychainFailed: login.keychainFailed }
         : null;
 }
 
@@ -726,14 +741,15 @@ function writeUsageLogin(logins: z.infer<typeof UsageLoginsSchema>, login: z.inf
     }
 }
 
-function rememberUsageLogin(source: string, stamp: UsageCredentialsStamp, identity: UsageCacheIdentity): void {
+function rememberUsageLogin(source: string, stamp: UsageCredentialsStamp, credentials: UsageCredentials): void {
+    const identity = getUsageCacheIdentity(credentials);
     const logins = readUsageLogins();
     const known = logins.find(entry => entry.source === source);
-    if (known && !known.keychainFailed && isSameUsageCredentialsStamp(known.stamp, stamp) && known.preferredHash === identity.preferredHash && known.accessTokenHash === identity.accessTokenHash) {
+    if (known && !known.keychainFailed && isSameUsageCredentialsStamp(known.stamp, stamp) && known.preferredHash === identity.preferredHash && known.accessTokenHash === identity.accessTokenHash && known.expiresAt === credentials.expiresAt) {
         return;
     }
 
-    writeUsageLogin(logins, { source, stamp, ...identity, keychainFailed: false });
+    writeUsageLogin(logins, { source, stamp, ...identity, expiresAt: credentials.expiresAt, keychainFailed: false });
 }
 
 function rememberUsageLoginKeychainFailure(source: string, stamp: UsageCredentialsStamp): void {
@@ -802,7 +818,7 @@ function getUsageCredentialsWithBackoff(now: number, source: string, stamp: Usag
         // A lookup that skipped the keychain for its backoff, or failed it,
         // doesn't name the login: the credentials file it fell back to may
         // hold an older login than the keychain item that takes precedence.
-        rememberUsageLogin(source, stamp, getUsageCacheIdentity(credentials));
+        rememberUsageLogin(source, stamp, credentials);
     }
 
     if (!credentials) {
@@ -1212,6 +1228,10 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
             return cacheUsageData(knownFileData.data, now, knownFileData.fetchedAtMs);
         }
 
+        if (hasUsageTokenExpired(knownLogin.expiresAt, now)) {
+            return setCachedUsageError('login-expired', now);
+        }
+
         const knownLoginLock = readActiveUsageLock(now);
         if (knownLoginLock) {
             return getStaleUsageDuringLock(knownLoginLock, now, knownLogin.identity, requiredFields);
@@ -1238,6 +1258,15 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
 
     if (!token) {
         return getStaleUsageOrError('no-credentials', now, cacheIdentity, LOCK_MAX_AGE, requiredFields);
+    }
+
+    // No lock is written and no stale cache stands in: Claude Code's refresh
+    // writes the login, so the next render reads the new token and uses it,
+    // while showing the last answer would hide that this login has stopped
+    // working. Checked before the lock, which an expired token's 429s may
+    // have left.
+    if (hasUsageTokenExpired(credentials?.expiresAt, now)) {
+        return setCachedUsageError('login-expired', now);
     }
 
     const activeLock = readActiveUsageLock(now);
@@ -1392,9 +1421,9 @@ function storeUsageAccountEntry(entry: UsageAccountEntry): void {
 
 /**
  * The account and organization the last usage fetch's credentials belong to,
- * or null without credentials or while the lookup fails. Asks the profile
- * endpoint at most once per token fingerprint per backoff: 30 seconds after a
- * failure, or a 429's Retry-After, up to a day.
+ * or null without credentials, with an expired access token or while the
+ * lookup fails. Asks the profile endpoint at most once per token fingerprint
+ * per backoff: 30 seconds after a failure, or a 429's Retry-After, up to a day.
  */
 export async function lookUpUsageAccount(): Promise<UsageAccount | null> {
     const tokenHash = lastUsageAccountKey;
@@ -1417,7 +1446,7 @@ export async function lookUpUsageAccount(): Promise<UsageAccount | null> {
     // a lookup still to be made reads them, under the same backoffs
     const credentials = lastUsageCredentials
         ?? getUsageCredentialsWithBackoff(now, getUsageCredentialsSource(), getUsageCredentialsStamp());
-    if (!credentials || getUsageCacheIdentity(credentials).preferredHash !== tokenHash) {
+    if (!credentials || getUsageCacheIdentity(credentials).preferredHash !== tokenHash || hasUsageTokenExpired(credentials.expiresAt, now)) {
         return null;
     }
 
