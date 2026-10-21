@@ -549,8 +549,9 @@ function parseLockContents(lockContents: string | null): { blockedUntil: number;
 }
 
 // createTokenHome writes an access-token-only credentials file; these tests
-// need a refresh token alongside it to exercise the account fingerprint.
-function writeUsageCredentials(claudeConfig: string, claudeAiOauth: { accessToken: string; refreshToken?: string }): void {
+// need a refresh token alongside it to exercise the account fingerprint, or
+// the access token's expiry (ms), as Claude Code saves it.
+function writeUsageCredentials(claudeConfig: string, claudeAiOauth: { accessToken: string; refreshToken?: string; expiresAt?: number }): void {
     fs.writeFileSync(path.join(claudeConfig, '.credentials.json'), JSON.stringify({ claudeAiOauth }));
 }
 
@@ -1746,6 +1747,83 @@ describe('fetchUsageData error handling', () => {
             expect(result.first).toEqual({ error: 'no-credentials' });
             expect(result.requestCount).toBe(0);
             expect(home.readSecurityCalls()).toEqual(['find-generic-password -s Claude Code-credentials -a example -w']);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('shows Login expired without asking the usage API once the access token has expired, also on reset-only lines', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome('login-expired');
+            writeUsageCredentials(home.claudeConfig, { accessToken: 'access-a', refreshToken: 'refresh-a', expiresAt: nowMs - 1000 });
+
+            const result = harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                mode: 'unexpected',
+                nowMs,
+                pathDir: home.bin,
+                prefetchResetOnly: true
+            });
+
+            expect(result.first).toEqual({ error: 'login-expired' });
+            expect(result.second).toEqual({ error: 'login-expired' });
+            expect(result.resetOnly).toEqual({ error: 'login-expired' });
+            expect(result.requestCount).toBe(0);
+            // Nothing holds requests off, so a refreshed token is used as soon as it's saved
+            expect(result.lockExists).toBe(false);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('shows Login expired rather than the login\'s older cached usage', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome('login-expired-stale-cache');
+            writeUsageCredentials(home.claudeConfig, { accessToken: 'access-a', refreshToken: 'refresh-a', expiresAt: nowMs - 1000 });
+            seedUsageCache(home, { sessionUsage: 5, weeklyUsage: 3, tokenHash: createHash('sha256').update('refresh-a').digest('hex').slice(0, 16) });
+
+            const result = harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                mode: 'unexpected',
+                nowMs,
+                pathDir: home.bin
+            });
+
+            expect(result.first).toEqual({ error: 'login-expired' });
+            expect(result.requestCount).toBe(0);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('asks the usage API with an access token that hasn\'t expired yet, and again as soon as a refreshed one is saved', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome('login-refreshed');
+            writeUsageCredentials(home.claudeConfig, { accessToken: 'access-a', refreshToken: 'refresh-a', expiresAt: nowMs - 1000 });
+            const renderAt = (probeNowMs: number) => harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                mode: 'success',
+                nowMs: probeNowMs,
+                pathDir: home.bin,
+                responseBody: successResponseBody
+            });
+
+            expect(renderAt(nowMs).first).toEqual({ error: 'login-expired' });
+
+            writeUsageCredentials(home.claudeConfig, { accessToken: 'access-b', refreshToken: 'refresh-b', expiresAt: nowMs + 8 * 60 * 60 * 1000 });
+            const refreshed = renderAt(nowMs + 1000);
+            expect(refreshed.first).toMatchObject({ sessionUsage: 42, weeklyUsage: 17 });
+            expect(refreshed.requestCount).toBe(1);
+            expect(refreshed.requestAuthorization).toBe('Bearer access-b');
         } finally {
             harness.cleanup();
         }
@@ -3466,7 +3544,7 @@ interface KeychainStub {
     bin: string;
     calls: () => string[];
     removeItem: (service: string, account?: string) => void;
-    setItem: (service: string, claudeAiOauth: { accessToken: string; refreshToken?: string }, account?: string) => void;
+    setItem: (service: string, claudeAiOauth: { accessToken: string; refreshToken?: string; expiresAt?: number }, account?: string) => void;
     setMode: (mode: 'answer' | 'locked' | 'timeout') => void;
     writeKeychainLockDuringNextCall: (contents: string) => void;
 }
@@ -3670,6 +3748,34 @@ describe('fetchUsageData keychain reads on macOS', () => {
             expect(result.requestAuthorization).toBe('Bearer access-a');
             expect(result.first.sessionUsage).toBe(42);
             expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM, FIND_ANY_DEFAULT_ITEM]);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('shows Login expired once the known login\'s token expires, without running security, until a refreshed one is saved', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const { home } = harness.createEmptyHome('keychain-login-expired');
+            const keychain = createKeychainStub(home);
+            const startMs = Date.now();
+            keychain.setItem(DEFAULT_KEYCHAIN_SERVICE, { accessToken: 'access-a', refreshToken: 'refresh-a', expiresAt: startMs + 100000 });
+            const renderAt = createRenderer(harness, home, keychain);
+
+            expect(renderAt(startMs).first.sessionUsage).toBe(42);
+
+            // Past the cache's lifetime and the token's, with nothing written since
+            const expired = renderAt(startMs + 200000, { mode: 'unexpected' });
+            expect(expired.first).toEqual({ error: 'login-expired' });
+            expect(expired.requestCount).toBe(0);
+            expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM]);
+
+            keychain.setItem(DEFAULT_KEYCHAIN_SERVICE, { accessToken: 'access-b', refreshToken: 'refresh-b', expiresAt: startMs + 8 * 60 * 60 * 1000 });
+            const refreshed = renderAt(startMs + 205000, { responseBody: accountBResponseBody });
+            expect(refreshed.first.sessionUsage).toBe(55);
+            expect(refreshed.requestAuthorization).toBe('Bearer access-b');
+            expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM, FIND_DEFAULT_ITEM]);
         } finally {
             harness.cleanup();
         }
@@ -4938,6 +5044,26 @@ describe('lookUpUsageAccount', () => {
 
             expect(result.first).toEqual({ account: null });
             expect(result.requestCount).toBe(0);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('asks nothing for a login whose access token has expired', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome('account-login-expired');
+            const probeNowMs = Date.now();
+            writeUsageCredentials(home.claudeConfig, { accessToken: 'access-a', refreshToken: 'refresh-a', expiresAt: probeNowMs - 1000 });
+            // Usage fetched just before the token expired is still fresh
+            seedUsageCache(home, { sessionUsage: 42, weeklyUsage: 17, extraUsageEnabled: true, extraUsageUsed: 10000, tokenHash: fingerprint('refresh-a') });
+
+            const result = lookUpAt(harness, home, probeNowMs, { mode: 'unexpected' });
+
+            expect(result.first).toEqual({ account: null });
+            expect(result.requestCount).toBe(0);
+            expect(result.accountCache).toBeNull();
         } finally {
             harness.cleanup();
         }
