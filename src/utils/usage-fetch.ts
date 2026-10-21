@@ -57,6 +57,10 @@ const MACOS_SECURITY_TIMEOUT_MS = 5000;
 // `security` exits with the low byte of the OSStatus it failed with: 44 for
 // errSecItemNotFound (-25300), the one failure that means the item isn't there.
 const MACOS_SECURITY_ITEM_NOT_FOUND = 44;
+// Claude Code saves its keychain login under an account named for the user,
+// or under this one for a name with characters outside the pattern.
+const MACOS_KEYCHAIN_ACCOUNT_PATTERN = /^[a-zA-Z0-9._-]+$/;
+const MACOS_KEYCHAIN_FALLBACK_ACCOUNT = 'claude-code-user';
 // How long the keychain is left alone after a `security` call fails any
 // other way. A keychain that timed out or is locked stays that way while
 // nobody is at the machine, and each further call queues one more unlock
@@ -538,16 +542,27 @@ function isMissingKeychainItem(error: unknown): boolean {
     return (error as { status?: unknown } | null)?.status === MACOS_SECURITY_ITEM_NOT_FOUND;
 }
 
+// The account Claude Code saves its login under, worked out as it does: USER,
+// or the login name without one, and claude-code-user for a name with any
+// other characters than these.
+function getMacKeychainAccount(): string {
+    let account: string;
+    try {
+        const user = process.env.USER ?? '';
+        account = user === '' ? os.userInfo().username : user;
+    } catch {
+        return MACOS_KEYCHAIN_FALLBACK_ACCOUNT;
+    }
+    return MACOS_KEYCHAIN_ACCOUNT_PATTERN.test(account) ? account : MACOS_KEYCHAIN_FALLBACK_ACCOUNT;
+}
+
 // A missing item is a miss. Any other failure (a timeout, a locked keychain, a
 // refused prompt) ends the keychain lookup (see lookUpUsageCredentials).
-function readMacKeychainSecret(service: string, account?: string): MacKeychainSecretResult {
+function findMacKeychainSecret(searchArgs: string[]): MacKeychainSecretResult {
     try {
-        const args = account
-            ? ['find-generic-password', '-s', service, '-a', account, '-w']
-            : ['find-generic-password', '-s', service, '-w'];
         const secret = execFileSync(
             'security',
-            args,
+            ['find-generic-password', ...searchArgs, '-w'],
             { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: MACOS_SECURITY_TIMEOUT_MS, windowsHide: true }
         ).trim();
         return { kind: 'found', secret };
@@ -556,31 +571,25 @@ function readMacKeychainSecret(service: string, account?: string): MacKeychainSe
     }
 }
 
-function readUsageCredentialsFromMacKeychainService(service: string, account?: string): MacKeychainCredentialResult {
-    const result = readMacKeychainSecret(service, account);
+// Claude Code reads and writes its login under its own account. A lookup by
+// service alone answers with whichever item for it macOS finds first, which
+// may be one another account left behind (running Claude Code as root once
+// leaves root's login, never refreshed again) or one holding only MCP tokens.
+// That lookup stands in only when nothing is saved under the account, as
+// older setups may keep it.
+function readMacKeychainSecret(service: string): MacKeychainSecretResult {
+    const accountResult = findMacKeychainSecret(['-s', service, '-a', getMacKeychainAccount()]);
+    return accountResult.kind === 'miss' ? findMacKeychainSecret(['-s', service]) : accountResult;
+}
+
+function readUsageCredentialsFromMacKeychainService(service: string): MacKeychainCredentialResult {
+    const result = readMacKeychainSecret(service);
     if (result.kind !== 'found') {
         return result;
     }
 
     const credentials = result.secret ? parseUsageCredentials(result.secret) : null;
     return credentials ? { kind: 'found', credentials } : { kind: 'miss' };
-}
-
-function getOsUsername(): string | null {
-    try {
-        return os.userInfo().username;
-    } catch {
-        return null;
-    }
-}
-
-// The login keychain can hold several items under one service, differing only by
-// account; a service-only lookup returns whichever matches first, which may be an
-// entry lacking `claudeAiOauth`. Claude Code reads/writes with an explicit account
-// (the OS username), so mirror that.
-function readUsageCredentialsFromMacKeychainUserAccount(service: string): MacKeychainCredentialResult {
-    const osUsername = getOsUsername();
-    return osUsername ? readUsageCredentialsFromMacKeychainService(service, osUsername) : { kind: 'miss' };
 }
 
 function readUsageCredentialsFromCredentialsFile(): UsageCredentials | null {
@@ -618,14 +627,7 @@ function readUsageCredentialsFromMacKeychain(): MacKeychainCredentialResult {
     // hold only MCP tokens), so fall through only to the profile's own
     // .credentials.json, Claude Code's fallback store, rather than surface
     // another account's usage.
-    const configDirService = getMacKeychainConfigDirService();
-    const result = readUsageCredentialsFromMacKeychainService(configDirService ?? MACOS_USAGE_CREDENTIALS_SERVICE);
-
-    // The default service can hold several items that differ only by account,
-    // and Claude Code's own is under the OS username. A failure skips the retry.
-    return configDirService === null && result.kind === 'miss'
-        ? readUsageCredentialsFromMacKeychainUserAccount(MACOS_USAGE_CREDENTIALS_SERVICE)
-        : result;
+    return readUsageCredentialsFromMacKeychainService(getMacKeychainConfigDirService() ?? MACOS_USAGE_CREDENTIALS_SERVICE);
 }
 
 // A `security` call that fails other than for a missing item (it timed out,
