@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import type { Mock } from 'vitest';
 import {
@@ -29,22 +30,31 @@ const CREDENTIALS_FILE = path.join('/fake/claude', '.credentials.json');
 const mockedExecFileSync = execFileSync as unknown as Mock;
 const ORIGINAL_CLAUDE_CONFIG_DIR = process.env.CLAUDE_CONFIG_DIR;
 const ORIGINAL_SECURESTORAGE_CONFIG_DIR = process.env.CLAUDE_SECURESTORAGE_CONFIG_DIR;
+const ORIGINAL_USER = process.env.USER;
+// Claude Code saves its login under the account USER names
+const FIND_DEFAULT_ITEM = 'find-generic-password -s Claude Code-credentials -a example -w';
+const FIND_ANY_DEFAULT_ITEM = 'find-generic-password -s Claude Code-credentials -w';
 
 // The config-dir lookup keys off these variables, so every test starts from
 // the default (unset) profile regardless of the environment running the suite.
 beforeEach(() => {
     delete process.env.CLAUDE_CONFIG_DIR;
     delete process.env.CLAUDE_SECURESTORAGE_CONFIG_DIR;
+    process.env.USER = 'example';
 });
 
 afterEach(() => {
     delete process.env.CLAUDE_CONFIG_DIR;
     delete process.env.CLAUDE_SECURESTORAGE_CONFIG_DIR;
+    delete process.env.USER;
     if (ORIGINAL_CLAUDE_CONFIG_DIR !== undefined) {
         process.env.CLAUDE_CONFIG_DIR = ORIGINAL_CLAUDE_CONFIG_DIR;
     }
     if (ORIGINAL_SECURESTORAGE_CONFIG_DIR !== undefined) {
         process.env.CLAUDE_SECURESTORAGE_CONFIG_DIR = ORIGINAL_SECURESTORAGE_CONFIG_DIR;
+    }
+    if (ORIGINAL_USER !== undefined) {
+        process.env.USER = ORIGINAL_USER;
     }
 });
 
@@ -153,8 +163,8 @@ describe('getUsageToken', () => {
         expect(getUsageToken()).toBe('exact-token');
         expect(getUsageToken()).toBe('exact-token');
         expect(getSecurityCallLog()).toEqual([
-            'find-generic-password -s Claude Code-credentials -w',
-            'find-generic-password -s Claude Code-credentials -w'
+            FIND_DEFAULT_ITEM,
+            FIND_DEFAULT_ITEM
         ]);
     });
 
@@ -169,9 +179,69 @@ describe('getUsageToken', () => {
             refreshToken: 'file-refresh-token'
         });
         expect(getSecurityCallLog()).toEqual([
-            'find-generic-password -s Claude Code-credentials -w',
-            'find-generic-password -s Claude Code-credentials -w'
+            FIND_DEFAULT_ITEM,
+            FIND_ANY_DEFAULT_ITEM,
+            FIND_DEFAULT_ITEM,
+            FIND_ANY_DEFAULT_ITEM
         ]);
+    });
+
+    it('reads the item Claude Code saved under the login\'s account before another account\'s item for the service', () => {
+        vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
+        mockCredentialsFile();
+        // Running Claude Code as root once left root's login behind, which a
+        // lookup without an account may find first
+        mockedExecFileSync.mockImplementation((command: string, args?: string[]) => {
+            if (command === 'security' && args?.join(' ') === FIND_DEFAULT_ITEM) {
+                return makeTokenPayload('own-token', 'own-refresh-token');
+            }
+
+            if (command === 'security' && args?.join(' ') === FIND_ANY_DEFAULT_ITEM) {
+                return makeTokenPayload('root-token', 'root-refresh-token');
+            }
+
+            throw new Error(`Unexpected security args: ${args?.join(' ')}`);
+        });
+
+        expect(getUsageToken()).toBe('own-token');
+        expect(getSecurityCallLog()).toEqual([FIND_DEFAULT_ITEM]);
+    });
+
+    it('reads the service\'s item under any account when none is saved under the login\'s, as older setups may keep it', () => {
+        vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
+        mockCredentialsFile(makeTokenPayload('file-token'));
+        mockedExecFileSync.mockImplementation((command: string, args?: string[]) => {
+            if (command === 'security' && args?.join(' ') === FIND_DEFAULT_ITEM) {
+                throw makeMissingItemError();
+            }
+
+            if (command === 'security' && args?.join(' ') === FIND_ANY_DEFAULT_ITEM) {
+                return makeTokenPayload('older-token');
+            }
+
+            throw new Error(`Unexpected security args: ${args?.join(' ')}`);
+        });
+
+        expect(getUsageToken()).toBe('older-token');
+        expect(getSecurityCallLog()).toEqual([FIND_DEFAULT_ITEM, FIND_ANY_DEFAULT_ITEM]);
+    });
+
+    it.each([
+        ['the login name without USER', undefined, os.userInfo().username],
+        ['the login name for an empty USER', '', os.userInfo().username],
+        ['claude-code-user for a name with other characters', 'first last', 'claude-code-user']
+    ])('names the account as Claude Code does: %s', (_label, user, account) => {
+        if (user === undefined) {
+            delete process.env.USER;
+        } else {
+            process.env.USER = user;
+        }
+        vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
+        mockCredentialsFile();
+        mockedExecFileSync.mockImplementation(() => makeTokenPayload('own-token'));
+
+        expect(getUsageToken()).toBe('own-token');
+        expect(getSecurityCallLog()).toEqual([`find-generic-password -s Claude Code-credentials -a ${account} -w`]);
     });
 
     it('finds no login rather than another profile\'s when the exact item holds only MCP tokens', () => {
@@ -181,7 +251,7 @@ describe('getUsageToken', () => {
 
         expect(getUsageCredentials()).toBeNull();
         expect(getSecurityCallLog()).toEqual([
-            'find-generic-password -s Claude Code-credentials -w'
+            FIND_DEFAULT_ITEM
         ]);
     });
 
@@ -199,8 +269,8 @@ describe('getUsageToken', () => {
         expect(getUsageToken()).toBe('file-token');
         expect(getUsageToken()).toBe('file-token');
         expect(getSecurityCallLog()).toEqual([
-            'find-generic-password -s Claude Code-credentials -w',
-            'find-generic-password -s Claude Code-credentials -w'
+            FIND_DEFAULT_ITEM,
+            FIND_DEFAULT_ITEM
         ]);
     });
 
@@ -213,7 +283,7 @@ describe('getUsageToken', () => {
 
         expect(getUsageToken()).toBeNull();
         expect(getSecurityCallLog()).toEqual([
-            'find-generic-password -s Claude Code-credentials -w'
+            FIND_DEFAULT_ITEM
         ]);
         // A blocked `security` (e.g. waiting on a keychain unlock prompt)
         // must not hold the status line until someone answers it.
@@ -234,7 +304,7 @@ describe('getUsageToken', () => {
         });
 
         expect(getUsageToken()).toBe('file-token');
-        expect(getSecurityCallLog()).toEqual(['find-generic-password -s Claude Code-credentials -w']);
+        expect(getSecurityCallLog()).toEqual([FIND_DEFAULT_ITEM]);
     });
 
     it('uses the credentials file on non-macOS', () => {
@@ -266,8 +336,8 @@ describe('getUsageToken', () => {
             refreshToken: 'profile-refresh-token'
         });
         expect(getSecurityCallLog()).toEqual([
-            `find-generic-password -s ${configDirService} -w`,
-            `find-generic-password -s ${configDirService} -w`
+            `find-generic-password -s ${configDirService} -a example -w`,
+            `find-generic-password -s ${configDirService} -a example -w`
         ]);
     });
 
@@ -291,7 +361,9 @@ describe('getUsageToken', () => {
             refreshToken: 'file-refresh-token'
         });
         expect(getSecurityCallLog()).toEqual([
+            `find-generic-password -s ${configDirService} -a example -w`,
             `find-generic-password -s ${configDirService} -w`,
+            `find-generic-password -s ${configDirService} -a example -w`,
             `find-generic-password -s ${configDirService} -w`
         ]);
     });

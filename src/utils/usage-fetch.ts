@@ -44,6 +44,10 @@ const MACOS_SECURITY_TIMEOUT_MS = 5000;
 // `security` exits with the low byte of the OSStatus it failed with: 44 for
 // errSecItemNotFound (-25300), the one failure that means the item isn't there.
 const MACOS_SECURITY_ITEM_NOT_FOUND = 44;
+// Claude Code saves its keychain login under an account named for the user,
+// or under this one for a name with characters outside the pattern.
+const MACOS_KEYCHAIN_ACCOUNT_PATTERN = /^[a-zA-Z0-9._-]+$/;
+const MACOS_KEYCHAIN_FALLBACK_ACCOUNT = 'claude-code-user';
 // How long the keychain is left alone after a `security` call fails any
 // other way. A keychain that timed out or is locked stays that way while
 // nobody is at the machine, and each further call queues one more unlock
@@ -503,13 +507,27 @@ function isMissingKeychainItem(error: unknown): boolean {
     return (error as { status?: unknown } | null)?.status === MACOS_SECURITY_ITEM_NOT_FOUND;
 }
 
+// The account Claude Code saves its login under, worked out as it does: USER,
+// or the login name without one, and claude-code-user for a name with any
+// other characters than these.
+function getMacKeychainAccount(): string {
+    let account: string;
+    try {
+        const user = process.env.USER ?? '';
+        account = user === '' ? os.userInfo().username : user;
+    } catch {
+        return MACOS_KEYCHAIN_FALLBACK_ACCOUNT;
+    }
+    return MACOS_KEYCHAIN_ACCOUNT_PATTERN.test(account) ? account : MACOS_KEYCHAIN_FALLBACK_ACCOUNT;
+}
+
 // Null for a missing item. Any other failure throws, which ends the keychain
 // lookup (see lookUpUsageCredentials).
-function readMacKeychainSecret(service: string): string | null {
+function findMacKeychainSecret(searchArgs: string[]): string | null {
     try {
         return execFileSync(
             'security',
-            ['find-generic-password', '-s', service, '-w'],
+            ['find-generic-password', ...searchArgs, '-w'],
             { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: MACOS_SECURITY_TIMEOUT_MS, windowsHide: true }
         ).trim();
     } catch (error) {
@@ -518,6 +536,16 @@ function readMacKeychainSecret(service: string): string | null {
         }
         throw error;
     }
+}
+
+// Claude Code reads and writes its login under its own account. A lookup by
+// service alone answers with whichever item for it macOS finds first, which
+// may be one another account left behind: running Claude Code as root once
+// leaves root's login, never refreshed again. That lookup stands in only
+// when nothing is saved under the account, as older setups may keep it.
+function readMacKeychainSecret(service: string): string | null {
+    return findMacKeychainSecret(['-s', service, '-a', getMacKeychainAccount()])
+        ?? findMacKeychainSecret(['-s', service]);
 }
 
 function readUsageCredentialsFromMacKeychainService(service: string): UsageCredentials | null {

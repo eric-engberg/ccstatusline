@@ -401,6 +401,8 @@ process.stdout.write(JSON.stringify({
             // real one lets the probe escape into the user's actual home
             // and read/write the live ~/.cache/ccstatusline
             USERPROFILE: options.home,
+            // The account Claude Code saves its macOS keychain login under
+            USER: 'example',
             // The usage cache falls back to the system temp folder when the
             // home's cache folder can't be written
             TMPDIR: probeTmpDir,
@@ -1499,7 +1501,10 @@ describe('fetchUsageData error handling', () => {
             expect(result.first).toMatchObject({ sessionUsage: 42, weeklyUsage: 17 });
             expect(result.requestCount).toBe(1);
             expect(result.requestAuthorization).toBe('Bearer default-access');
-            expect(home.readSecurityCalls()).toEqual(['find-generic-password -s Claude Code-credentials -w']);
+            expect(home.readSecurityCalls()).toEqual([
+                'find-generic-password -s Claude Code-credentials -a example -w',
+                'find-generic-password -s Claude Code-credentials -w'
+            ]);
         } finally {
             harness.cleanup();
         }
@@ -1526,7 +1531,7 @@ describe('fetchUsageData error handling', () => {
 
             expect(result.first).toEqual({ error: 'no-credentials' });
             expect(result.requestCount).toBe(0);
-            expect(home.readSecurityCalls()).toEqual(['find-generic-password -s Claude Code-credentials -w']);
+            expect(home.readSecurityCalls()).toEqual(['find-generic-password -s Claude Code-credentials -a example -w']);
         } finally {
             harness.cleanup();
         }
@@ -3194,14 +3199,21 @@ describe('lookUpUsageAccount', () => {
 interface KeychainStub {
     bin: string;
     calls: () => string[];
-    removeItem: (service: string) => void;
-    setItem: (service: string, claudeAiOauth: { accessToken: string; refreshToken?: string }) => void;
+    removeItem: (service: string, account?: string) => void;
+    setItem: (service: string, claudeAiOauth: { accessToken: string; refreshToken?: string }, account?: string) => void;
     setMode: (mode: 'answer' | 'locked' | 'timeout') => void;
     writeKeychainLockDuringNextCall: (contents: string) => void;
 }
 
 const DEFAULT_KEYCHAIN_SERVICE = 'Claude Code-credentials';
-const FIND_DEFAULT_ITEM = `find-generic-password -s ${DEFAULT_KEYCHAIN_SERVICE} -w`;
+// The probes' USER, the account Claude Code saves its login under
+const KEYCHAIN_ACCOUNT = 'example';
+const FIND_DEFAULT_ITEM = `find-generic-password -s ${DEFAULT_KEYCHAIN_SERVICE} -a ${KEYCHAIN_ACCOUNT} -w`;
+const FIND_ANY_DEFAULT_ITEM = `find-generic-password -s ${DEFAULT_KEYCHAIN_SERVICE} -w`;
+
+function findItem(service: string): string {
+    return `find-generic-password -s ${service} -a ${KEYCHAIN_ACCOUNT} -w`;
+}
 
 function makeConfigDirService(configDir: string): string {
     return `${DEFAULT_KEYCHAIN_SERVICE}-${createHash('sha256').update(configDir).digest('hex').slice(0, 8)}`;
@@ -3213,6 +3225,8 @@ function fingerprint(token: string): string {
 
 // A stand-in for macOS `security` that logs every call and answers from one
 // file per keychain item, exiting 44 (errSecItemNotFound) for a missing item.
+// Items are saved under an account, KEYCHAIN_ACCOUNT unless given, and a
+// lookup without one answers with the service's item saved first.
 // In 'locked' mode every call exits 36 (errSecInteractionNotAllowed), as for
 // a locked keychain that may not prompt; in 'timeout' mode none answers.
 // Setting or removing an item also changes the login keychain's database
@@ -3226,6 +3240,7 @@ function createKeychainStub(home: string): KeychainStub {
     fs.mkdirSync(itemsDir, { recursive: true });
     fs.mkdirSync(path.dirname(keychainFile), { recursive: true });
     fs.writeFileSync(keychainFile, '');
+    fs.writeFileSync(path.join(bin, 'order'), '');
     fs.writeFileSync(path.join(bin, 'security'), [
         '#!/bin/sh',
         `dir='${bin}'`,
@@ -3236,12 +3251,18 @@ function createKeychainStub(home: string): KeychainStub {
         '    timeout) exec /bin/sleep 10 ;;',
         'esac',
         'if [ "$1" = dump-keychain ]; then',
-        '    for item in "$dir"/items/*; do',
-        '        [ -f "$item" ] && printf \'keychain: "login.keychain-db"\\n    "svce"<blob>="%s"\\n\' "${item##*/}"',
-        '    done',
+        '    while IFS= read -r item; do',
+        '        [ -f "$dir/items/$item" ] && printf \'keychain: "login.keychain-db"\\n    "svce"<blob>="%s"\\n\' "${item#*/}"',
+        '    done < "$dir/order"',
         '    exit 0',
         'fi',
-        '[ -f "$dir/items/$3" ] && exec /bin/cat "$dir/items/$3"',
+        'if [ "$4" = -a ]; then',
+        '    [ -f "$dir/items/$5/$3" ] && exec /bin/cat "$dir/items/$5/$3"',
+        '    exit 44',
+        'fi',
+        'while IFS= read -r item; do',
+        '    [ "${item#*/}" = "$3" ] && [ -f "$dir/items/$item" ] && exec /bin/cat "$dir/items/$item"',
+        'done < "$dir/order"',
         'exit 44',
         ''
     ].join('\n'));
@@ -3256,12 +3277,17 @@ function createKeychainStub(home: string): KeychainStub {
                 return [];
             }
         },
-        removeItem: (service) => {
-            fs.rmSync(path.join(itemsDir, service));
+        removeItem: (service, account = KEYCHAIN_ACCOUNT) => {
+            fs.rmSync(path.join(itemsDir, account, service));
             fs.appendFileSync(keychainFile, '.');
         },
-        setItem: (service, claudeAiOauth) => {
-            fs.writeFileSync(path.join(itemsDir, service), JSON.stringify({ claudeAiOauth }));
+        setItem: (service, claudeAiOauth, account = KEYCHAIN_ACCOUNT) => {
+            const itemFile = path.join(itemsDir, account, service);
+            if (!fs.existsSync(itemFile)) {
+                fs.mkdirSync(path.dirname(itemFile), { recursive: true });
+                fs.appendFileSync(path.join(bin, 'order'), `${account}/${service}\n`);
+            }
+            fs.writeFileSync(itemFile, JSON.stringify({ claudeAiOauth }));
             fs.appendFileSync(keychainFile, '.');
         },
         setMode: (mode) => {
@@ -3338,6 +3364,45 @@ describe('fetchUsageData keychain reads on macOS', () => {
         }
     });
 
+    it('reads the login saved under the account Claude Code runs as, not one another account left for the same service', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const { home } = harness.createEmptyHome('keychain-account');
+            const keychain = createKeychainStub(home);
+            // Running Claude Code as root once left root's login behind,
+            // which a lookup without an account finds first
+            keychain.setItem(DEFAULT_KEYCHAIN_SERVICE, { accessToken: 'access-root', refreshToken: 'refresh-root' }, 'root');
+            keychain.setItem(DEFAULT_KEYCHAIN_SERVICE, { accessToken: 'access-a', refreshToken: 'refresh-a' });
+            const renderAt = createRenderer(harness, home, keychain);
+
+            const result = renderAt(Date.now());
+            expect(result.requestAuthorization).toBe('Bearer access-a');
+            expect(result.first.sessionUsage).toBe(42);
+            expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM]);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('reads the service\'s item under another account when none is saved under its own, as older setups may keep it', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const { home } = harness.createEmptyHome('keychain-other-account');
+            const keychain = createKeychainStub(home);
+            keychain.setItem(DEFAULT_KEYCHAIN_SERVICE, { accessToken: 'access-a', refreshToken: 'refresh-a' }, 'older-account');
+            const renderAt = createRenderer(harness, home, keychain);
+
+            const result = renderAt(Date.now());
+            expect(result.requestAuthorization).toBe('Bearer access-a');
+            expect(result.first.sessionUsage).toBe(42);
+            expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM, FIND_ANY_DEFAULT_ITEM]);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
     it('notices a login written to the keychain on the next render', () => {
         const harness = createProbeHarness();
 
@@ -3371,7 +3436,7 @@ describe('fetchUsageData keychain reads on macOS', () => {
             writeUsageCredentials(claudeConfig, { accessToken: 'access-a', refreshToken: 'refresh-a' });
             const renderAt = createRenderer(harness, home, keychain);
             const startMs = Date.now();
-            const lookup = [FIND_DEFAULT_ITEM];
+            const lookup = [FIND_DEFAULT_ITEM, FIND_ANY_DEFAULT_ITEM];
 
             expect(renderAt(startMs).first.sessionUsage).toBe(42);
             expect(keychain.calls()).toEqual(lookup);
@@ -3509,8 +3574,8 @@ describe('fetchUsageData keychain reads on macOS', () => {
             const keychain = createKeychainStub(home);
             const workConfig = path.join(home, 'claude-work');
             const personalConfig = path.join(home, 'claude-personal');
-            const findWork = `find-generic-password -s ${makeConfigDirService(workConfig)} -w`;
-            const findPersonal = `find-generic-password -s ${makeConfigDirService(personalConfig)} -w`;
+            const findWork = findItem(makeConfigDirService(workConfig));
+            const findPersonal = findItem(makeConfigDirService(personalConfig));
             keychain.setItem(makeConfigDirService(workConfig), { accessToken: 'access-a', refreshToken: 'refresh-a' });
             keychain.setItem(makeConfigDirService(personalConfig), { accessToken: 'access-b', refreshToken: 'refresh-b' });
             const renderAt = createRenderer(harness, home, keychain);
@@ -3544,8 +3609,8 @@ describe('fetchUsageData keychain reads on macOS', () => {
             const keychain = createKeychainStub(home);
             const workConfig = path.join(home, 'claude-work');
             const personalConfig = path.join(home, 'claude-personal');
-            const findWork = `find-generic-password -s ${makeConfigDirService(workConfig)} -w`;
-            const findPersonal = `find-generic-password -s ${makeConfigDirService(personalConfig)} -w`;
+            const findWork = findItem(makeConfigDirService(workConfig));
+            const findPersonal = findItem(makeConfigDirService(personalConfig));
             keychain.setItem(makeConfigDirService(workConfig), { accessToken: 'access-a', refreshToken: 'refresh-a' });
             keychain.setItem(makeConfigDirService(personalConfig), { accessToken: 'access-b', refreshToken: 'refresh-b' });
             const renderAt = createRenderer(harness, home, keychain);
@@ -3579,8 +3644,8 @@ describe('fetchUsageData keychain reads on macOS', () => {
             const keychain = createKeychainStub(home);
             const workConfig = path.join(home, 'claude-work');
             const personalConfig = path.join(home, 'claude-personal');
-            const findWork = `find-generic-password -s ${makeConfigDirService(workConfig)} -w`;
-            const findPersonal = `find-generic-password -s ${makeConfigDirService(personalConfig)} -w`;
+            const findWork = findItem(makeConfigDirService(workConfig));
+            const findPersonal = findItem(makeConfigDirService(personalConfig));
             const keychainLock = path.join(home, '.cache', 'ccstatusline', 'usage-keychain.lock');
             const renderAt = createRenderer(harness, home, keychain);
             const startMs = Date.now();
@@ -3618,11 +3683,11 @@ describe('fetchUsageData keychain reads on macOS', () => {
             const startMs = Date.now();
 
             expect(renderAt(startMs).first.sessionUsage).toBe(42);
-            expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM]);
+            expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM, FIND_ANY_DEFAULT_ITEM]);
 
             const refreshed = renderAt(startMs + 200000);
             expect(refreshed.requestCount).toBe(1);
-            expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM, FIND_DEFAULT_ITEM]);
+            expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM, FIND_ANY_DEFAULT_ITEM, FIND_DEFAULT_ITEM, FIND_ANY_DEFAULT_ITEM]);
             expect(fs.existsSync(path.join(home, '.cache', 'ccstatusline', 'usage-keychain.lock'))).toBe(false);
         } finally {
             harness.cleanup();
@@ -3637,7 +3702,7 @@ describe('fetchUsageData keychain reads on macOS', () => {
             const keychain = createKeychainStub(home);
             const renderAt = createRenderer(harness, home, keychain);
             const startMs = Date.now();
-            const lookup = [FIND_DEFAULT_ITEM];
+            const lookup = [FIND_DEFAULT_ITEM, FIND_ANY_DEFAULT_ITEM];
 
             expect(renderAt(startMs).first).toEqual({ error: 'no-credentials' });
             expect(renderAt(startMs + 10000).first).toEqual({ error: 'no-credentials' });
@@ -3658,7 +3723,7 @@ describe('fetchUsageData keychain reads on macOS', () => {
             const { home } = harness.createEmptyHome('keychain-profile');
             const keychain = createKeychainStub(home);
             const workConfig = path.join(home, 'claude-work');
-            const findWork = `find-generic-password -s ${makeConfigDirService(workConfig)} -w`;
+            const findWork = findItem(makeConfigDirService(workConfig));
             keychain.setItem(makeConfigDirService(workConfig), { accessToken: 'access-a', refreshToken: 'refresh-a' });
             keychain.setItem(DEFAULT_KEYCHAIN_SERVICE, { accessToken: 'access-b', refreshToken: 'refresh-b' });
             const renderAt = createRenderer(harness, home, keychain);
@@ -3859,7 +3924,7 @@ describe('fetchUsageData keychain reads on macOS', () => {
             const loggedOut = renderAt(startMs + 20000, { mode: 'unexpected' });
             expect(loggedOut.first).toEqual({ error: 'no-credentials' });
             expect(loggedOut.requestCount).toBe(0);
-            expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM, FIND_DEFAULT_ITEM]);
+            expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM, FIND_DEFAULT_ITEM, FIND_ANY_DEFAULT_ITEM]);
         } finally {
             harness.cleanup();
         }
@@ -3904,8 +3969,8 @@ describe('fetchUsageData keychain reads on macOS', () => {
             const keychain = createKeychainStub(home);
             const workConfig = path.join(home, 'claude-work');
             const personalConfig = path.join(home, 'claude-personal');
-            const findWork = `find-generic-password -s ${makeConfigDirService(workConfig)} -w`;
-            const findPersonal = `find-generic-password -s ${makeConfigDirService(personalConfig)} -w`;
+            const findWork = findItem(makeConfigDirService(workConfig));
+            const findPersonal = findItem(makeConfigDirService(personalConfig));
             keychain.setItem(makeConfigDirService(workConfig), { accessToken: 'access-a', refreshToken: 'refresh-a' });
             keychain.setItem(makeConfigDirService(personalConfig), { accessToken: 'access-b', refreshToken: 'refresh-b' });
             const renderAt = createRenderer(harness, home, keychain);
