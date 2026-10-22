@@ -433,9 +433,9 @@ describe('ExtraUsageUtilizationWidget', () => {
 
         it('is the last style p cycles through', () => {
             const widget = new ExtraUsageUtilizationWidget();
-            const slider = { id: 'extra', type: 'extra-usage-utilization', metadata: { display: 'slider' } };
+            const lastCells = { id: 'extra', type: 'extra-usage-utilization', metadata: { display: 'cells', barCell: 'parallelogram', barWidth: 'short' } };
 
-            expect(widget.handleEditorAction('toggle-progress', slider)?.metadata).toEqual({ display: 'glyph', barWidth: 'short' });
+            expect(widget.handleEditorAction('toggle-progress', lastCells)?.metadata).toEqual({ display: 'glyph', barWidth: 'short' });
             expect(widget.handleEditorAction('toggle-progress', glyphItem)?.metadata?.display).toBe('time');
         });
 

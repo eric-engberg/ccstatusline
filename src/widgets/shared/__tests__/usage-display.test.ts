@@ -49,14 +49,23 @@ describe('makeSliderBar', () => {
 describe('cycleUsageDisplayMode with slider', () => {
     const base: WidgetItem = { id: 'test', type: 'session-usage' };
 
-    it('cycles the text, a block bar and a slider when includeSlider is true', () => {
-        const first = cycleUsageDisplayMode(base, [], true);
-        const second = cycleUsageDisplayMode(first, [], true);
-        const third = cycleUsageDisplayMode(second, [], true);
+    // The display modes (p) steps through, from the text mode
+    const cycle = (item: WidgetItem, presses: number, includeGlyph = false): (string | undefined)[] => {
+        const seen: (string | undefined)[] = [];
+        let current = item;
+        for (let i = 0; i < presses; i++) {
+            current = cycleUsageDisplayMode(current, [], true, false, includeGlyph);
+            seen.push(current.metadata?.barCell ? `${current.metadata.display}:${current.metadata.barCell}` : current.metadata?.display);
+        }
+        return seen;
+    };
 
-        expect(first.metadata?.display).toBe('progress');
-        expect(second.metadata?.display).toBe('slider');
-        expect(third.metadata?.display).toBe('time');
+    it('cycles the text, a block bar, a slider and the four cell styles when includeSlider is true', () => {
+        expect(cycle(base, 8)).toEqual(['progress', 'slider', 'cells', 'cells:square', 'cells:seven-eighths', 'cells:parallelogram', 'time', 'progress']);
+    });
+
+    it('puts the level glyph after the cell styles', () => {
+        expect(cycle(base, 8, true)).toEqual(['progress', 'slider', 'cells', 'cells:square', 'cells:seven-eighths', 'cells:parallelogram', 'glyph', 'time']);
     });
 
     it('skips the slider when includeSlider is false', () => {
@@ -71,16 +80,21 @@ describe('cycleUsageDisplayMode with slider', () => {
     it('keeps the bar\'s size through the styles and back from the text', () => {
         const medium: WidgetItem = { ...base, metadata: { display: 'progress-short' } };
         const slider = cycleUsageDisplayMode(medium, [], true);
-        const text = cycleUsageDisplayMode(slider, [], true);
+        const cells = cycleUsageDisplayMode(slider, [], true);
+        const lastCells: WidgetItem = { ...base, metadata: { display: 'cells', barCell: 'parallelogram' } };
+        const text = cycleUsageDisplayMode(lastCells, [], true);
         const block = cycleUsageDisplayMode(text, [], true);
 
         expect(slider.metadata).toEqual({ display: 'slider', barWidth: 'medium' });
+        expect(cells.metadata).toEqual({ display: 'cells' });
         expect(text.metadata).toEqual({ display: 'time', barWidth: 'medium' });
         expect(block.metadata).toEqual({ display: 'progress-short' });
     });
 
-    it('keeps a short bar only setting\'s size and numbers through the text', () => {
-        const text = cycleUsageDisplayMode({ ...base, metadata: { display: 'slider-only' } }, [], true);
+    it('keeps a short bar only setting\'s size and numbers through the cell styles and the text', () => {
+        const cells = cycleUsageDisplayMode({ ...base, metadata: { display: 'slider-only' } }, [], true);
+        expect(cells.metadata).toEqual({ display: 'cells', barWidth: 'short', barNumbers: 'none' });
+        const text = cycleUsageDisplayMode({ ...cells, metadata: { ...cells.metadata, barCell: 'parallelogram' } }, [], true);
         expect(text.metadata).toEqual({ display: 'time', barWidth: 'short', barNumbers: 'none' });
         expect(cycleUsageDisplayMode(text, [], true).metadata).toEqual({ display: 'progress-short', barWidth: 'short', barNumbers: 'none' });
         expect(cycleUsageDisplayMode({ ...base, metadata: { display: 'time', barNumbers: 'none' } }, [], true).metadata).toEqual({ display: 'progress', barNumbers: 'none' });
@@ -91,13 +105,16 @@ describe('cycleUsageDisplayMode with slider', () => {
             ...base,
             metadata: { cursor: 'true' }
         };
-        const first = cycleUsageDisplayMode(cursorBase, [], true);
-        const second = cycleUsageDisplayMode(first, [], true);
-        const third = cycleUsageDisplayMode(second, [], true);
+        const steps: WidgetItem[] = [];
+        let current = cursorBase;
+        for (let i = 0; i < 7; i++) {
+            current = cycleUsageDisplayMode(current, [], true);
+            steps.push(current);
+        }
 
-        expect(first.metadata?.cursor).toBe('true');
-        expect(second.metadata?.cursor).toBe('true');
-        expect(third.metadata?.cursor).toBeUndefined();
+        expect(steps.slice(0, 6).map(step => step.metadata?.cursor)).toEqual(['true', 'true', 'true', 'true', 'true', 'true']);
+        expect(steps[6]?.metadata?.display).toBe('time');
+        expect(steps[6]?.metadata?.cursor).toBeUndefined();
     });
 });
 

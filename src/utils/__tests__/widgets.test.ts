@@ -177,6 +177,7 @@ describe('shared keybind reservation', () => {
         { display: 'progress-short' },
         { display: 'slider' },
         { display: 'slider-only' },
+        { display: 'cells' },
         { hours: 'true' },
         { absolute: 'true', hours: 'true' }
     ];
@@ -389,6 +390,7 @@ describe('label prefix', () => {
         { display: 'progress-short' },
         { display: 'slider' },
         { display: 'slider-only' },
+        { display: 'cells', barCell: 'square' },
         { inverse: 'true' }
     ];
 
