@@ -12,6 +12,7 @@ import { DEFAULT_SETTINGS } from '../../types/Settings';
 import type { WidgetItem } from '../../types/Widget';
 import { mockExecutableResolution } from '../../utils/__tests__/executable-path-test-helpers';
 import { clearGitCache } from '../../utils/git';
+import { GIT_HARDENING_ARGS } from '../../utils/git-hardening';
 import { GitConflictsWidget } from '../GitConflicts';
 
 vi.mock('node:child_process', () => ({
@@ -136,6 +137,13 @@ describe('GitConflictsWidget', () => {
         mockConflictCount(2);
 
         expect(render()).toBe('⚠2');
+    });
+
+    it('lists the unmerged files of the whole repository, not only the session\'s directory', () => {
+        mockConflictCount(2);
+
+        expect(render()).toBe('⚠2');
+        expect(mockExecFileSync.mock.calls[1]?.[1]).toEqual([...GIT_HARDENING_ARGS, '--no-literal-pathspecs', 'ls-files', '--unmerged', '--', ':/']);
     });
 
     it('renders raw conflicts as a numeric count', () => {
