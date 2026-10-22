@@ -13,6 +13,7 @@ import {
     createProxyAgent,
     type ClosableProxyAgent
 } from './proxy-agent';
+import { replaceFileSync } from './replace-file';
 
 // Cache configuration mirrors usage-fetch.ts: a short-lived disk cache shared
 // across statusline invocations, plus a failure lock so an unreachable status
@@ -242,7 +243,7 @@ function readCachedClaudeStatus(): CachedClaudeStatus | null {
 function writeCachedClaudeStatus(cache: CachedClaudeStatus): void {
     try {
         ensureCacheDirExists();
-        fs.writeFileSync(getCacheFile(), JSON.stringify(cache));
+        replaceFileSync(getCacheFile(), JSON.stringify(cache));
     } catch {
         // Best-effort caching
     }
@@ -268,7 +269,7 @@ function isFailureLockActive(nowSeconds: number): boolean {
 function writeFailureLock(): void {
     try {
         ensureCacheDirExists();
-        fs.writeFileSync(getLockFile(), '');
+        replaceFileSync(getLockFile(), '');
     } catch {
         // Ignore lock file errors
     }
