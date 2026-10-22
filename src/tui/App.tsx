@@ -357,14 +357,15 @@ function clearInstallationMetadata(settings: Settings | null): Settings | null {
     return next;
 }
 
-export function getCurrentInstallation(
-    isClaudeInstalled: boolean,
+// Claude Code runs ccstatusline, so until its status line command is read, the saved
+// metadata describes the install
+export function classifyInstalledStatusLine(
     existingStatusLine: string | null,
-    settings: Settings
+    savedInstallation: InstallationMetadata | undefined
 ): InstallationMetadata {
-    return isClaudeInstalled && !existingStatusLine && settings.installation
-        ? settings.installation
-        : classifyInstallation(existingStatusLine, settings.installation);
+    return !existingStatusLine && savedInstallation
+        ? savedInstallation
+        : classifyInstallation(existingStatusLine, savedInstallation);
 }
 
 function trimTrailingSeparators(filePath: string): string {
@@ -662,7 +663,9 @@ export const App: React.FC = () => {
         }
         // Global save shortcut
         if (key.ctrl && input === 's' && settings && screen !== 'confirm') {
-            const installation = getCurrentInstallation(isClaudeInstalled, existingStatusLine, settings);
+            const installation = isClaudeInstalled
+                ? classifyInstalledStatusLine(existingStatusLine, settings.installation)
+                : classifyInstallation(existingStatusLine, settings.installation);
             const activeCommand = installation.method === 'pinned' || installation.method === 'self-managed'
                 ? inspectActiveGlobalCommand({ commandAvailability })
                 : null;
@@ -829,9 +832,9 @@ export const App: React.FC = () => {
 
     const handleUpdateCheck = useCallback(() => {
         setUpdateCheckerState({ status: 'checking' });
-        const installation = settings
-            ? getCurrentInstallation(isClaudeInstalled, existingStatusLine, settings)
-            : classifyInstallation(existingStatusLine, undefined);
+        const installation = isClaudeInstalled
+            ? classifyInstalledStatusLine(existingStatusLine, settings?.installation)
+            : classifyInstallation(existingStatusLine, settings?.installation);
         const activeCommand = installation.method === 'pinned' || installation.method === 'self-managed'
             ? inspectActiveGlobalCommand({ commandAvailability })
             : null;
@@ -965,22 +968,44 @@ export const App: React.FC = () => {
         }
     }), [emojiSkinTone]);
 
-    if (!settings || !hasLoadedClaudeStatus || !hasLoadedInstalledState) {
+    const savedInstallation = settings?.installation;
+    const hasLoaded = settings !== null && hasLoadedClaudeStatus && hasLoadedInstalledState;
+    // Looking up the global ccstatusline command runs `which -a`, `npm prefix -g` and
+    // `bun pm bin -g`, which block for a few hundred ms. Editor keys redraw App (the live
+    // preview, each widget edit), so the lookups run only when the installation changes:
+    // once loading finishes, and after an install, update or uninstall here, since each
+    // changes the installation metadata or Claude's status line. Null while loading.
+    const installationState = useMemo(() => {
+        if (!hasLoaded) {
+            return null;
+        }
+
+        const currentInstallation = isClaudeInstalled
+            ? classifyInstalledStatusLine(existingStatusLine, savedInstallation)
+            : classifyInstallation(existingStatusLine, savedInstallation);
+        const activeGlobalCommand = currentInstallation.method === 'pinned' || currentInstallation.method === 'self-managed'
+            ? inspectActiveGlobalCommand({ commandAvailability })
+            : null;
+        const effectiveInstallation = getPathInferredInstallation(currentInstallation, activeGlobalCommand);
+        const pinnedRelaunchCommand = effectiveInstallation.method === 'pinned'
+            && effectiveInstallation.packageManager !== 'unknown'
+            ? getPinnedGlobalRelaunchCommand(effectiveInstallation.packageManager)
+            : null;
+
+        return { activeGlobalCommand, effectiveInstallation, pinnedRelaunchCommand };
+    }, [commandAvailability, existingStatusLine, hasLoaded, isClaudeInstalled, savedInstallation]);
+
+    if (!settings || !installationState) {
         return <Text>Loading settings...</Text>;
     }
 
     const runningVersion = getPackageVersion();
-    const currentInstallation = getCurrentInstallation(isClaudeInstalled, existingStatusLine, settings);
-    const activeGlobalCommand = currentInstallation.method === 'pinned' || currentInstallation.method === 'self-managed'
-        ? inspectActiveGlobalCommand({ commandAvailability })
-        : null;
-    const effectiveInstallation = getPathInferredInstallation(currentInstallation, activeGlobalCommand);
-    const pinnedVersionMismatch = effectiveInstallation.method === 'pinned'
-        && effectiveInstallation.packageManager !== 'unknown'
+    const { activeGlobalCommand, effectiveInstallation, pinnedRelaunchCommand } = installationState;
+    const pinnedVersionMismatch = pinnedRelaunchCommand
         ? getPinnedVersionMismatch(
             effectiveInstallation,
             runningVersion,
-            getPinnedGlobalRelaunchCommand(effectiveInstallation.packageManager),
+            pinnedRelaunchCommand,
             versionInstalledThisSession
         )
         : null;
