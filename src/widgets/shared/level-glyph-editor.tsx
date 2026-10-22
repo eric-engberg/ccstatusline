@@ -7,10 +7,7 @@ import {
 import React, { useState } from 'react';
 
 import type { WidgetEditorProps } from '../../types/Widget';
-import {
-    getPlainInput,
-    shouldInsertInput
-} from '../../utils/input-guards';
+import { getInsertableText } from '../../utils/input-guards';
 
 import {
     EDIT_LEVELS_ACTION,
@@ -42,6 +39,7 @@ const LevelBreakPointsEditor: React.FC<WidgetEditorProps> = ({ widget, onComplet
 
     // Keys while a number is being typed
     const handleTypedInput = (inputChar: string, key: Key, current: TypedInput) => {
+        const text = getInsertableText(inputChar, key);
         if (key.escape) {
             setInput(null);
         } else if (key.return) {
@@ -54,8 +52,8 @@ const LevelBreakPointsEditor: React.FC<WidgetEditorProps> = ({ widget, onComplet
             }
         } else if (key.backspace || key.delete) {
             setInput({ text: current.text.slice(0, -1), error: null });
-        } else if (shouldInsertInput(inputChar, key)) {
-            setInput({ text: current.text + inputChar, error: null });
+        } else if (text) {
+            setInput({ text: current.text + text, error: null });
         }
     };
 
@@ -65,7 +63,8 @@ const LevelBreakPointsEditor: React.FC<WidgetEditorProps> = ({ widget, onComplet
             return;
         }
 
-        const shortcut = getPlainInput(inputChar, key);
+        // A break point starts with its digits, typed or pasted
+        const digits = getInsertableText(inputChar, key).trim();
         if (key.return) {
             onComplete(draft);
         } else if (key.escape) {
@@ -75,8 +74,8 @@ const LevelBreakPointsEditor: React.FC<WidgetEditorProps> = ({ widget, onComplet
             setSelectedIndex((selectedIndex + direction + LEVEL_BREAK_POINTS.length) % LEVEL_BREAK_POINTS.length);
         } else if (key.leftArrow || key.rightArrow) {
             setDraft(stepLevelBreakPoint(draft, point, key.rightArrow ? 1 : -1));
-        } else if (/^\d$/.test(shortcut)) {
-            setInput({ text: shortcut, error: null });
+        } else if (/^\d+$/.test(digits)) {
+            setInput({ text: digits, error: null });
         }
     });
 
