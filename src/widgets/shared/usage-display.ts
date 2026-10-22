@@ -1,5 +1,8 @@
 import type { NumberFormat } from '../../types/NumberFormat';
-import type { RenderContext } from '../../types/RenderContext';
+import type {
+    RenderContext,
+    RenderUsageData
+} from '../../types/RenderContext';
 import type { Settings } from '../../types/Settings';
 import type {
     CustomKeybind,
@@ -50,6 +53,18 @@ export const USAGE_NO_DATA_HIDEABLE_STATE: HideableState = { key: 'no-data', lab
 // Block Reset Timer's: show the reset countdown only once the 5-hour limit is
 // hit. Here rather than in the widget so the usage prefetch can read it.
 export const SESSION_UNDER_LIMIT_HIDEABLE_STATE: HideableState = { key: 'under-limit', label: 'when the 5-hour block is under 100%' };
+// Block Usage's: hide the percent once the limit is hit, so with both states on
+// the reset countdown takes its place. Here for the same reason.
+export const SESSION_AT_LIMIT_HIDEABLE_STATE: HideableState = { key: 'at-limit', label: 'when the 5-hour block is at 100%' };
+
+// Whether the 5-hour block is at its limit, for both states above, so Block
+// Usage and Block Reset Timer always swap at the same render. The usage API's
+// percent decides when there is one (see usage-prefetch.ts), and the raw
+// percent, not the rounded one: 99.7% isn't the limit yet.
+export function isAtSessionLimit(usageData: RenderUsageData): boolean {
+    const sessionUsage = usageData.apiSessionUsage ?? usageData.sessionUsage;
+    return sessionUsage !== undefined && sessionUsage >= 100;
+}
 
 const SLIDER_WIDTH = 10;
 
