@@ -123,11 +123,14 @@ const UsageCredentialsSchema = z.object({
 const UsageLockErrorSchema = z.enum(['timeout', 'rate-limited', 'api-error', 'parse-error']);
 // `transient` marks an api-error lock whose failure clears up on its own (see
 // UsageData.errorTransient). Locks written without it, including every lock
-// from before it existed, read as lasting failures.
+// from before it existed, read as lasting failures. `accessTokenHash` names
+// the access token of a request the API refused (see writeUsageLock); a lock
+// without one holds every login off.
 const UsageLockSchema = z.object({
     blockedUntil: z.number(),
     error: UsageLockErrorSchema.optional(),
-    transient: z.boolean().optional()
+    transient: z.boolean().optional(),
+    accessTokenHash: z.string().optional()
 });
 
 // The per-model fields (weeklySonnetUsage, weeklyOpusUsage, ...) are declared
@@ -871,8 +874,19 @@ function readStaleUsageCache(cacheIdentity: UsageCacheIdentity | null): { data: 
     }
 }
 
-function writeUsageLock(blockedUntil: number, error: UsageLockError, transient = false): string {
-    const contents = JSON.stringify(transient ? { blockedUntil, error, transient } : { blockedUntil, error });
+// A lock for the API refusing a request, with a 429 or a lasting failure,
+// names the access token the request was sent with, and holds off only
+// requests with that token. Claude Code's refresh saves a new one, which may
+// well be answered, while the refresh token, and so the cache's fingerprint,
+// can stay the same. A lock for the server, the network or the response
+// failing holds every login off.
+function writeUsageLock(blockedUntil: number, error: UsageLockError, transient = false, accessTokenHash?: string): string {
+    const contents = JSON.stringify({
+        blockedUntil,
+        error,
+        ...(transient ? { transient } : {}),
+        ...(accessTokenHash === undefined ? {} : { accessTokenHash })
+    });
     try {
         ensureCacheDirExists();
         replaceFileSync(getLockFile(), contents);
@@ -885,11 +899,16 @@ function writeUsageLock(blockedUntil: number, error: UsageLockError, transient =
 // Remove the lock only while it still holds the in-flight record this process
 // wrote. A concurrent render may have replaced it with a 429 Retry-After lock
 // in the meantime; deleting that would let the next render fetch inside the
-// server's backoff window.
-function clearOwnUsageLock(ownContents: string): void {
+// server's backoff window. For the same reason, another access token's lock
+// that the in-flight record replaced is put back.
+function clearOwnUsageLock(ownContents: string, otherTokenLock: string | null): void {
     try {
         if (fs.readFileSync(getLockFile(), 'utf8') === ownContents) {
-            fs.rmSync(getLockFile(), { force: true });
+            if (otherTokenLock === null) {
+                fs.rmSync(getLockFile(), { force: true });
+            } else {
+                replaceFileSync(getLockFile(), otherTokenLock);
+            }
         }
     } catch {
         // Ignore lock file errors
@@ -900,10 +919,10 @@ function clearOwnUsageLock(ownContents: string): void {
 // backoff, so later renders report that failure, and whether it clears up on
 // its own, rather than a timeout. As above, a concurrent render's newer lock
 // is left in place.
-function replaceOwnUsageLock(ownContents: string, blockedUntil: number, error: UsageLockError, transient: boolean): void {
+function replaceOwnUsageLock(ownContents: string, blockedUntil: number, error: UsageLockError, transient: boolean, accessTokenHash?: string): void {
     try {
         if (fs.readFileSync(getLockFile(), 'utf8') === ownContents) {
-            writeUsageLock(blockedUntil, error, transient);
+            writeUsageLock(blockedUntil, error, transient, accessTokenHash);
         }
     } catch {
         // Ignore lock file errors
@@ -920,21 +939,30 @@ function getUsageLockHorizon(error: UsageLockError): number {
     return error === 'rate-limited' ? MAX_LOCK_HORIZON : 2 * LOCK_MAX_AGE;
 }
 
-function readActiveUsageLock(now: number): { blockedUntil: number; error: UsageLockError; transient: boolean } | null {
+// Past deadline, or one implausibly far ahead: treat as no lock and fetch.
+// The fetch rewrites the file with a sane deadline, so a poisoned lock
+// self-heals on the very next render.
+function isUsageLockActive(lock: z.infer<typeof UsageLockSchema>, now: number): boolean {
+    return lock.blockedUntil > now && lock.blockedUntil <= now + getUsageLockHorizon(lock.error ?? 'timeout');
+}
+
+function isOtherTokenUsageLock(lock: z.infer<typeof UsageLockSchema>, accessTokenHash: string): boolean {
+    return lock.accessTokenHash !== undefined && lock.accessTokenHash !== accessTokenHash;
+}
+
+// The lock holding off requests with this access token, if any. Another
+// token's lock doesn't, so a refreshed or switched login fetches at once.
+function readActiveUsageLock(now: number, accessTokenHash: string): { blockedUntil: number; error: UsageLockError; transient: boolean } | null {
     let hasValidJsonLock = false;
 
     try {
         const parsed = parseJsonWithSchema(fs.readFileSync(getLockFile(), 'utf8'), UsageLockSchema);
         if (parsed) {
             hasValidJsonLock = true;
-            const error = parsed.error ?? 'timeout';
-            // Past deadline, or one implausibly far ahead: treat as no lock and
-            // fetch. The fetch rewrites the file with a sane deadline, so a
-            // poisoned lock self-heals on the very next render.
-            if (parsed.blockedUntil > now && parsed.blockedUntil <= now + getUsageLockHorizon(error)) {
+            if (isUsageLockActive(parsed, now) && !isOtherTokenUsageLock(parsed, accessTokenHash)) {
                 return {
                     blockedUntil: parsed.blockedUntil,
-                    error,
+                    error: parsed.error ?? 'timeout',
                     transient: parsed.transient ?? false
                 };
             }
@@ -964,6 +992,19 @@ function readActiveUsageLock(now: number): { blockedUntil: number; error: UsageL
     }
 
     return null;
+}
+
+// Another access token's active lock, which this request's in-flight record
+// is about to replace: the profiles used side by side share the lock file,
+// and another one's login may still be rate limited.
+function readOtherTokenUsageLock(now: number, accessTokenHash: string): string | null {
+    try {
+        const contents = fs.readFileSync(getLockFile(), 'utf8');
+        const parsed = parseJsonWithSchema(contents, UsageLockSchema);
+        return parsed && isUsageLockActive(parsed, now) && isOtherTokenUsageLock(parsed, accessTokenHash) ? contents : null;
+    } catch {
+        return null;
+    }
 }
 
 // While the lock holds requests off, the login's cached snapshot stands in,
@@ -1222,9 +1263,10 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
     // While nothing has written a login since the credentials were last read,
     // and no keychain read has failed since, the login they held is still the
     // one in use, and they are read only for a request: a fresh cache for that
-    // login is served as is, and so is its stale fallback while the lock holds
-    // requests off. The stamp is taken first, so a login written during the
-    // read below changes it for the next render.
+    // login is served as is, and so is its stale fallback while a lock holds
+    // its requests off. The stamp is taken first, so a login written during
+    // the read below, such as a token refresh, changes it for the next render,
+    // which reads the new token before any lock is checked.
     const credentialsSource = getUsageCredentialsSource();
     const credentialsStamp = getUsageCredentialsStamp();
     const knownLogin = readKnownUsageLogin(credentialsSource, credentialsStamp);
@@ -1240,7 +1282,7 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
             return setCachedUsageError('login-expired', now);
         }
 
-        const knownLoginLock = readActiveUsageLock(now);
+        const knownLoginLock = readActiveUsageLock(now, knownLogin.identity.accessTokenHash);
         if (knownLoginLock) {
             return getStaleUsageDuringLock(knownLoginLock, now, knownLogin.identity, requiredFields);
         }
@@ -1277,11 +1319,13 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
         return setCachedUsageError('login-expired', now);
     }
 
-    const activeLock = readActiveUsageLock(now);
+    const accessTokenHash = fingerprintUsageToken(token);
+    const activeLock = readActiveUsageLock(now, accessTokenHash);
     if (activeLock) {
         return getStaleUsageDuringLock(activeLock, now, cacheIdentity, requiredFields);
     }
 
+    const otherTokenLock = readOtherTokenUsageLock(now, accessTokenHash);
     const inFlightLock = writeUsageLock(now + LOCK_MAX_AGE, 'timeout');
 
     // Fetch from API using Node's https module
@@ -1289,12 +1333,15 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
         const response = await fetchFromUsageApi(token);
 
         if (response.kind === 'rate-limited') {
-            writeUsageLock(now + response.retryAfterSeconds, 'rate-limited');
+            writeUsageLock(now + response.retryAfterSeconds, 'rate-limited', false, accessTokenHash);
             return getStaleUsageOrError('rate-limited', now, cacheIdentity, response.retryAfterSeconds, requiredFields);
         }
 
         if (response.kind === 'error') {
-            replaceOwnUsageLock(inFlightLock, now + LOCK_MAX_AGE, 'api-error', response.transient);
+            // A lasting failure the API answered with refused this token's
+            // request (see isTransientUsageApiStatus)
+            const refused = response.statusCode !== undefined && !response.transient;
+            replaceOwnUsageLock(inFlightLock, now + LOCK_MAX_AGE, 'api-error', response.transient, refused ? accessTokenHash : undefined);
             return getStaleUsageOrError('api-error', now, cacheIdentity, LOCK_MAX_AGE, requiredFields, response.transient);
         }
 
@@ -1324,7 +1371,7 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
         // reset the payload shows, are cached but still need the short throttle
         // so later renders do not refetch every time.
         if (answersUsageRequest(usageData, options)) {
-            clearOwnUsageLock(inFlightLock);
+            clearOwnUsageLock(inFlightLock, otherTokenLock);
         }
 
         return cacheUsageData(usageData, now, now * 1000);
