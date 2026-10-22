@@ -2,6 +2,7 @@ export {
     fetchUsageData,
     getUsageAccountKey,
     getUsageFetchedAt,
+    isStaleUsageFallback,
     lookUpUsageAccount,
     type UsageAccount
 } from './usage-fetch';

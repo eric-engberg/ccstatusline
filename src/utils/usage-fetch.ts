@@ -362,6 +362,15 @@ let cachedUsageFetchedAtMs: number | null = null;
 let lastUsageFetchedAtMs: number | null = null;
 let usageCacheTime = 0;
 let usageErrorCacheMaxAge = LOCK_MAX_AGE;
+// The last good cache each time getStaleUsageOrError serves it after it has
+// outlived a refresh, because the usage API couldn't be reached. Like a fresh
+// answer, it carries no error.
+const staleUsageFallbacks = new WeakSet<UsageData>();
+
+/** Whether fetchUsageData returned this data as a stale fallback that lags the usage API, rather than from the API or a current cache. */
+export function isStaleUsageFallback(data: UsageData): boolean {
+    return staleUsageFallbacks.has(data);
+}
 
 type UsageLockError = z.infer<typeof UsageLockErrorSchema>;
 
@@ -435,6 +444,9 @@ function getStaleUsageOrError(
 ): UsageData {
     const stale = readStaleUsageCache(cacheIdentity);
     if (stale && !stale.data.error && hasRequiredUsageFields(stale.data, requiredFields)) {
+        if (hasUsageCacheOutlivedRefresh(now)) {
+            staleUsageFallbacks.add(stale.data);
+        }
         return cacheUsageData(stale.data, now, stale.fetchedAtMs);
     }
 
@@ -684,6 +696,19 @@ function readStaleUsageCache(cacheIdentity: UsageCacheIdentity | null): { data: 
         return data ? { data, fetchedAtMs: fs.statSync(CACHE_FILE).mtimeMs } : null;
     } catch {
         return null;
+    }
+}
+
+// A refresh started as the cache expired keeps its in-flight lock, which a
+// failed request also leaves in place, for up to LOCK_MAX_AGE, and other
+// renders serve the cache through it meanwhile. Only a cache older than that
+// has outlived a refresh.
+function hasUsageCacheOutlivedRefresh(now: number): boolean {
+    try {
+        const fileAge = now - Math.floor(fs.statSync(CACHE_FILE).mtimeMs / 1000);
+        return Math.abs(fileAge) >= CACHE_MAX_AGE + LOCK_MAX_AGE;
+    } catch {
+        return true;
     }
 }
 
