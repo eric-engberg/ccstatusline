@@ -75,6 +75,11 @@ import {
     installPowerlineFonts,
     type PowerlineFontStatus
 } from '../utils/powerline';
+import {
+    drawsWidgetBackgrounds,
+    getLineSettings
+} from '../utils/powerline-lines';
+import { buildLinesUpdateSettings } from '../utils/powerline-settings';
 import { getPackageVersion } from '../utils/terminal';
 import {
     checkForUpdates,
@@ -1215,8 +1220,9 @@ export const App: React.FC = () => {
         setSettings({ ...settings, lines: newLines });
     };
 
-    const updateLines = (newLines: WidgetItem[][]) => {
-        setSettings({ ...settings, lines: newLines });
+    // Lines and their Powerline modes change together: they move and are deleted together
+    const updateLines = (newLines: WidgetItem[][], lineEnabled: (boolean | null)[] | undefined) => {
+        setSettings(buildLinesUpdateSettings(settings, newLines, lineEnabled));
     };
 
     const handleLineSelect = (lineIndex: number) => {
@@ -1299,6 +1305,7 @@ export const App: React.FC = () => {
                         }}
                         initialSelection={menuSelections.lines}
                         title='Select Line to Edit Items'
+                        settings={settings}
                         allowEditing={true}
                     />
                 )}
@@ -1316,7 +1323,7 @@ export const App: React.FC = () => {
                                 setScreen('lines');
                             }}
                             lineNumber={selectedLine + 1}
-                            settings={settings}
+                            settings={getLineSettings(settings, selectedLine)}
                         />
                     </SkinToneContext.Provider>
                 )}
@@ -1345,7 +1352,8 @@ export const App: React.FC = () => {
                     <ColorMenu
                         widgets={settings.lines[selectedLine] ?? []}
                         lineIndex={selectedLine}
-                        settings={settings}
+                        settings={getLineSettings(settings, selectedLine)}
+                        showsBackgrounds={drawsWidgetBackgrounds(settings, selectedLine)}
                         onUpdate={(updatedWidgets) => {
                             // Update only the selected line
                             const newLines = [...settings.lines];
