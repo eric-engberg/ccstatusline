@@ -311,6 +311,7 @@ export function formatUsageResetAt(
 export function getUsageErrorMessage(error: UsageError): string {
     switch (error) {
         case 'no-credentials': return '[No credentials]';
+        case 'login-expired': return '[Login expired]';
         case 'timeout': return '[Timeout]';
         case 'rate-limited': return '[Rate limited]';
         case 'api-error': return '[API Error]';

@@ -403,6 +403,8 @@ process.stdout.write(JSON.stringify({
             // real one lets the probe escape into the user's actual home
             // and read/write the live ~/.cache/ccstatusline
             USERPROFILE: options.home,
+            // The account Claude Code saves its macOS keychain login under
+            USER: 'example',
             // The usage cache falls back to the system temp folder when the
             // home's cache folder can't be written
             TMPDIR: probeTmpDir,
@@ -483,13 +485,14 @@ process.stdout.write(JSON.stringify({
     };
 }
 
-function parseLockContents(lockContents: string | null): { blockedUntil: number; error?: string; transient?: boolean } | null {
-    return lockContents ? JSON.parse(lockContents) as { blockedUntil: number; error?: string; transient?: boolean } : null;
+function parseLockContents(lockContents: string | null): { blockedUntil: number; error?: string; transient?: boolean; accessTokenHash?: string } | null {
+    return lockContents ? JSON.parse(lockContents) as { blockedUntil: number; error?: string; transient?: boolean; accessTokenHash?: string } : null;
 }
 
 // createTokenHome writes an access-token-only credentials file; these tests
-// need a refresh token alongside it to exercise the account fingerprint.
-function writeUsageCredentials(claudeConfig: string, claudeAiOauth: { accessToken: string; refreshToken?: string }): void {
+// need a refresh token alongside it to exercise the account fingerprint, or
+// the access token's expiry (ms), as Claude Code saves it.
+function writeUsageCredentials(claudeConfig: string, claudeAiOauth: { accessToken: string; refreshToken?: string; expiresAt?: number }): void {
     fs.writeFileSync(path.join(claudeConfig, '.credentials.json'), JSON.stringify({ claudeAiOauth }));
 }
 
@@ -645,6 +648,8 @@ describe('fetchUsageData error handling', () => {
             type: 'rate_limit_error'
         }
     });
+    // A 429 holding requests with its access token off for an hour
+    const rateLimitedFetch = { mode: 'status', responseBody: rateLimitedResponseBody, responseHeaders: { 'retry-after': '3600' }, statusCode: 429 } as const;
     // The usage API's answer from just before a weekly reset (Fable at 88% in
     // the week ending 2030-01-07), and its answers once the new week started.
     const beforeWeeklyResetUsage = {
@@ -1501,7 +1506,10 @@ describe('fetchUsageData error handling', () => {
             expect(result.first).toMatchObject({ sessionUsage: 42, weeklyUsage: 17 });
             expect(result.requestCount).toBe(1);
             expect(result.requestAuthorization).toBe('Bearer default-access');
-            expect(home.readSecurityCalls()).toEqual(['find-generic-password -s Claude Code-credentials -w']);
+            expect(home.readSecurityCalls()).toEqual([
+                'find-generic-password -s Claude Code-credentials -a example -w',
+                'find-generic-password -s Claude Code-credentials -w'
+            ]);
         } finally {
             harness.cleanup();
         }
@@ -1528,7 +1536,84 @@ describe('fetchUsageData error handling', () => {
 
             expect(result.first).toEqual({ error: 'no-credentials' });
             expect(result.requestCount).toBe(0);
-            expect(home.readSecurityCalls()).toEqual(['find-generic-password -s Claude Code-credentials -w']);
+            expect(home.readSecurityCalls()).toEqual(['find-generic-password -s Claude Code-credentials -a example -w']);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('shows Login expired without asking the usage API once the access token has expired, also on reset-only lines', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome('login-expired');
+            writeUsageCredentials(home.claudeConfig, { accessToken: 'access-a', refreshToken: 'refresh-a', expiresAt: nowMs - 1000 });
+
+            const result = harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                mode: 'unexpected',
+                nowMs,
+                pathDir: home.bin,
+                prefetchResetOnly: true
+            });
+
+            expect(result.first).toEqual({ error: 'login-expired' });
+            expect(result.second).toEqual({ error: 'login-expired' });
+            expect(result.resetOnly).toEqual({ error: 'login-expired' });
+            expect(result.requestCount).toBe(0);
+            // Nothing holds requests off, so a refreshed token is used as soon as it's saved
+            expect(result.lockExists).toBe(false);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('shows Login expired rather than the login\'s older cached usage', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome('login-expired-stale-cache');
+            writeUsageCredentials(home.claudeConfig, { accessToken: 'access-a', refreshToken: 'refresh-a', expiresAt: nowMs - 1000 });
+            seedUsageCache(home.home, { sessionUsage: 5, weeklyUsage: 3, tokenHash: createHash('sha256').update('refresh-a').digest('hex').slice(0, 16) });
+
+            const result = harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                mode: 'unexpected',
+                nowMs,
+                pathDir: home.bin
+            });
+
+            expect(result.first).toEqual({ error: 'login-expired' });
+            expect(result.requestCount).toBe(0);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('asks the usage API with an access token that hasn\'t expired yet, and again as soon as a refreshed one is saved', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome('login-refreshed');
+            writeUsageCredentials(home.claudeConfig, { accessToken: 'access-a', refreshToken: 'refresh-a', expiresAt: nowMs - 1000 });
+            const renderAt = (probeNowMs: number) => harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                mode: 'success',
+                nowMs: probeNowMs,
+                pathDir: home.bin,
+                responseBody: successResponseBody
+            });
+
+            expect(renderAt(nowMs).first).toEqual({ error: 'login-expired' });
+
+            writeUsageCredentials(home.claudeConfig, { accessToken: 'access-b', refreshToken: 'refresh-b', expiresAt: nowMs + 8 * 60 * 60 * 1000 });
+            const refreshed = renderAt(nowMs + 1000);
+            expect(refreshed.first).toMatchObject({ sessionUsage: 42, weeklyUsage: 17 });
+            expect(refreshed.requestCount).toBe(1);
+            expect(refreshed.requestAuthorization).toBe('Bearer access-b');
         } finally {
             harness.cleanup();
         }
@@ -1594,7 +1679,8 @@ describe('fetchUsageData error handling', () => {
             expect(rateLimited.requestCount).toBe(1);
             expect(parseLockContents(rateLimited.lockContents)).toEqual({
                 blockedUntil: Math.floor(nowMs / 1000) + 600,
-                error: 'rate-limited'
+                error: 'rate-limited',
+                accessTokenHash: fingerprint('test-token')
             });
 
             const backedOff = harness.runProbe({
@@ -1775,7 +1861,8 @@ describe('fetchUsageData error handling', () => {
             expect(result.requestCount).toBe(1);
             expect(parseLockContents(result.lockContents)).toEqual({
                 blockedUntil: Math.floor(rateLimitedNowMs / 1000) + 3600,
-                error: 'rate-limited'
+                error: 'rate-limited',
+                accessTokenHash: fingerprint('test-token')
             });
         } finally {
             harness.cleanup();
@@ -2083,6 +2170,185 @@ describe('fetchUsageData error handling', () => {
             // A different login still invalidates the cache immediately.
             expect(result.requestCount).toBe(1);
             expect(result.first.sessionUsage).toBe(42);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('fetches with another access token through a rate limit on the last one, and caches its answer', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome('rate-limit-other-token');
+            writeUsageCredentials(home.claudeConfig, { accessToken: 'access-a', refreshToken: 'refresh-a' });
+            // The cache's age comes from its mtime, which is real time
+            const startMs = Date.now();
+            const renderAt = (probeNowMs: number, options: Partial<ProbeOptions> = {}) => harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                mode: 'success',
+                nowMs: probeNowMs,
+                pathDir: home.bin,
+                responseBody: successResponseBody,
+                ...options
+            });
+
+            expect(renderAt(startMs, rateLimitedFetch).first).toEqual({ error: 'rate-limited' });
+
+            writeUsageCredentials(home.claudeConfig, { accessToken: 'access-b', refreshToken: 'refresh-b' });
+            const switched = renderAt(startMs + 10000);
+            expect(switched.requestCount).toBe(1);
+            expect(switched.requestAuthorization).toBe('Bearer access-b');
+            expect(switched.first).toMatchObject({ sessionUsage: 42, weeklyUsage: 17 });
+            expect(switched.cacheTokenHash).toBe(fingerprint('refresh-b'));
+
+            const cached = renderAt(startMs + 20000, { mode: 'unexpected' });
+            expect(cached.requestCount).toBe(0);
+            expect(cached.first).toEqual(switched.first);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('holds off requests with the rate-limited access token until the Retry-After ends, also after another profile\'s fetch', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome('rate-limit-same-token');
+            writeUsageCredentials(home.claudeConfig, { accessToken: 'access-a', refreshToken: 'refresh-a' });
+            // A profile used side by side, which shares the lock file
+            const otherConfig = path.join(home.home, 'claude-other');
+            fs.mkdirSync(otherConfig);
+            writeUsageCredentials(otherConfig, { accessToken: 'access-b', refreshToken: 'refresh-b' });
+            const renderAt = (probeNowMs: number, options: Partial<ProbeOptions> = {}) => harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                mode: 'success',
+                nowMs: probeNowMs,
+                pathDir: home.bin,
+                responseBody: successResponseBody,
+                ...options
+            });
+
+            const rateLimited = renderAt(nowMs, rateLimitedFetch);
+            expect(rateLimited.first).toEqual({ error: 'rate-limited' });
+            expect(parseLockContents(rateLimited.lockContents)).toEqual({
+                blockedUntil: Math.floor(nowMs / 1000) + 3600,
+                error: 'rate-limited',
+                accessTokenHash: fingerprint('access-a')
+            });
+
+            const other = renderAt(nowMs + 10000, { claudeConfigDir: otherConfig });
+            expect(other.requestCount).toBe(1);
+            expect(other.requestAuthorization).toBe('Bearer access-b');
+            expect(other.lockContents).toBe(rateLimited.lockContents);
+
+            const heldOff = renderAt(nowMs + 3599000, { mode: 'unexpected' });
+            expect(heldOff.first).toEqual({ error: 'rate-limited' });
+            expect(heldOff.requestCount).toBe(0);
+
+            const retried = renderAt(nowMs + 3601000);
+            expect(retried.requestCount).toBe(1);
+            expect(retried.requestAuthorization).toBe('Bearer access-a');
+            expect(retried.first).toMatchObject({ sessionUsage: 42, weeklyUsage: 17 });
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('fetches with a refreshed access token through the rate limit on the old one, though the refresh token is the same', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome('rate-limit-refreshed-token');
+            writeUsageCredentials(home.claudeConfig, { accessToken: 'access-a1', refreshToken: 'refresh-a' });
+            const renderAt = (probeNowMs: number, options: Partial<ProbeOptions> = {}) => harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                mode: 'success',
+                nowMs: probeNowMs,
+                pathDir: home.bin,
+                responseBody: successResponseBody,
+                ...options
+            });
+
+            expect(renderAt(nowMs, rateLimitedFetch).first).toEqual({ error: 'rate-limited' });
+
+            // The refresh token, which the cache's fingerprint comes from, is kept
+            writeUsageCredentials(home.claudeConfig, { accessToken: 'access-a2', refreshToken: 'refresh-a' });
+            const refreshed = renderAt(nowMs + 10000);
+            expect(refreshed.requestCount).toBe(1);
+            expect(refreshed.requestAuthorization).toBe('Bearer access-a2');
+            expect(refreshed.first).toMatchObject({ sessionUsage: 42, weeklyUsage: 17 });
+            expect(refreshed.cacheTokenHash).toBe(fingerprint('refresh-a'));
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('holds every access token off with a lock that names none, as older versions wrote', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome('rate-limit-no-token');
+            const cacheDir = path.join(home.home, '.cache', 'ccstatusline');
+            fs.mkdirSync(cacheDir, { recursive: true });
+            fs.writeFileSync(path.join(cacheDir, 'usage.lock'), JSON.stringify({
+                blockedUntil: Math.floor(nowMs / 1000) + 3600,
+                error: 'rate-limited'
+            }));
+
+            for (const login of [
+                { accessToken: 'access-a', refreshToken: 'refresh-a', offsetMs: 0 },
+                { accessToken: 'access-b', refreshToken: 'refresh-b', offsetMs: 10000 }
+            ]) {
+                writeUsageCredentials(home.claudeConfig, { accessToken: login.accessToken, refreshToken: login.refreshToken });
+                const result = harness.runProbe({
+                    claudeConfigDir: home.claudeConfig,
+                    home: home.home,
+                    mode: 'unexpected',
+                    nowMs: nowMs + login.offsetMs,
+                    pathDir: home.bin
+                });
+                expect(result.first).toEqual({ error: 'rate-limited' });
+                expect(result.requestCount).toBe(0);
+            }
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    // A token the API refuses is refused until the login changes, while a
+    // server that fails does so for every login
+    it.each([
+        { name: 'a 401', outcome: 'lets through', statusCode: 401, otherTokenRequests: 1 },
+        { name: 'a 503', outcome: 'holds off', statusCode: 503, otherTokenRequests: 0 }
+    ])('$outcome another access token during the backoff after $name', ({ statusCode, otherTokenRequests }) => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome(`api-error-other-token-${statusCode}`);
+            writeUsageCredentials(home.claudeConfig, { accessToken: 'access-a', refreshToken: 'refresh-a' });
+            const failed = harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                mode: 'status',
+                nowMs,
+                pathDir: home.bin,
+                statusCode
+            });
+            expect(failed.first.error).toBe('api-error');
+
+            writeUsageCredentials(home.claudeConfig, { accessToken: 'access-b', refreshToken: 'refresh-b' });
+            const other = harness.runProbe({
+                claudeConfigDir: home.claudeConfig,
+                home: home.home,
+                mode: 'success',
+                nowMs: nowMs + 10000,
+                pathDir: home.bin,
+                responseBody: successResponseBody
+            });
+            expect(other.requestCount).toBe(otherTokenRequests);
         } finally {
             harness.cleanup();
         }
@@ -2469,7 +2735,8 @@ describe('fetchUsageData error handling', () => {
             expect(apiErrorResult.first).toEqual({ error: 'api-error' });
             expect(parseLockContents(apiErrorResult.lockContents)).toEqual({
                 blockedUntil: Math.floor(nowMs / 1000) + 30,
-                error: 'api-error'
+                error: 'api-error',
+                accessTokenHash: fingerprint('test-token')
             });
 
             const activeLockResult = harness.runProbe({
@@ -2543,9 +2810,9 @@ describe('fetchUsageData error handling', () => {
 
     // The same request is refused again on the next render: a token the API
     // rejects, an unknown path, a proxy that won't tunnel without its own
-    // login, or an answer with nothing in it. Their lock is written as before
-    // the transient marker existed, so it also stands for a lock left by an
-    // older version.
+    // login, or an answer with nothing in it, until the login changes. Their
+    // lock is written without the transient marker, as a lock left by an
+    // older version is, and names the access token the request was sent with.
     it.each([
         { failure: { mode: 'status', statusCode: 403 }, name: 'a 403' },
         { failure: { mode: 'status', statusCode: 404 }, name: 'a 404' },
@@ -2568,7 +2835,8 @@ describe('fetchUsageData error handling', () => {
             expect(failed.requestCount).toBe(1);
             expect(parseLockContents(failed.lockContents)).toEqual({
                 blockedUntil: Math.floor(nowMs / 1000) + 30,
-                error: 'api-error'
+                error: 'api-error',
+                accessTokenHash: fingerprint('test-token')
             });
 
             const backedOff = harness.runProbe({
@@ -2769,7 +3037,8 @@ describe('fetchUsageData error handling', () => {
             expect(rateLimitedResult.requestCount).toBe(1);
             expect(parseLockContents(rateLimitedResult.lockContents)).toEqual({
                 blockedUntil: Math.floor(rateLimitNowMs / 1000) + 3600,
-                error: 'rate-limited'
+                error: 'rate-limited',
+                accessTokenHash: fingerprint('test-token')
             });
 
             const activeBackoffResult = harness.runProbe({
@@ -2939,7 +3208,8 @@ describe('fetchUsageData error handling', () => {
             expect(firstRateLimitedResult.requestCount).toBe(1);
             expect(parseLockContents(firstRateLimitedResult.lockContents)).toEqual({
                 blockedUntil: Math.floor(nowMs / 1000) + 300,
-                error: 'rate-limited'
+                error: 'rate-limited',
+                accessTokenHash: fingerprint('test-token')
             });
 
             const activeBackoffResult = harness.runProbe({
@@ -2997,7 +3267,8 @@ describe('fetchUsageData error handling', () => {
             expect(result.second).toEqual({ error: 'rate-limited' });
             expect(parseLockContents(result.lockContents)).toEqual({
                 blockedUntil: Math.floor((nowMs + 900000) / 1000),
-                error: 'rate-limited'
+                error: 'rate-limited',
+                accessTokenHash: fingerprint('test-token')
             });
         } finally {
             harness.cleanup();
@@ -3176,7 +3447,7 @@ describe('lookUpUsageAccount', () => {
 
     it.each([
         { name: 'the request fails', reply: { mode: 'error' as const } },
-        { name: 'the endpoint rejects the token', reply: { mode: 'status' as const, statusCode: 401 } },
+        { name: 'the endpoint fails', reply: { mode: 'status' as const, statusCode: 500 } },
         { name: 'the response names no organization', reply: { mode: 'success' as const, responseBody: JSON.stringify({ account: { uuid: 'account-uuid' } }) } }
     ])('has no account and holds that login off for 30 seconds when $name', ({ reply }) => {
         const harness = createProbeHarness();
@@ -3272,6 +3543,50 @@ describe('lookUpUsageAccount', () => {
         }
     });
 
+    // A token the profile endpoint refuses stays refused until a refresh or
+    // a login replaces it, and so changes its fingerprint.
+    it.each([401, 403])('holds off for a day a lookup the profile endpoint refuses with %i', (statusCode) => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome(`account-refused-${statusCode}`);
+            writeUsageCredentials(home.claudeConfig, { accessToken: 'access-a', refreshToken: 'refresh-a' });
+            const refused: ProbeReply = {
+                mode: 'status',
+                statusCode,
+                responseBody: JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'OAuth access token has expired' } })
+            };
+
+            const result = lookUpAt(harness, home, nowMs, refused);
+
+            expect(result.first).toEqual({ account: null });
+            expect(result.accountCache).toEqual([{ tokenHash: fingerprint('refresh-a'), blockedUntil: nowSeconds + 24 * 60 * 60 }]);
+            expect(profileRequests(lookUpAt(harness, home, nowMs + 60 * 60 * 1000, refused))).toBe(0);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('asks as soon as a refused login\'s tokens are replaced', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome('account-refused-refreshed');
+            writeUsageCredentials(home.claudeConfig, { accessToken: 'access-a', refreshToken: 'refresh-a' });
+
+            expect(profileRequests(lookUpAt(harness, home, nowMs, { mode: 'status', statusCode: 401 }))).toBe(1);
+
+            writeUsageCredentials(home.claudeConfig, { accessToken: 'access-b', refreshToken: 'refresh-b' });
+            const refreshed = lookUpAt(harness, home, nowMs + 5000, { mode: 'success', responseBody: profileResponseBody() });
+
+            expect(profileRequests(refreshed)).toBe(1);
+            expect(refreshed.profileAuthorization).toBe('Bearer access-b');
+            expect((refreshed.first as { account: unknown }).account).not.toBeNull();
+        } finally {
+            harness.cleanup();
+        }
+    });
+
     it('ignores a backoff implausibly far in the future', () => {
         const harness = createProbeHarness();
 
@@ -3284,6 +3599,26 @@ describe('lookUpUsageAccount', () => {
 
             expect(profileRequests(result)).toBe(1);
             expect((result.first as { account: unknown }).account).not.toBeNull();
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('asks nothing for a login whose access token has expired', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createTokenHome('account-login-expired');
+            const probeNowMs = Date.now();
+            writeUsageCredentials(home.claudeConfig, { accessToken: 'access-a', refreshToken: 'refresh-a', expiresAt: probeNowMs - 1000 });
+            // Usage fetched just before the token expired is still fresh
+            seedUsageCache(home.home, { sessionUsage: 42, weeklyUsage: 17, extraUsageEnabled: true, extraUsageUsed: 10000, tokenHash: fingerprint('refresh-a') });
+
+            const result = lookUpAt(harness, home, probeNowMs, { mode: 'unexpected' });
+
+            expect(result.first).toEqual({ account: null });
+            expect(result.requestCount).toBe(0);
+            expect(result.accountCache).toBeNull();
         } finally {
             harness.cleanup();
         }
@@ -3308,14 +3643,21 @@ describe('lookUpUsageAccount', () => {
 interface KeychainStub {
     bin: string;
     calls: () => string[];
-    removeItem: (service: string) => void;
-    setItem: (service: string, claudeAiOauth: { accessToken: string; refreshToken?: string }) => void;
+    removeItem: (service: string, account?: string) => void;
+    setItem: (service: string, claudeAiOauth: { accessToken: string; refreshToken?: string; expiresAt?: number }, account?: string) => void;
     setMode: (mode: 'answer' | 'locked' | 'timeout') => void;
     writeKeychainLockDuringNextCall: (contents: string) => void;
 }
 
 const DEFAULT_KEYCHAIN_SERVICE = 'Claude Code-credentials';
-const FIND_DEFAULT_ITEM = `find-generic-password -s ${DEFAULT_KEYCHAIN_SERVICE} -w`;
+// The probes' USER, the account Claude Code saves its login under
+const KEYCHAIN_ACCOUNT = 'example';
+const FIND_DEFAULT_ITEM = `find-generic-password -s ${DEFAULT_KEYCHAIN_SERVICE} -a ${KEYCHAIN_ACCOUNT} -w`;
+const FIND_ANY_DEFAULT_ITEM = `find-generic-password -s ${DEFAULT_KEYCHAIN_SERVICE} -w`;
+
+function findItem(service: string): string {
+    return `find-generic-password -s ${service} -a ${KEYCHAIN_ACCOUNT} -w`;
+}
 
 function makeConfigDirService(configDir: string): string {
     return `${DEFAULT_KEYCHAIN_SERVICE}-${createHash('sha256').update(configDir).digest('hex').slice(0, 8)}`;
@@ -3327,6 +3669,8 @@ function fingerprint(token: string): string {
 
 // A stand-in for macOS `security` that logs every call and answers from one
 // file per keychain item, exiting 44 (errSecItemNotFound) for a missing item.
+// Items are saved under an account, KEYCHAIN_ACCOUNT unless given, and a
+// lookup without one answers with the service's item saved first.
 // In 'locked' mode every call exits 36 (errSecInteractionNotAllowed), as for
 // a locked keychain that may not prompt; in 'timeout' mode none answers.
 // Setting or removing an item also changes the login keychain's database
@@ -3340,6 +3684,7 @@ function createKeychainStub(home: string): KeychainStub {
     fs.mkdirSync(itemsDir, { recursive: true });
     fs.mkdirSync(path.dirname(keychainFile), { recursive: true });
     fs.writeFileSync(keychainFile, '');
+    fs.writeFileSync(path.join(bin, 'order'), '');
     fs.writeFileSync(path.join(bin, 'security'), [
         '#!/bin/sh',
         `dir='${bin}'`,
@@ -3350,12 +3695,18 @@ function createKeychainStub(home: string): KeychainStub {
         '    timeout) exec /bin/sleep 10 ;;',
         'esac',
         'if [ "$1" = dump-keychain ]; then',
-        '    for item in "$dir"/items/*; do',
-        '        [ -f "$item" ] && printf \'keychain: "login.keychain-db"\\n    "svce"<blob>="%s"\\n\' "${item##*/}"',
-        '    done',
+        '    while IFS= read -r item; do',
+        '        [ -f "$dir/items/$item" ] && printf \'keychain: "login.keychain-db"\\n    "svce"<blob>="%s"\\n\' "${item#*/}"',
+        '    done < "$dir/order"',
         '    exit 0',
         'fi',
-        '[ -f "$dir/items/$3" ] && exec /bin/cat "$dir/items/$3"',
+        'if [ "$4" = -a ]; then',
+        '    [ -f "$dir/items/$5/$3" ] && exec /bin/cat "$dir/items/$5/$3"',
+        '    exit 44',
+        'fi',
+        'while IFS= read -r item; do',
+        '    [ "${item#*/}" = "$3" ] && [ -f "$dir/items/$item" ] && exec /bin/cat "$dir/items/$item"',
+        'done < "$dir/order"',
         'exit 44',
         ''
     ].join('\n'));
@@ -3370,12 +3721,17 @@ function createKeychainStub(home: string): KeychainStub {
                 return [];
             }
         },
-        removeItem: (service) => {
-            fs.rmSync(path.join(itemsDir, service));
+        removeItem: (service, account = KEYCHAIN_ACCOUNT) => {
+            fs.rmSync(path.join(itemsDir, account, service));
             fs.appendFileSync(keychainFile, '.');
         },
-        setItem: (service, claudeAiOauth) => {
-            fs.writeFileSync(path.join(itemsDir, service), JSON.stringify({ claudeAiOauth }));
+        setItem: (service, claudeAiOauth, account = KEYCHAIN_ACCOUNT) => {
+            const itemFile = path.join(itemsDir, account, service);
+            if (!fs.existsSync(itemFile)) {
+                fs.mkdirSync(path.dirname(itemFile), { recursive: true });
+                fs.appendFileSync(path.join(bin, 'order'), `${account}/${service}\n`);
+            }
+            fs.writeFileSync(itemFile, JSON.stringify({ claudeAiOauth }));
             fs.appendFileSync(keychainFile, '.');
         },
         setMode: (mode) => {
@@ -3452,6 +3808,73 @@ describe('fetchUsageData keychain reads on macOS', () => {
         }
     });
 
+    it('reads the login saved under the account Claude Code runs as, not one another account left for the same service', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const { home } = harness.createEmptyHome('keychain-account');
+            const keychain = createKeychainStub(home);
+            // Running Claude Code as root once left root's login behind,
+            // which a lookup without an account finds first
+            keychain.setItem(DEFAULT_KEYCHAIN_SERVICE, { accessToken: 'access-root', refreshToken: 'refresh-root' }, 'root');
+            keychain.setItem(DEFAULT_KEYCHAIN_SERVICE, { accessToken: 'access-a', refreshToken: 'refresh-a' });
+            const renderAt = createRenderer(harness, home, keychain);
+
+            const result = renderAt(Date.now());
+            expect(result.requestAuthorization).toBe('Bearer access-a');
+            expect(result.first.sessionUsage).toBe(42);
+            expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM]);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('reads the service\'s item under another account when none is saved under its own, as older setups may keep it', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const { home } = harness.createEmptyHome('keychain-other-account');
+            const keychain = createKeychainStub(home);
+            keychain.setItem(DEFAULT_KEYCHAIN_SERVICE, { accessToken: 'access-a', refreshToken: 'refresh-a' }, 'older-account');
+            const renderAt = createRenderer(harness, home, keychain);
+
+            const result = renderAt(Date.now());
+            expect(result.requestAuthorization).toBe('Bearer access-a');
+            expect(result.first.sessionUsage).toBe(42);
+            expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM, FIND_ANY_DEFAULT_ITEM]);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('shows Login expired once the known login\'s token expires, without running security, until a refreshed one is saved', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const { home } = harness.createEmptyHome('keychain-login-expired');
+            const keychain = createKeychainStub(home);
+            const startMs = Date.now();
+            keychain.setItem(DEFAULT_KEYCHAIN_SERVICE, { accessToken: 'access-a', refreshToken: 'refresh-a', expiresAt: startMs + 100000 });
+            const renderAt = createRenderer(harness, home, keychain);
+
+            expect(renderAt(startMs).first.sessionUsage).toBe(42);
+
+            // Past the cache's lifetime and the token's, with nothing written since
+            const expired = renderAt(startMs + 200000, { mode: 'unexpected' });
+            expect(expired.first).toEqual({ error: 'login-expired' });
+            expect(expired.requestCount).toBe(0);
+            expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM]);
+
+            keychain.setItem(DEFAULT_KEYCHAIN_SERVICE, { accessToken: 'access-b', refreshToken: 'refresh-b', expiresAt: startMs + 8 * 60 * 60 * 1000 });
+            const refreshed = renderAt(startMs + 205000, { responseBody: accountBResponseBody });
+            expect(refreshed.first.sessionUsage).toBe(55);
+            expect(refreshed.requestAuthorization).toBe('Bearer access-b');
+            expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM, FIND_DEFAULT_ITEM]);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
     it('notices a login written to the keychain on the next render', () => {
         const harness = createProbeHarness();
 
@@ -3485,7 +3908,7 @@ describe('fetchUsageData keychain reads on macOS', () => {
             writeUsageCredentials(claudeConfig, { accessToken: 'access-a', refreshToken: 'refresh-a' });
             const renderAt = createRenderer(harness, home, keychain);
             const startMs = Date.now();
-            const lookup = [FIND_DEFAULT_ITEM];
+            const lookup = [FIND_DEFAULT_ITEM, FIND_ANY_DEFAULT_ITEM];
 
             expect(renderAt(startMs).first.sessionUsage).toBe(42);
             expect(keychain.calls()).toEqual(lookup);
@@ -3623,8 +4046,8 @@ describe('fetchUsageData keychain reads on macOS', () => {
             const keychain = createKeychainStub(home);
             const workConfig = path.join(home, 'claude-work');
             const personalConfig = path.join(home, 'claude-personal');
-            const findWork = `find-generic-password -s ${makeConfigDirService(workConfig)} -w`;
-            const findPersonal = `find-generic-password -s ${makeConfigDirService(personalConfig)} -w`;
+            const findWork = findItem(makeConfigDirService(workConfig));
+            const findPersonal = findItem(makeConfigDirService(personalConfig));
             keychain.setItem(makeConfigDirService(workConfig), { accessToken: 'access-a', refreshToken: 'refresh-a' });
             keychain.setItem(makeConfigDirService(personalConfig), { accessToken: 'access-b', refreshToken: 'refresh-b' });
             const renderAt = createRenderer(harness, home, keychain);
@@ -3658,8 +4081,8 @@ describe('fetchUsageData keychain reads on macOS', () => {
             const keychain = createKeychainStub(home);
             const workConfig = path.join(home, 'claude-work');
             const personalConfig = path.join(home, 'claude-personal');
-            const findWork = `find-generic-password -s ${makeConfigDirService(workConfig)} -w`;
-            const findPersonal = `find-generic-password -s ${makeConfigDirService(personalConfig)} -w`;
+            const findWork = findItem(makeConfigDirService(workConfig));
+            const findPersonal = findItem(makeConfigDirService(personalConfig));
             keychain.setItem(makeConfigDirService(workConfig), { accessToken: 'access-a', refreshToken: 'refresh-a' });
             keychain.setItem(makeConfigDirService(personalConfig), { accessToken: 'access-b', refreshToken: 'refresh-b' });
             const renderAt = createRenderer(harness, home, keychain);
@@ -3693,8 +4116,8 @@ describe('fetchUsageData keychain reads on macOS', () => {
             const keychain = createKeychainStub(home);
             const workConfig = path.join(home, 'claude-work');
             const personalConfig = path.join(home, 'claude-personal');
-            const findWork = `find-generic-password -s ${makeConfigDirService(workConfig)} -w`;
-            const findPersonal = `find-generic-password -s ${makeConfigDirService(personalConfig)} -w`;
+            const findWork = findItem(makeConfigDirService(workConfig));
+            const findPersonal = findItem(makeConfigDirService(personalConfig));
             const keychainLock = path.join(home, '.cache', 'ccstatusline', 'usage-keychain.lock');
             const renderAt = createRenderer(harness, home, keychain);
             const startMs = Date.now();
@@ -3732,11 +4155,11 @@ describe('fetchUsageData keychain reads on macOS', () => {
             const startMs = Date.now();
 
             expect(renderAt(startMs).first.sessionUsage).toBe(42);
-            expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM]);
+            expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM, FIND_ANY_DEFAULT_ITEM]);
 
             const refreshed = renderAt(startMs + 200000);
             expect(refreshed.requestCount).toBe(1);
-            expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM, FIND_DEFAULT_ITEM]);
+            expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM, FIND_ANY_DEFAULT_ITEM, FIND_DEFAULT_ITEM, FIND_ANY_DEFAULT_ITEM]);
             expect(fs.existsSync(path.join(home, '.cache', 'ccstatusline', 'usage-keychain.lock'))).toBe(false);
         } finally {
             harness.cleanup();
@@ -3751,7 +4174,7 @@ describe('fetchUsageData keychain reads on macOS', () => {
             const keychain = createKeychainStub(home);
             const renderAt = createRenderer(harness, home, keychain);
             const startMs = Date.now();
-            const lookup = [FIND_DEFAULT_ITEM];
+            const lookup = [FIND_DEFAULT_ITEM, FIND_ANY_DEFAULT_ITEM];
 
             expect(renderAt(startMs).first).toEqual({ error: 'no-credentials' });
             expect(renderAt(startMs + 10000).first).toEqual({ error: 'no-credentials' });
@@ -3772,7 +4195,7 @@ describe('fetchUsageData keychain reads on macOS', () => {
             const { home } = harness.createEmptyHome('keychain-profile');
             const keychain = createKeychainStub(home);
             const workConfig = path.join(home, 'claude-work');
-            const findWork = `find-generic-password -s ${makeConfigDirService(workConfig)} -w`;
+            const findWork = findItem(makeConfigDirService(workConfig));
             keychain.setItem(makeConfigDirService(workConfig), { accessToken: 'access-a', refreshToken: 'refresh-a' });
             keychain.setItem(DEFAULT_KEYCHAIN_SERVICE, { accessToken: 'access-b', refreshToken: 'refresh-b' });
             const renderAt = createRenderer(harness, home, keychain);
@@ -3973,13 +4396,13 @@ describe('fetchUsageData keychain reads on macOS', () => {
             const loggedOut = renderAt(startMs + 20000, { mode: 'unexpected' });
             expect(loggedOut.first).toEqual({ error: 'no-credentials' });
             expect(loggedOut.requestCount).toBe(0);
-            expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM, FIND_DEFAULT_ITEM]);
+            expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM, FIND_DEFAULT_ITEM, FIND_ANY_DEFAULT_ITEM]);
         } finally {
             harness.cleanup();
         }
     });
 
-    it('shows a login switch during a usage backoff on the next render', () => {
+    it('fetches for a login switched to during another login\'s rate limit, on the next render and once its cache is stale', () => {
         const harness = createProbeHarness();
 
         try {
@@ -3994,23 +4417,28 @@ describe('fetchUsageData keychain reads on macOS', () => {
             expect(renderAt(startMs + 210000, { mode: 'unexpected' }).first.sessionUsage).toBe(42);
             expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM, FIND_DEFAULT_ITEM]);
 
-            // The other account's usage waits for the backoff to end, and the
-            // first account's no longer stands in for it
+            // The rate limit holds off the first login's access token only,
+            // and that login's usage no longer stands in
             keychain.setItem(DEFAULT_KEYCHAIN_SERVICE, { accessToken: 'access-b', refreshToken: 'refresh-b' });
-            const switched = renderAt(startMs + 220000, { mode: 'unexpected' });
-            expect(switched.first).toEqual({ error: 'rate-limited' });
-            expect(switched.requestCount).toBe(0);
+            const switched = renderAt(startMs + 220000, { responseBody: accountBResponseBody });
+            expect(switched.requestCount).toBe(1);
+            expect(switched.requestAuthorization).toBe('Bearer access-b');
+            expect(switched.first.sessionUsage).toBe(55);
             expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM, FIND_DEFAULT_ITEM, FIND_DEFAULT_ITEM]);
 
-            const fetched = renderAt(startMs + 501000, { responseBody: accountBResponseBody });
-            expect(fetched.requestCount).toBe(1);
-            expect(fetched.first.sessionUsage).toBe(55);
+            // The login is known now, and its cache too old to answer, while
+            // the first login's rate limit still runs until 500000
+            const stale = renderAt(startMs + 410000, { responseBody: accountBResponseBody });
+            expect(stale.requestCount).toBe(1);
+            expect(stale.requestAuthorization).toBe('Bearer access-b');
+            expect(stale.first.sessionUsage).toBe(55);
+            expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM, FIND_DEFAULT_ITEM, FIND_DEFAULT_ITEM, FIND_DEFAULT_ITEM]);
         } finally {
             harness.cleanup();
         }
     });
 
-    it('doesn\'t show another profile\'s stale cache while that profile\'s rate limit holds requests off', () => {
+    it('fetches a profile\'s own usage through another profile\'s rate limit, and leaves that rate limit in place', () => {
         const harness = createProbeHarness();
 
         try {
@@ -4018,8 +4446,8 @@ describe('fetchUsageData keychain reads on macOS', () => {
             const keychain = createKeychainStub(home);
             const workConfig = path.join(home, 'claude-work');
             const personalConfig = path.join(home, 'claude-personal');
-            const findWork = `find-generic-password -s ${makeConfigDirService(workConfig)} -w`;
-            const findPersonal = `find-generic-password -s ${makeConfigDirService(personalConfig)} -w`;
+            const findWork = findItem(makeConfigDirService(workConfig));
+            const findPersonal = findItem(makeConfigDirService(personalConfig));
             keychain.setItem(makeConfigDirService(workConfig), { accessToken: 'access-a', refreshToken: 'refresh-a' });
             keychain.setItem(makeConfigDirService(personalConfig), { accessToken: 'access-b', refreshToken: 'refresh-b' });
             const renderAt = createRenderer(harness, home, keychain);
@@ -4033,10 +4461,16 @@ describe('fetchUsageData keychain reads on macOS', () => {
             expect(renderAt(startMs + 200000, { claudeConfigDir: workConfig, ...rateLimitedFetch }).first.sessionUsage).toBe(42);
             expect(keychain.calls()).toEqual([findWork, findPersonal, findWork, findWork]);
 
-            const personal = renderAt(startMs + 210000, { claudeConfigDir: personalConfig, mode: 'unexpected' });
-            expect(personal.first).toEqual({ error: 'rate-limited' });
-            expect(personal.requestCount).toBe(0);
-            expect(keychain.calls()).toEqual([findWork, findPersonal, findWork, findWork]);
+            // The work profile's usage doesn't stand in for the personal one's
+            const personal = renderAt(startMs + 210000, { claudeConfigDir: personalConfig, responseBody: accountBResponseBody });
+            expect(personal.first.sessionUsage).toBe(55);
+            expect(personal.requestCount).toBe(1);
+            expect(keychain.calls()).toEqual([findWork, findPersonal, findWork, findWork, findPersonal]);
+
+            const work = renderAt(startMs + 220000, { claudeConfigDir: workConfig, mode: 'unexpected' });
+            expect(work.first).toEqual({ error: 'rate-limited' });
+            expect(work.requestCount).toBe(0);
+            expect(keychain.calls()).toEqual([findWork, findPersonal, findWork, findWork, findPersonal]);
         } finally {
             harness.cleanup();
         }
