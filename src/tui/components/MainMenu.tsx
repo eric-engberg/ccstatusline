@@ -236,6 +236,9 @@ export const MainMenu: React.FC<MainMenuProps> = ({
 
             <Text bold>Main Menu</Text>
 
+            {/* initialSelection is the entry last opened. Saving swaps Save & Exit
+                and Exit without saving for Exit, and must not move the highlight
+                back to that entry. */}
             <List
                 items={menuItems}
                 marginTop={1}
@@ -247,6 +250,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
                     onSelect(value, index);
                 }}
                 initialSelection={initialSelection}
+                keepHighlightOnItemsChange={true}
             />
         </Box>
     );
