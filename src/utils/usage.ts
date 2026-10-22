@@ -4,6 +4,7 @@ export {
     getUsageFetchedAt,
     isStaleUsageFallback,
     lookUpUsageAccount,
+    type PayloadResetAt,
     type UsageAccount
 } from './usage-fetch';
 export {

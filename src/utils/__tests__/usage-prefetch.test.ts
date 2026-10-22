@@ -242,7 +242,45 @@ describe('usage prefetch', () => {
 
         expect(usageData?.fableUsage).toBe(5);
         expect(mockFetchUsageData.mock.calls.length).toBe(1);
-        expect(mockFetchUsageData.mock.calls[0]).toEqual([{ requiredFields: ['fableUsage'] }]);
+        expect(mockFetchUsageData.mock.calls[0]).toEqual([{
+            requiredFields: ['fableUsage'],
+            payloadResetAt: {
+                sessionResetAt: epochToIso(1774020000),
+                weeklyResetAt: epochToIso(1774540000)
+            }
+        }]);
+    });
+
+    it('hands the fetch the payload\'s reset ends so a cached answer from before a reset is replaced', async () => {
+        mockFetchUsageData.mockResolvedValue({
+            weeklyUsage: 1,
+            weeklyResetAt: epochToIso(1774540000),
+            fableUsage: 3,
+            fableResetAt: epochToIso(1774540000)
+        });
+
+        const lines = makeLines(
+            [{ id: '1', type: 'fable-weekly-usage' }, { id: '2', type: 'weekly-usage' }]
+        );
+
+        // Just after a weekly reset: the payload already ends the week seven
+        // days later, while Fable usage comes only from the usage API.
+        const usageData = await prefetchUsageDataIfNeeded(lines, {
+            rate_limits: {
+                five_hour: { used_percentage: 12, resets_at: 1774020000 },
+                seven_day: { used_percentage: 1, resets_at: 1774540000 }
+            }
+        });
+
+        expect(mockFetchUsageData.mock.calls).toEqual([[{
+            requiredFields: ['fableUsage'],
+            payloadResetAt: {
+                sessionResetAt: epochToIso(1774020000),
+                weeklyResetAt: epochToIso(1774540000)
+            }
+        }]]);
+        expect(usageData?.fableUsage).toBe(3);
+        expect(usageData?.weeklyUsage).toBe(1);
     });
 
     it.each([
@@ -325,7 +363,7 @@ describe('usage prefetch', () => {
             weeklyResetAt: epochToIso(1774540000)
         });
         expect(mockFetchUsageData.mock.calls).toEqual([
-            [{ requiredFields: ['sessionResetAt'] }]
+            [{ requiredFields: ['sessionResetAt'], payloadResetAt: { weeklyResetAt: epochToIso(1774540000) } }]
         ]);
     });
 
@@ -681,7 +719,10 @@ describe('usage prefetch', () => {
             weeklySonnetUsage: 8
         });
         expect(mockFetchUsageData.mock.calls.length).toBe(1);
-        expect(mockFetchUsageData.mock.calls[0]).toEqual([{ requiredFields: ['weeklySonnetUsage'] }]);
+        expect(mockFetchUsageData.mock.calls[0]).toEqual([{
+            requiredFields: ['weeklySonnetUsage'],
+            payloadResetAt: { weeklyResetAt: epochToIso(1774540000) }
+        }]);
     });
 
     it('uses aggregate weekly reset as the cursor fallback without fetching for fable reset data', async () => {
@@ -698,7 +739,10 @@ describe('usage prefetch', () => {
             fableUsage: 8
         });
         expect(mockFetchUsageData.mock.calls.length).toBe(1);
-        expect(mockFetchUsageData.mock.calls[0]).toEqual([{ requiredFields: ['fableUsage'] }]);
+        expect(mockFetchUsageData.mock.calls[0]).toEqual([{
+            requiredFields: ['fableUsage'],
+            payloadResetAt: { weeklyResetAt: epochToIso(1774540000) }
+        }]);
     });
 
     it('fetches extra usage fields while preserving statusline usage data', async () => {
@@ -837,9 +881,13 @@ describe('usage prefetch', () => {
 
         expect(usageData?.weeklySonnetUsage).toBe(8);
         expect(usageData?.weeklyOpusUsage).toBe(2);
-        expect(mockFetchUsageData.mock.calls).toEqual([[
-            { requiredFields: ['weeklySonnetUsage', 'weeklyOpusUsage'] }
-        ]]);
+        expect(mockFetchUsageData.mock.calls).toEqual([[{
+            requiredFields: ['weeklySonnetUsage', 'weeklyOpusUsage'],
+            payloadResetAt: {
+                sessionResetAt: epochToIso(1774020000),
+                weeklyResetAt: epochToIso(1774540000)
+            }
+        }]]);
     });
 
     it('does not let null per-model stdin buckets overwrite scoped API usage fetched for another widget', async () => {
