@@ -1,13 +1,18 @@
 import { HttpsProxyAgent } from 'https-proxy-agent';
 import { EventEmitter } from 'node:events';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import {
     afterEach,
+    beforeEach,
     describe,
     expect,
     it,
     vi
 } from 'vitest';
 
+import { __testing as cacheDirTesting } from '../cache-dir';
 import type { ClaudeIncidentWindow } from '../claude-service-status';
 import {
     INCIDENT_HISTORY_BUCKET_COUNT,
@@ -18,12 +23,15 @@ import {
     hasClaudeStatusWidgets,
     isClaudeStatusHistoryEnabled,
     parseClaudeIncidentsResponse,
-    parseClaudeStatusResponse
+    parseClaudeStatusResponse,
+    prefetchClaudeStatusIfNeeded
 } from '../claude-service-status';
 
 import {
     isolateHttpsProxyEnv,
+    startRefusingProxy,
     startStalledProxy,
+    type RefusingProxy,
     type StalledProxy
 } from './proxy-test-helpers';
 
@@ -324,6 +332,41 @@ describe('status page response handling', () => {
 
         await expect(__testing.fetchStatusPagePath('/test', requestFn)).resolves.toBeNull();
         expect(requestFn).not.toHaveBeenCalled();
+    });
+});
+
+describe('Claude Status failure backoff', () => {
+    isolateHttpsProxyEnv();
+
+    let proxy: RefusingProxy | null = null;
+    let cacheDir = '';
+
+    beforeEach(() => {
+        cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-status-test-'));
+        cacheDirTesting.setWritableCacheDir(cacheDir);
+    });
+
+    afterEach(async () => {
+        await proxy?.stop();
+        proxy = null;
+        cacheDirTesting.setWritableCacheDir(null);
+        fs.rmSync(cacheDir, { recursive: true, force: true });
+    });
+
+    // Every render is a new process, so the lock file is all that keeps an
+    // unreachable status page from being tried again on every render. It
+    // belongs in the folder getWritableCacheDir() picks, which moves to the
+    // temp folder when ~/.cache can't be written.
+    it('keeps its failure backoff in the writable cache folder', async () => {
+        proxy = await startRefusingProxy();
+        process.env.HTTPS_PROXY = proxy.url;
+        const lines = [[{ id: '1', type: 'claude-status' }]];
+
+        await expect(prefetchClaudeStatusIfNeeded(lines)).resolves.toEqual({ error: true });
+        await expect(prefetchClaudeStatusIfNeeded(lines)).resolves.toEqual({ error: true });
+
+        expect(proxy.connectionCount()).toBe(1);
+        expect(fs.readdirSync(cacheDir)).toEqual(['claude-status.lock']);
     });
 });
 
