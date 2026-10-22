@@ -1,6 +1,7 @@
 import type { RenderUsageData } from '../types/RenderContext';
 import type { SessionForecast } from '../types/SessionForecast';
 import type { WidgetItem } from '../types/Widget';
+import { isAtSessionLimit } from '../widgets/shared/usage-display';
 
 import { getClaudeConfigDir } from './claude-settings';
 import { forecastSessionUsage } from './session-forecast';
@@ -35,5 +36,11 @@ export function computeSessionForecastIfNeeded(
 
     const clampedPercent = Math.max(0, Math.min(100, percent));
     const readings = recordSessionUsageReading(getClaudeConfigDir(), resetAtMs, clampedPercent, deps);
+    // The usage API's percent, when fetched for Block Usage's and Block Reset
+    // Timer's limit states, can reach 100 while this session's is still under
+    // it. Nothing is left to forecast once they've swapped.
+    if (isAtSessionLimit(usageData ?? {})) {
+        return null;
+    }
     return forecastSessionUsage({ readings, nowMs, resetAtMs, percent: clampedPercent });
 }
