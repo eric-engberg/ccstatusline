@@ -176,7 +176,7 @@ export async function syncWidgetHooks(settings: Settings): Promise<SkippedWidget
     // --config or the default while the command names a --config, doesn't
     // decide them, so they stay as they are.
     if (getStatusLineConfigPath(statusCommand) !== getConfigPath()) {
-        return;
+        return null;
     }
     const hookCommand = `${statusCommand} --hook`;
 
