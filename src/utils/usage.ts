@@ -1,5 +1,7 @@
 export {
     fetchUsageData,
+    getUsageFetchedAtMs,
+    getUsageLoginFingerprint,
     isStaleUsageFallback,
     type PayloadResetAt
 } from './usage-fetch';

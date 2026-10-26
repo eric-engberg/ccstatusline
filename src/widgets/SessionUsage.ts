@@ -45,7 +45,7 @@ export class SessionUsageWidget implements Widget {
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
         // The preview keeps its sample
-        if (!context.isPreview && isHidden(item, SESSION_AT_LIMIT_HIDEABLE_STATE.key) && isAtSessionLimit(context.usageData ?? {})) {
+        if (!context.isPreview && isHidden(item, SESSION_AT_LIMIT_HIDEABLE_STATE.key) && isAtSessionLimit(context)) {
             return null;
         }
         return renderUsagePercentWidgetValue('session', item, context, settings);

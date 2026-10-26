@@ -373,6 +373,9 @@ export function parseUsageApiResponse(rawJson: string): UsageData | null {
 let cachedUsageData: UsageData | null = null;
 let usageCacheTime = 0;
 let usageErrorCacheMaxAge = LOCK_MAX_AGE;
+// When the usage API sent cachedUsageData's values, in ms: a cache file's are
+// as old as the file, which may have been written hours ago
+let usageFetchedAtMs: number | undefined;
 // The last good cache each time getStaleUsageOrError serves it after it has
 // outlived a refresh, because the usage API couldn't be reached. Like a fresh
 // answer, it carries no error.
@@ -403,14 +406,25 @@ function setCachedUsageError(error: UsageError, now: number, maxAge = LOCK_MAX_A
     cachedUsageData = errorData;
     usageCacheTime = now;
     usageErrorCacheMaxAge = maxAge;
+    usageFetchedAtMs = undefined;
     return errorData;
 }
 
-function cacheUsageData(data: UsageData, now: number): UsageData {
+function cacheUsageData(data: UsageData, now: number, fetchedAtMs: number): UsageData {
     cachedUsageData = data;
     usageCacheTime = now;
     usageErrorCacheMaxAge = LOCK_MAX_AGE;
+    usageFetchedAtMs = fetchedAtMs;
     return data;
+}
+
+/**
+ * When the usage API sent the values fetchUsageData last returned, in ms, or
+ * undefined after an error. Served from the cache, during a rate limit say,
+ * they can be hours old.
+ */
+export function getUsageFetchedAtMs(): number | undefined {
+    return usageFetchedAtMs;
 }
 
 function hasRequiredUsageField(data: UsageData, field: UsageDataField): boolean {
@@ -472,11 +486,11 @@ function getStaleUsageOrError(
     requiredFields: readonly UsageDataField[] = []
 ): UsageData {
     const stale = readStaleUsageCache(cacheIdentity);
-    if (stale && !stale.error && hasRequiredUsageFields(stale, requiredFields)) {
+    if (stale && !stale.data.error && hasRequiredUsageFields(stale.data, requiredFields)) {
         if (hasUsageCacheOutlivedRefresh(now)) {
-            staleUsageFallbacks.add(stale);
+            staleUsageFallbacks.add(stale.data);
         }
-        return cacheUsageData(stale, now);
+        return cacheUsageData(stale.data, now, stale.fetchedAtMs);
     }
 
     return setCachedUsageError(error, now, errorCacheMaxAge);
@@ -715,13 +729,25 @@ function getUsageCredentialsWithBackoff(now: number): UsageCredentials | null {
     return credentials;
 }
 
-function readStaleUsageCache(cacheIdentity: UsageCacheIdentity | null): UsageData | null {
+/**
+ * The login whose usage the status line shows: the usage cache's fingerprint
+ * of it (see getUsageCacheIdentity), or null with no OAuth login found. It
+ * stays the same across access-token refreshes, and changes with /login.
+ */
+export function getUsageLoginFingerprint(): string | null {
+    const credentials = getUsageCredentialsWithBackoff(Math.floor(Date.now() / 1000));
+    return credentials ? getUsageCacheIdentity(credentials).preferredHash : null;
+}
+
+function readStaleUsageCache(cacheIdentity: UsageCacheIdentity | null): { data: UsageData; fetchedAtMs: number } | null {
     try {
+        const fetchedAtMs = fs.statSync(CACHE_FILE).mtimeMs;
         const rawCache = fs.readFileSync(CACHE_FILE, 'utf8');
         if (!tokenHashMatches(readCachedTokenHash(rawCache), cacheIdentity)) {
             return null;
         }
-        return parseCachedUsageData(rawCache);
+        const data = parseCachedUsageData(rawCache);
+        return data ? { data, fetchedAtMs } : null;
     } catch {
         return null;
     }
@@ -963,7 +989,7 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
             if (fileData && !fileData.error
                 && tokenHashMatches(readCachedTokenHash(rawCache), cacheIdentity)
                 && answersUsageRequest(fileData, options)) {
-                return cacheUsageData(fileData, now);
+                return cacheUsageData(fileData, now, stat.mtimeMs);
             }
         }
     } catch {
@@ -1029,7 +1055,7 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
             clearOwnUsageLock(inFlightLock);
         }
 
-        return cacheUsageData(usageData, now);
+        return cacheUsageData(usageData, now, Date.now());
     } catch {
         writeUsageLock(now + LOCK_MAX_AGE, 'parse-error');
         return getStaleUsageOrError('parse-error', now, cacheIdentity, LOCK_MAX_AGE, requiredFields);

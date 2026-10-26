@@ -104,6 +104,15 @@ describe('isAtSessionLimit', () => {
         ['the usage API at 100% while the payload lags', { sessionUsage: 97, apiSessionUsage: 100 }, true],
         ['the usage API under 100% after the payload reached it', { sessionUsage: 100, apiSessionUsage: 2 }, false]
     ])('is %s → %s', (_label, usageData, expected) => {
-        expect(isAtSessionLimit(usageData)).toBe(expected);
+        const payloadPercent = 'sessionUsage' in usageData ? usageData.sessionUsage : undefined;
+
+        expect(isAtSessionLimit({ usageData, data: { rate_limits: { five_hour: { used_percentage: payloadPercent } } } })).toBe(expected);
+    });
+
+    // Merged usage data keeps an API percent prefetch rejected, as stale or
+    // from a block that has since reset, when the payload has none of its own
+    it('isn\'t at 100% from an API percent prefetch rejected', () => {
+        expect(isAtSessionLimit({ usageData: { sessionUsage: 100 }, data: { rate_limits: { five_hour: { resets_at: 1 } } } })).toBe(false);
+        expect(isAtSessionLimit({ usageData: { sessionUsage: 100 } })).toBe(false);
     });
 });

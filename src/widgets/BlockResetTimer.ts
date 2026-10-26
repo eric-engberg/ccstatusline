@@ -146,7 +146,7 @@ export class BlockResetTimerWidget implements Widget {
         }
 
         const usageData = context.usageData ?? {};
-        if (!isAtSessionLimit(usageData) && isHidden(item, SESSION_UNDER_LIMIT_HIDEABLE_STATE.key)) {
+        if (!isAtSessionLimit(context) && isHidden(item, SESSION_UNDER_LIMIT_HIDEABLE_STATE.key)) {
             return null;
         }
         const window = resolveUsageWindowWithFallback(usageData, context.blockMetrics);

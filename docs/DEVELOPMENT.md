@@ -27,6 +27,11 @@ bun install
 # Run in TUI mode
 bun run start
 
+# Run in TUI mode with in-place reload: ctrl+r restarts on the latest code,
+# keeping unsaved settings, the current screen and cursor. --config is
+# optional and keeps a scratch setup separate from your real config.
+CCSTATUSLINE_DEV_RELOAD=1 bun run start --config /tmp/ccstatusline-dev.json
+
 # Test piped mode with example payload
 bun run example
 
@@ -57,6 +62,7 @@ bun run docs
 - `~/.cache/ccstatusline/terminal-width.json` - per-session no-width probe results; detected numeric widths are not persisted by the renderer
 - `~/.cache/ccstatusline/usage.json` and `~/.cache/ccstatusline/usage.lock` - usage API data cache and fetch backoff lock
 - `~/.cache/ccstatusline/usage-credentials.lock` - 30-second backoff after a usage credential lookup finds no OAuth login, tagged with the profile it applies to
+- `~/.cache/ccstatusline/session-usage-history.json` and `~/.cache/ccstatusline/session-usage-history.json.lock` - 5-hour usage readings for Block Forecast and Block Limit Timer, per Claude config directory and login, and the lock a render holds while writing them
 - `~/.cache/ccstatusline/claude-status.json` and `~/.cache/ccstatusline/claude-status.lock` - Claude service-status cache and failed-fetch backoff lock
 - `~/.cache/ccstatusline/skills/skills-<sessionId>.jsonl` - skill hook records; session IDs must contain only ASCII letters, digits, `-`, or `_`
 

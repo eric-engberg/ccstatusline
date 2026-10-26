@@ -97,6 +97,12 @@ describe('SessionUsageWidget', () => {
     describe('at-limit hide state', () => {
         const item: WidgetItem = { id: 'session', type: 'session-usage', metadata: { hide: 'at-limit' } };
 
+        // A real render's payload carries the percent that merged usage data
+        // takes as its sessionUsage
+        function withPayloadPercent(usageData: { sessionUsage: number; apiSessionUsage?: number }): RenderContext {
+            return { usageData, data: { rate_limits: { five_hour: { used_percentage: usageData.sessionUsage } } } };
+        }
+
         // The raw percent decides, so 99.7% that a whole-number percent shows as
         // "100%" still counts as under the limit
         it.each([
@@ -104,7 +110,7 @@ describe('SessionUsageWidget', () => {
             ['just under 100%', { sessionUsage: 99.7 }, '5h: 99.7%'],
             ['the usage API under 100% after the payload reached it', { sessionUsage: 100, apiSessionUsage: 2 }, '5h: 100.0%']
         ])('shows the percent when the block\'s usage is %s', (_label, usageData, expected) => {
-            expect(render(new SessionUsageWidget(), item, { usageData })).toBe(expected);
+            expect(render(new SessionUsageWidget(), item, withPayloadPercent(usageData))).toBe(expected);
         });
 
         it.each([
@@ -112,7 +118,13 @@ describe('SessionUsageWidget', () => {
             ['over 100%', { sessionUsage: 100.4 }],
             ['at 100% in the usage API while the payload lags', { sessionUsage: 97, apiSessionUsage: 100 }]
         ])('hides the percent when the block\'s usage is %s', (_label, usageData) => {
-            expect(render(new SessionUsageWidget(), item, { usageData })).toBeNull();
+            expect(render(new SessionUsageWidget(), item, withPayloadPercent(usageData))).toBeNull();
+        });
+
+        // Merged usage data keeps an API percent prefetch rejected, as stale or
+        // from a block that has since reset, when the payload has none of its own
+        it('shows the percent when only a rejected API percent is at 100%', () => {
+            expect(render(new SessionUsageWidget(), item, { usageData: { sessionUsage: 100 }, data: { rate_limits: { five_hour: { resets_at: 1 } } } })).toBe('5h: 100.0%');
         });
 
         it('keeps the no-data behavior when the usage is unknown', () => {
@@ -144,8 +156,8 @@ describe('SessionUsageWidget', () => {
             vi.spyOn(usage, 'resolveUsageWindowWithFallback').mockReturnValue(halfElapsedWindow);
             const timerItem: WidgetItem = { id: 'reset', type: 'reset-timer', metadata: { hide: 'under-limit' } };
 
-            const percent = render(new SessionUsageWidget(), item, { usageData });
-            const timer = new BlockResetTimerWidget().render(timerItem, { usageData }, DEFAULT_SETTINGS);
+            const percent = render(new SessionUsageWidget(), item, withPayloadPercent(usageData));
+            const timer = new BlockResetTimerWidget().render(timerItem, withPayloadPercent(usageData), DEFAULT_SETTINGS);
 
             expect([percent !== null, timer !== null]).toEqual(shown === 'percent' ? [true, false] : [false, true]);
         });
