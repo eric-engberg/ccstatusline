@@ -13,6 +13,10 @@ import {
     LOOKBACK_MS,
     type SessionUsageReading
 } from './session-forecast';
+import {
+    getUsageFetchedAtMs,
+    getUsageLoginFingerprint
+} from './usage';
 
 const HISTORY_SCHEMA_VERSION = 1 as const;
 // One window's reset time jitters by under a second between sources (the API
@@ -26,6 +30,10 @@ const LAST_SEEN_WRITE_INTERVAL_MS = 60 * 1000;
 // Another render's temp file this old has been left behind, not still being
 // written, so a write removes it
 const ORPHANED_TEMP_FILE_AGE_MS = 60 * 1000;
+// A render holds the history's lock for a few milliseconds; one this old (or
+// dated this far ahead, by a clock since set back) was left by a render that
+// died holding it.
+const STALE_LOCK_AGE_MS = 10 * 1000;
 // The model Claude Code names on the assistant messages it writes itself
 const SYNTHETIC_MODEL = '<synthetic>';
 
@@ -42,18 +50,23 @@ interface SessionUsageHistory {
 export interface SessionUsageHistoryDeps {
     readFileSync: (path: string) => string;
     writeFileSync: (path: string, data: string) => void;
+    // Creates an empty file, and fails when there is one already
+    createFileExclusiveSync: (path: string) => void;
     renameSync: (from: string, to: string) => void;
     unlinkSync: (path: string) => void;
     readdirSync: (path: string) => string[];
     statSync: (path: string) => { mtimeMs: number };
     mkdirSync: (path: string) => void;
     now: () => number;
-    // When the percent given was seen, for one that can be older than now: a
+    // When the percent given was seen, which can be well before now: a
     // payload's is from its session's last API response, and Claude Code's
-    // refresh interval re-renders an idle session with that same percent.
-    // Undefined when nothing shows when that was. Left out, the percent is
-    // current, as the usage API's is.
+    // refresh interval re-renders an idle session with that same percent; the
+    // usage API's can come from its cache. Undefined when nothing shows when
+    // that was. Left out, the percent is current.
     percentSeenAt?: () => number | undefined;
+    // The login the percent belongs to (see getUsageLoginFingerprint), or null
+    // when none is found. Left out, the history goes by config directory alone.
+    loginFingerprint?: () => string | null;
     cachePath: string;
 }
 
@@ -93,19 +106,22 @@ function getLastResponseAtMs(transcriptPath: string | undefined): number | undef
 
 // Built per call rather than at import, so the path follows HOME at render time.
 // The payload's 5-hour percent, which wins over the usage API's, dates from its
-// session's last response; the API's counts as seen now.
+// session's last response; the API's from when the API sent it, which for a
+// cached one can be hours ago.
 export function getDefaultSessionUsageHistoryDeps(payload?: StatusJSON): SessionUsageHistoryDeps {
     const isPayloadPercent = typeof payload?.rate_limits?.five_hour?.used_percentage === 'number';
     return {
         readFileSync: (p: string) => fs.readFileSync(p, 'utf-8'),
         writeFileSync: (p: string, data: string) => { fs.writeFileSync(p, data, 'utf-8'); },
+        createFileExclusiveSync: (p: string) => { fs.writeFileSync(p, '', { flag: 'wx' }); },
         renameSync: (from: string, to: string) => { fs.renameSync(from, to); },
         unlinkSync: (p: string) => { fs.unlinkSync(p); },
         readdirSync: (p: string) => fs.readdirSync(p),
         statSync: (p: string) => fs.statSync(p),
         mkdirSync: (p: string) => { fs.mkdirSync(p, { recursive: true }); },
         now: () => Date.now(),
-        percentSeenAt: isPayloadPercent ? () => getLastResponseAtMs(payload.transcript_path) : undefined,
+        percentSeenAt: isPayloadPercent ? () => getLastResponseAtMs(payload.transcript_path) : getUsageFetchedAtMs,
+        loginFingerprint: getUsageLoginFingerprint,
         cachePath: path.join(os.homedir(), '.cache', 'ccstatusline', 'session-usage-history.json')
     };
 }
@@ -174,19 +190,25 @@ function pruneWindows(windows: SessionUsageWindow[], nowMs: number): SessionUsag
         });
 }
 
-// An unchanged percent was seen again when it was observed, which can be well
-// before now: an idle session's refresh renders repeat its last response's.
-// The stretch since stays a gap, which the forecast spreads a change across
-// (usage on another device, say) rather than taking the percent as unchanged
-// until now. With no time for it (a new transcript after /clear has no
-// response yet), the reading's own last sighting stands.
-function getUnchangedSeenAtMs(deps: SessionUsageHistoryDeps, nowMs: number, lastSeenMs: number): number {
-    if (!deps.percentSeenAt) {
-        return nowMs;
-    }
+// When the percent was observed, which can be well before now: an idle
+// session's refresh renders repeat its last response's, and a rate-limited
+// usage API leaves its cache's in place. The stretch since stays a gap, which
+// the forecast spreads a change across (usage on another device, say) rather
+// than taking the percent as unchanged until now. Undefined with no time for
+// it (a new transcript after /clear has no response yet). Looked up once per
+// render, and only when needed: a payload's means reading the transcript.
+function getSeenAtLookup(deps: SessionUsageHistoryDeps, nowMs: number): () => number | undefined {
+    let looked = false;
+    let seenAtMs: number | undefined;
+    return () => {
+        if (!looked) {
+            looked = true;
+            seenAtMs = deps.percentSeenAt ? deps.percentSeenAt() : nowMs;
+            seenAtMs = seenAtMs !== undefined && Number.isFinite(seenAtMs) ? Math.min(nowMs, seenAtMs) : undefined;
+        }
 
-    const seenAtMs = deps.percentSeenAt();
-    return seenAtMs !== undefined && Number.isFinite(seenAtMs) ? Math.min(nowMs, seenAtMs) : lastSeenMs;
+        return seenAtMs;
+    };
 }
 
 // Removes the history's temp files that other renders left a minute or more
@@ -219,22 +241,18 @@ function removeOrphanedTempFiles(deps: SessionUsageHistoryDeps, nowMs: number): 
     }
 }
 
-/**
- * Records the current session percent in this profile's 5-hour window and
- * returns the window's readings for the forecast. Best-effort: a failed write
- * still returns the readings, and nothing here throws.
- */
-export function recordSessionUsageReading(
+// Adds the percent to this profile's window in history, which it changes in
+// place. Says whether anything changed, so needs writing.
+function addReading(
+    history: SessionUsageHistory,
     profileKey: string,
     resetAtMs: number,
     percent: number,
-    deps: SessionUsageHistoryDeps = getDefaultSessionUsageHistoryDeps()
-): SessionUsageReading[] {
-    const nowMs = deps.now();
-    const clampedPercent = Math.max(0, Math.min(100, percent));
-
+    nowMs: number,
+    seenAt: () => number | undefined
+): { profiles: Record<string, SessionUsageWindow[]>; readings: SessionUsageReading[]; changed: boolean } {
     const profiles: Record<string, SessionUsageWindow[]> = {};
-    for (const [key, windows] of Object.entries(readHistory(deps).profiles)) {
+    for (const [key, windows] of Object.entries(history.profiles)) {
         const kept = pruneWindows(windows, nowMs);
         if (kept.length > 0) {
             profiles[key] = kept;
@@ -253,28 +271,70 @@ export function recordSessionUsageReading(
     const last = readings[readings.length - 1];
     // Usage never falls within a window: a lower percent is another session's
     // stale payload, and recording it would fake a steep climb later.
-    if (last !== undefined && clampedPercent < last[2]) {
-        return readings;
+    if (last !== undefined && percent < last[2]) {
+        return { profiles, readings, changed: false };
     }
 
-    if (last?.[2] !== clampedPercent) {
-        readings.push([nowMs, nowMs, clampedPercent]);
-    } else if (nowMs - last[1] < LAST_SEEN_WRITE_INTERVAL_MS) {
-        // Not even now is a minute past the last sighting, so there's no need
-        // to look up when the percent was seen
-        return readings;
-    } else {
-        const seenAtMs = getUnchangedSeenAtMs(deps, nowMs, last[1]);
-        if (seenAtMs - last[1] < LAST_SEEN_WRITE_INTERVAL_MS) {
-            return readings;
-        }
-
-        last[1] = seenAtMs;
+    if (last?.[2] !== percent) {
+        // A new percent can't have been seen before the last one was
+        const firstSeenMs = Math.max(seenAt() ?? nowMs, last?.[1] ?? Number.NEGATIVE_INFINITY);
+        readings.push([firstSeenMs, firstSeenMs, percent]);
+        return { profiles, readings, changed: true };
     }
 
-    const tempPath = `${deps.cachePath}.${process.pid}.tmp`;
+    // Not even now is a minute past the last sighting, so there's no need to
+    // look up when the percent was seen
+    if (nowMs - last[1] < LAST_SEEN_WRITE_INTERVAL_MS) {
+        return { profiles, readings, changed: false };
+    }
+
+    // With no time for the percent, the reading's own last sighting stands
+    const lastSeenMs = seenAt() ?? last[1];
+    if (lastSeenMs - last[1] < LAST_SEEN_WRITE_INTERVAL_MS) {
+        return { profiles, readings, changed: false };
+    }
+
+    last[1] = lastSeenMs;
+    return { profiles, readings, changed: true };
+}
+
+// Taken before a render reads the history to write it, so that two renders
+// can't each write over what the other added. Says whether this render holds
+// it now.
+function lockHistory(deps: SessionUsageHistoryDeps, nowMs: number): boolean {
+    const lockPath = `${deps.cachePath}.lock`;
     try {
         deps.mkdirSync(path.dirname(deps.cachePath));
+        deps.createFileExclusiveSync(lockPath);
+        return true;
+    } catch {
+        // Held by another render, or left behind by one
+    }
+
+    try {
+        if (Math.abs(nowMs - deps.statSync(lockPath).mtimeMs) < STALE_LOCK_AGE_MS) {
+            return false;
+        }
+
+        deps.unlinkSync(lockPath);
+        deps.createFileExclusiveSync(lockPath);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+function unlockHistory(deps: SessionUsageHistoryDeps): void {
+    try {
+        deps.unlinkSync(`${deps.cachePath}.lock`);
+    } catch {
+        // Gone already; nothing more to do.
+    }
+}
+
+function writeHistory(deps: SessionUsageHistoryDeps, profiles: Record<string, SessionUsageWindow[]>): void {
+    const tempPath = `${deps.cachePath}.${process.pid}.tmp`;
+    try {
         const history: SessionUsageHistory = { version: HISTORY_SCHEMA_VERSION, profiles };
         deps.writeFileSync(tempPath, JSON.stringify(history));
         deps.renameSync(tempPath, deps.cachePath);
@@ -288,8 +348,43 @@ export function recordSessionUsageReading(
             // Never written, or still held; nothing more to do.
         }
     }
+}
 
-    removeOrphanedTempFiles(deps, nowMs);
+/**
+ * Records the current session percent in this profile's 5-hour window and
+ * returns the window's readings for the forecast. Best-effort: a failed write
+ * still returns the readings, and nothing here throws.
+ *
+ * A render that finds another holding the history's lock doesn't wait for it:
+ * it forecasts from what it read and leaves the write to a later render. That
+ * one records the same percent with the same time, since a reading's time is
+ * when its percent was seen rather than when it was written.
+ */
+export function recordSessionUsageReading(
+    profileKey: string,
+    resetAtMs: number,
+    percent: number,
+    deps: SessionUsageHistoryDeps = getDefaultSessionUsageHistoryDeps()
+): SessionUsageReading[] {
+    const nowMs = deps.now();
+    const clampedPercent = Math.max(0, Math.min(100, percent));
+    const seenAt = getSeenAtLookup(deps, nowMs);
 
-    return readings;
+    const unlocked = addReading(readHistory(deps), profileKey, resetAtMs, clampedPercent, nowMs, seenAt);
+    if (!unlocked.changed || !lockHistory(deps, nowMs)) {
+        return unlocked.readings;
+    }
+
+    try {
+        // Read again under the lock, in case another render wrote since
+        const locked = addReading(readHistory(deps), profileKey, resetAtMs, clampedPercent, nowMs, seenAt);
+        if (locked.changed) {
+            writeHistory(deps, locked.profiles);
+            removeOrphanedTempFiles(deps, nowMs);
+        }
+
+        return locked.readings;
+    } finally {
+        unlockHistory(deps);
+    }
 }

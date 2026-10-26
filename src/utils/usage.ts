@@ -2,6 +2,8 @@ export {
     fetchUsageData,
     getUsageAccountKey,
     getUsageFetchedAt,
+    getUsageFetchedAtMs,
+    getUsageLoginFingerprint,
     lookUpUsageAccount,
     type UsageAccount
 } from './usage-fetch';

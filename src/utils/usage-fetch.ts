@@ -362,6 +362,9 @@ let cachedUsageFetchedAtMs: number | null = null;
 let lastUsageFetchedAtMs: number | null = null;
 let usageCacheTime = 0;
 let usageErrorCacheMaxAge = LOCK_MAX_AGE;
+// When the usage API sent cachedUsageData's values, in ms: a cache file's are
+// as old as the file, which may have been written hours ago
+let usageFetchedAtMs: number | undefined;
 
 type UsageLockError = z.infer<typeof UsageLockErrorSchema>;
 
@@ -385,6 +388,7 @@ function setCachedUsageError(error: UsageError, now: number, maxAge = LOCK_MAX_A
     lastUsageFetchedAtMs = null;
     usageCacheTime = now;
     usageErrorCacheMaxAge = maxAge;
+    usageFetchedAtMs = undefined;
     return errorData;
 }
 
@@ -396,7 +400,17 @@ function cacheUsageData(data: UsageData, now: number, fetchedAtMs: number): Usag
     lastUsageFetchedAtMs = fetchedAtMs;
     usageCacheTime = now;
     usageErrorCacheMaxAge = LOCK_MAX_AGE;
+    usageFetchedAtMs = fetchedAtMs;
     return data;
+}
+
+/**
+ * When the usage API sent the values fetchUsageData last returned, in ms, or
+ * undefined after an error. Served from the cache, during a rate limit say,
+ * they can be hours old.
+ */
+export function getUsageFetchedAtMs(): number | undefined {
+    return usageFetchedAtMs;
 }
 
 function hasRequiredUsageField(data: UsageData, field: UsageDataField): boolean {
@@ -674,14 +688,25 @@ function getUsageCredentialsWithBackoff(now: number): UsageCredentials | null {
     return credentials;
 }
 
+/**
+ * The login whose usage the status line shows: the usage cache's fingerprint
+ * of it (see getUsageCacheIdentity), or null with no OAuth login found. It
+ * stays the same across access-token refreshes, and changes with /login.
+ */
+export function getUsageLoginFingerprint(): string | null {
+    const credentials = getUsageCredentialsWithBackoff(Math.floor(Date.now() / 1000));
+    return credentials ? getUsageCacheIdentity(credentials).preferredHash : null;
+}
+
 function readStaleUsageCache(cacheIdentity: UsageCacheIdentity | null): { data: UsageData; fetchedAtMs: number } | null {
     try {
+        const fetchedAtMs = fs.statSync(CACHE_FILE).mtimeMs;
         const rawCache = fs.readFileSync(CACHE_FILE, 'utf8');
         if (!tokenHashMatches(readCachedTokenHash(rawCache), cacheIdentity)) {
             return null;
         }
         const data = parseCachedUsageData(rawCache);
-        return data ? { data, fetchedAtMs: fs.statSync(CACHE_FILE).mtimeMs } : null;
+        return data ? { data, fetchedAtMs } : null;
     } catch {
         return null;
     }

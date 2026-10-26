@@ -63,6 +63,7 @@ bun run docs
 - `~/.cache/ccstatusline/usage.json` and `~/.cache/ccstatusline/usage.lock` - usage API data cache and fetch backoff lock
 - `~/.cache/ccstatusline/usage-credentials.lock` - 30-second backoff after a usage credential lookup finds no OAuth login, tagged with the profile it applies to
 - `~/.cache/ccstatusline/usage-account.json` - the account each usage login fingerprint belongs to (itself fingerprinted), looked up from `/api/oauth/profile` for today's extra usage spend, and each fingerprint's backoff after a failed lookup
+- `~/.cache/ccstatusline/session-usage-history.json` and `~/.cache/ccstatusline/session-usage-history.json.lock` - 5-hour usage readings for Block Forecast and Block Limit Timer, per Claude config directory and login, and the lock a render holds while writing them
 - `~/.cache/ccstatusline/claude-status.json` and `~/.cache/ccstatusline/claude-status.lock` - Claude service-status cache and failed-fetch backoff lock
 - `~/.cache/ccstatusline/skills/skills-<sessionId>.jsonl` - skill hook records; session IDs must contain only ASCII letters, digits, `-`, or `_`
 
