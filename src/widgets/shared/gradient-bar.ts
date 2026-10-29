@@ -105,7 +105,7 @@ export function cycleGradientPreset(item: WidgetItem): WidgetItem {
     if (!next) {
         return removeMetadataKeys(item, [GRADIENT_KEY]);
     }
-    return { ...item, metadata: { ...(item.metadata ?? {}), [GRADIENT_KEY]: next } };
+    return { ...item, metadata: { ...item.metadata, [GRADIENT_KEY]: next } };
 }
 
 // The 256-color palette is too coarse for a smooth gradient, so it needs truecolor
