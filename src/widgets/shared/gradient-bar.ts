@@ -123,7 +123,7 @@ export function cycleGradientPreset(item: WidgetItem): WidgetItem {
         return clearGradientPreset(item);
     }
     const base = setValueColorsFlag(item, false);
-    return { ...base, metadata: { ...(base.metadata ?? {}), [GRADIENT_KEY]: next } };
+    return { ...base, metadata: { ...base.metadata, [GRADIENT_KEY]: next } };
 }
 
 export function clearGradientPreset(item: WidgetItem): WidgetItem {
