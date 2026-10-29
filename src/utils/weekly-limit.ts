@@ -19,7 +19,8 @@ export interface WeeklyLimitInput {
 export function getWeeklyLimitInMs({ percent, nowMs, resetAtMs }: WeeklyLimitInput): number | null {
     const leftMs = resetAtMs - nowMs;
     const elapsedMs = nowMs - (resetAtMs - SEVEN_DAY_WINDOW_MS);
-    if (!(leftMs > 0) || elapsedMs < MIN_ELAPSED_MS || percent <= 0 || percent >= 100) {
+    // A reset time that can't be read leaves nothing to measure against
+    if (!Number.isFinite(leftMs) || leftMs <= 0 || elapsedMs < MIN_ELAPSED_MS || percent <= 0 || percent >= 100) {
         return null;
     }
 
