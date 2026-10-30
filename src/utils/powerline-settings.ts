@@ -29,14 +29,8 @@ function getPaddingToRestore(settings: Settings): string {
     return getRememberedPadding(settings) ?? settings.defaultPadding ?? '';
 }
 
-export function buildEnabledPowerlineSettings(settings: Settings, removeManualSeparators: boolean): Settings {
+export function buildEnabledPowerlineSettings(settings: Settings): Settings {
     const powerlineConfig = settings.powerline;
-    // A line set to plain keeps its separators
-    const lines = removeManualSeparators
-        ? settings.lines.map((line, index) => (
-            powerlineConfig.lineEnabled?.[index] === false ? line : line.filter(item => item.type !== 'separator')
-        ))
-        : settings.lines;
 
     return {
         ...settings,
@@ -50,8 +44,7 @@ export function buildEnabledPowerlineSettings(settings: Settings, removeManualSe
             // A line already set to Powerline with (p) may have remembered one
             paddingToRestore: getPaddingToRestore(settings)
         },
-        defaultPadding: POWERLINE_PADDING,
-        lines
+        defaultPadding: POWERLINE_PADDING
     };
 }
 

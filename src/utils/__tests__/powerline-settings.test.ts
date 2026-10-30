@@ -26,7 +26,7 @@ describe('powerline settings helpers', () => {
             }
         };
 
-        const updated = buildEnabledPowerlineSettings(settings, false);
+        const updated = buildEnabledPowerlineSettings(settings);
 
         expect(updated.powerline.enabled).toBe(true);
         expect(updated.powerline.theme).toBe('nord-aurora');
@@ -43,7 +43,7 @@ describe('powerline settings helpers', () => {
             }
         };
 
-        const updated = buildEnabledPowerlineSettings(settings, false);
+        const updated = buildEnabledPowerlineSettings(settings);
         expect(updated.powerline.theme).toBe('catppuccin');
     });
 
@@ -58,7 +58,7 @@ describe('powerline settings helpers', () => {
             }
         };
 
-        const updated = buildEnabledPowerlineSettings(settings, false);
+        const updated = buildEnabledPowerlineSettings(settings);
         expect(updated.powerline.theme).toBe('custom');
     });
 
@@ -72,12 +72,12 @@ describe('powerline settings helpers', () => {
             defaultPadding: padding
         };
 
-        const updated = buildEnabledPowerlineSettings(settings, false);
+        const updated = buildEnabledPowerlineSettings(settings);
         expect(updated.defaultPadding).toBe(' ');
         expect(updated.powerline.paddingToRestore).toBe(remembered);
     });
 
-    it('removes manual separators while preserving flex separators when requested', () => {
+    it('keeps manual separators alongside flex separators when enabling', () => {
         const line: WidgetItem[] = [
             { id: '1', type: 'model' },
             { id: '2', type: 'separator' },
@@ -89,11 +89,11 @@ describe('powerline settings helpers', () => {
             lines: [line]
         };
 
-        const updated = buildEnabledPowerlineSettings(settings, true);
-        expect(updated.lines[0]?.map(item => item.type)).toEqual(['model', 'context-length', 'flex-separator']);
+        const updated = buildEnabledPowerlineSettings(settings);
+        expect(updated.lines[0]?.map(item => item.type)).toEqual(['model', 'separator', 'context-length', 'flex-separator']);
     });
 
-    it('keeps manual separators when removal is not requested', () => {
+    it('does not delete a manual separator across an enable then disable round trip', () => {
         const line: WidgetItem[] = [
             { id: '1', type: 'model' },
             { id: '2', type: 'separator' },
@@ -101,28 +101,51 @@ describe('powerline settings helpers', () => {
         ];
         const settings = {
             ...DEFAULT_SETTINGS,
+            powerline: {
+                ...DEFAULT_SETTINGS.powerline,
+                enabled: false
+            },
             lines: [line]
         };
 
-        const updated = buildEnabledPowerlineSettings(settings, false);
-        expect(updated.lines[0]?.map(item => item.type)).toEqual(['model', 'separator', 'context-length']);
-    });
-
-    // A line set to plain keeps its separators when Powerline is turned on
-    it('removes manual separators only from the lines that turn Powerline', () => {
-        const settings: Settings = {
-            ...DEFAULT_SETTINGS,
-            lines: [
-                [{ id: '1', type: 'model' }, { id: '2', type: 'separator' }, { id: '3', type: 'git-branch' }],
-                [{ id: '4', type: 'model' }, { id: '5', type: 'separator' }, { id: '6', type: 'git-branch' }]
-            ],
-            powerline: { ...DEFAULT_SETTINGS.powerline, enabled: false, lineEnabled: [null, false] }
+        const enabled = buildEnabledPowerlineSettings(settings);
+        const disabled = {
+            ...enabled,
+            powerline: {
+                ...enabled.powerline,
+                enabled: false
+            }
         };
 
-        const updated = buildEnabledPowerlineSettings(settings, true);
+        expect(disabled.lines[0]?.map(item => item.type)).toEqual(['model', 'separator', 'context-length']);
+    });
 
-        expect(updated.lines[0]?.map(item => item.type)).toEqual(['model', 'git-branch']);
-        expect(updated.lines[1]?.map(item => item.type)).toEqual(['model', 'separator', 'git-branch']);
+    it('keeps manual separators, a Custom theme and the default padding when turned on, off and on again', () => {
+        const line: WidgetItem[] = [
+            { id: '1', type: 'model' },
+            { id: '2', type: 'separator' },
+            { id: '3', type: 'context-length' }
+        ];
+        const settings = {
+            ...DEFAULT_SETTINGS,
+            defaultPadding: '  ',
+            powerline: {
+                ...DEFAULT_SETTINGS.powerline,
+                enabled: false,
+                theme: 'custom'
+            },
+            lines: [line]
+        };
+
+        const enabled = buildEnabledPowerlineSettings(settings);
+        const disabled = buildDisabledPowerlineSettings(enabled);
+        const enabledAgain = buildEnabledPowerlineSettings(disabled);
+
+        expect(disabled.lines[0]?.map(item => item.type)).toEqual(['model', 'separator', 'context-length']);
+        expect(disabled.defaultPadding).toBe('  ');
+        expect(disabled.powerline.theme).toBe('custom');
+        expect(enabledAgain.lines[0]?.map(item => item.type)).toEqual(['model', 'separator', 'context-length']);
+        expect(enabledAgain.powerline.theme).toBe('custom');
     });
 
     // A line set to Powerline with (p) already replaced the padding and remembered the one before
@@ -133,7 +156,7 @@ describe('powerline settings helpers', () => {
             powerline: { ...DEFAULT_SETTINGS.powerline, enabled: false, lineEnabled: [true], paddingToRestore: '' }
         };
 
-        const updated = buildEnabledPowerlineSettings(settings, false);
+        const updated = buildEnabledPowerlineSettings(settings);
         expect(updated.defaultPadding).toBe(' ');
         expect(updated.powerline.paddingToRestore).toBe('');
     });
@@ -160,7 +183,7 @@ describe('powerline settings helpers', () => {
             powerline: { ...DEFAULT_SETTINGS.powerline, enabled: false, lineEnabled: [true], paddingToRestore: '' }
         };
 
-        const enabled = buildEnabledPowerlineSettings(settings, false);
+        const enabled = buildEnabledPowerlineSettings(settings);
         const disabled = buildDisabledPowerlineSettings(enabled);
         const plain = buildLinesUpdateSettings(disabled, disabled.lines, undefined);
         expect(enabled.powerline.paddingToRestore).toBe('  ');
