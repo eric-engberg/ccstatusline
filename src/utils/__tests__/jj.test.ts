@@ -21,7 +21,7 @@ vi.mock('node:child_process', () => ({ execFileSync: vi.fn() }));
 
 const mockExecFileSync = execFileSync as unknown as {
     mock: { calls: unknown[][] };
-    mockImplementation: (impl: () => never) => void;
+    mockImplementation: (impl: (command: string, args: string[], options: { maxBuffer?: number }) => string) => void;
     mockReturnValue: (value: string) => void;
     mockReturnValueOnce: (value: string) => void;
 };
@@ -68,14 +68,33 @@ describe('jj utils', () => {
 
             expect(result).toBe('some-output');
             expect(mockExecFileSync.mock.calls[0]?.[0]).toBe('jj');
-            expect(mockExecFileSync.mock.calls[0]?.[1]).toEqual(['log', '--limit', '1']);
+            expect(mockExecFileSync.mock.calls[0]?.[1]).toEqual(['--color=never', 'log', '--limit', '1']);
             expect(mockExecFileSync.mock.calls[0]?.[2]).toEqual({
                 encoding: 'utf8',
                 stdio: ['pipe', 'pipe', 'ignore'],
                 timeout: 5_000,
+                maxBuffer: 64 * 1024 * 1024,
                 windowsHide: true,
                 cwd: '/tmp/repo'
             });
+        });
+
+        // ui.color = "always" in the user's jj config colors jj's output even
+        // into a pipe, and its codes would override the widget's own colors
+        it('asks jj for uncolored output, whatever the user\'s ui.color', () => {
+            mockExecFileSync.mockReturnValue('zs');
+
+            runJjArgs(['log', '--no-graph', '-r', '@', '-T', 'change_id.shortest()'], {});
+
+            expect(mockExecFileSync.mock.calls[0]?.[1]).toEqual([
+                '--color=never',
+                'log',
+                '--no-graph',
+                '-r',
+                '@',
+                '-T',
+                'change_id.shortest()'
+            ]);
         });
 
         it('runs jj command without cwd when no context directory exists', () => {
@@ -88,6 +107,7 @@ describe('jj utils', () => {
                 encoding: 'utf8',
                 stdio: ['pipe', 'pipe', 'ignore'],
                 timeout: 5_000,
+                maxBuffer: 64 * 1024 * 1024,
                 windowsHide: true
             });
         });
@@ -108,6 +128,19 @@ describe('jj utils', () => {
             mockExecFileSync.mockImplementation(() => { throw new Error('jj failed'); });
 
             expect(runJjArgs(['status'], {})).toBeNull();
+        });
+
+        // execFileSync fails once output passes its maxBuffer, 1 MiB unless set
+        it('reads output larger than 1 MiB', () => {
+            const stat = `${'src/generated/Widget.tsx | 1 +\n'.repeat(40_000)}40000 files changed, 40000 insertions(+), 0 deletions(-)`;
+            mockExecFileSync.mockImplementation((_command, _args, options) => {
+                if (stat.length > (options.maxBuffer ?? 1024 * 1024)) {
+                    throw Object.assign(new Error('spawnSync jj ENOBUFS'), { code: 'ENOBUFS' });
+                }
+                return stat;
+            });
+
+            expect(runJjArgs(['diff', '--stat'], {})).toBe(stat);
         });
     });
 
@@ -171,13 +204,10 @@ describe('jj utils', () => {
             });
         });
 
-        it('returns zero counts when jj diff command fails', () => {
+        it('returns null, not zero counts, when jj diff --stat fails', () => {
             mockExecFileSync.mockImplementation(() => { throw new Error('jj failed'); });
 
-            expect(getJjChangeCounts({})).toEqual({
-                insertions: 0,
-                deletions: 0
-            });
+            expect(getJjChangeCounts({})).toBeNull();
         });
     });
 });
