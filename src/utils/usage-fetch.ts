@@ -11,6 +11,7 @@ import { z } from 'zod';
 
 import type { AccountEmailResult } from '../types/AccountEmail';
 
+import { getWritableCacheDir } from './cache-dir';
 import { withCacheLock } from './cache-lock';
 import { getClaudeConfigDir } from './claude-settings';
 import { isExcludedFromProxy } from './no-proxy';
@@ -30,14 +31,13 @@ import {
 } from './usage-types';
 
 // Cache configuration
-const CACHE_DIR = path.join(os.homedir(), '.cache', 'ccstatusline');
 // Use the effective directory for file identity, independently of the raw
 // environment value Claude Code uses to name Keychain services. Shared legacy
 // files are left untouched: their cache/lock cannot be assigned to a profile.
 function getUsageFilePath(suffix: 'json' | 'lock' | 'credentials.lock'): string {
     const configDir = path.resolve(getClaudeConfigDir());
     const configHash = createHash('sha256').update(configDir).digest('hex').slice(0, 16);
-    return path.join(CACHE_DIR, `usage-${configHash}.${suffix}`);
+    return path.join(getWritableCacheDir(), `usage-${configHash}.${suffix}`);
 }
 const CACHE_MAX_AGE = 180; // seconds
 const LOCK_MAX_AGE = 30;   // rate limit: only try API once per 30 seconds
@@ -109,10 +109,14 @@ const UsageCredentialsSchema = z.object({
         refreshToken: z.string().nullable().optional()
     }).optional()
 });
-const UsageLockErrorSchema = z.enum(['timeout', 'rate-limited', 'parse-error']);
+const UsageLockErrorSchema = z.enum(['timeout', 'rate-limited', 'api-error', 'parse-error']);
+// `transient` marks an api-error lock whose failure clears up on its own (see
+// UsageData.errorTransient). Locks written without it, including every lock
+// from before it existed, read as lasting failures.
 const UsageLockSchema = z.object({
     blockedUntil: z.number(),
-    error: UsageLockErrorSchema.optional()
+    error: UsageLockErrorSchema.optional(),
+    transient: z.boolean().optional()
 });
 
 // The per-model fields (weeklySonnetUsage, weeklyOpusUsage, ...) are declared
@@ -394,7 +398,7 @@ export function isStaleUsageFallback(data: UsageData): boolean {
 
 type UsageLockError = z.infer<typeof UsageLockErrorSchema>;
 
-type UsageApiFetchResult = { kind: 'success'; body: string } | { kind: 'rate-limited'; retryAfterSeconds: number } | { kind: 'error' };
+type UsageApiFetchResult = { kind: 'success'; body: string } | { kind: 'rate-limited'; retryAfterSeconds: number } | { kind: 'error'; transient: boolean };
 
 type MacKeychainSecretResult = { kind: 'found'; secret: string }
     | { kind: 'miss' }
@@ -405,13 +409,14 @@ type MacKeychainCredentialResult = { kind: 'found'; credentials: UsageCredential
     | { kind: 'failed' };
 
 function ensureCacheDirExists(): void {
-    if (!fs.existsSync(CACHE_DIR)) {
-        fs.mkdirSync(CACHE_DIR, { recursive: true });
+    const cacheDir = getWritableCacheDir();
+    if (!fs.existsSync(cacheDir)) {
+        fs.mkdirSync(cacheDir, { recursive: true });
     }
 }
 
-function setCachedUsageError(error: UsageError, now: number, maxAge = LOCK_MAX_AGE): UsageData {
-    const errorData: UsageData = { error };
+function setCachedUsageError(error: UsageError, now: number, maxAge = LOCK_MAX_AGE, transient = false): UsageData {
+    const errorData: UsageData = transient ? { error, errorTransient: true } : { error };
     cachedUsageData = errorData;
     usageCacheTime = now;
     usageErrorCacheMaxAge = maxAge;
@@ -468,7 +473,8 @@ function getStaleUsageOrError(
     now: number,
     cacheIdentity: UsageCacheIdentity | null,
     errorCacheMaxAge = LOCK_MAX_AGE,
-    requiredFields: readonly UsageDataField[] = []
+    requiredFields: readonly UsageDataField[] = [],
+    transient = false
 ): UsageData {
     const stale = readStaleUsageCache(cacheIdentity, now);
     if (stale && !stale.data.error) {
@@ -484,7 +490,7 @@ function getStaleUsageOrError(
         }
     }
 
-    return setCachedUsageError(error, now, errorCacheMaxAge);
+    return setCachedUsageError(error, now, errorCacheMaxAge, transient);
 }
 
 function isMissingKeychainItem(error: unknown): boolean {
@@ -662,7 +668,9 @@ function isSameUsageCredentialsStamp(a: UsageCredentialsStamp, b: UsageCredentia
 // the credentials file, which may be another one, so until the keychain
 // answers again the recorded login only decides which stale cache stands in
 // when no credentials are found.
-const USAGE_LOGIN_FILE = path.join(CACHE_DIR, 'usage-login.json');
+function getUsageLoginFile(): string {
+    return path.join(getWritableCacheDir(), 'usage-login.json');
+}
 // Room for the profiles used side by side; the one recorded longest ago goes first.
 const MAX_USAGE_LOGINS = 16;
 const UsageLoginSchema = z.object({
@@ -681,7 +689,7 @@ interface KnownUsageLogin {
 
 function readUsageLogins(): z.infer<typeof UsageLoginsSchema> {
     try {
-        return parseJsonWithSchema(fs.readFileSync(USAGE_LOGIN_FILE, 'utf8'), UsageLoginsSchema) ?? [];
+        return parseJsonWithSchema(fs.readFileSync(getUsageLoginFile(), 'utf8'), UsageLoginsSchema) ?? [];
     } catch {
         return [];
     }
@@ -697,7 +705,7 @@ function readKnownUsageLogin(source: string, stamp: UsageCredentialsStamp): Know
 function writeUsageLogin(logins: z.infer<typeof UsageLoginsSchema>, login: z.infer<typeof UsageLoginSchema>): void {
     try {
         ensureCacheDirExists();
-        fs.writeFileSync(USAGE_LOGIN_FILE, JSON.stringify([
+        fs.writeFileSync(getUsageLoginFile(), JSON.stringify([
             login,
             ...logins.filter(entry => entry.source !== login.source)
         ].slice(0, MAX_USAGE_LOGINS)));
@@ -732,7 +740,9 @@ function rememberUsageLoginKeychainFailure(source: string, stamp: UsageCredentia
 // may be the account switch the backoff would hide, so the next render
 // reads the keychain once. Each credential source keeps its own entry, so
 // one profile's failure never suppresses another profile's lookup.
-const KEYCHAIN_LOCK_FILE = path.join(CACHE_DIR, 'usage-keychain.lock');
+function getKeychainLockFile(): string {
+    return path.join(getWritableCacheDir(), 'usage-keychain.lock');
+}
 const KeychainLockSchema = z.record(z.string(), z.object({
     blockedUntil: z.number(),
     keychainStamp: z.string()
@@ -740,7 +750,7 @@ const KeychainLockSchema = z.record(z.string(), z.object({
 
 function readKeychainLocks(now: number): z.infer<typeof KeychainLockSchema> {
     try {
-        const locks = parseJsonWithSchema(fs.readFileSync(KEYCHAIN_LOCK_FILE, 'utf8'), KeychainLockSchema) ?? {};
+        const locks = parseJsonWithSchema(fs.readFileSync(getKeychainLockFile(), 'utf8'), KeychainLockSchema) ?? {};
         // Bounded so a deadline written before the clock was set back cannot
         // stretch the backoff; expired ones are dropped on the next write.
         return Object.fromEntries(Object.entries(locks).filter(([, lock]) => lock.blockedUntil > now && lock.blockedUntil <= now + MACOS_KEYCHAIN_BACKOFF));
@@ -768,7 +778,7 @@ function getUsageCredentialsWithBackoff(now: number, source: string, stamp: Usag
             ensureCacheDirExists();
             // Read again: other profiles' renders may have recorded their
             // own failures while this read waited, up to its timeout
-            fs.writeFileSync(KEYCHAIN_LOCK_FILE, JSON.stringify({
+            fs.writeFileSync(getKeychainLockFile(), JSON.stringify({
                 ...readKeychainLocks(now),
                 [source]: { blockedUntil: now + MACOS_KEYCHAIN_BACKOFF, keychainStamp: stamp.loginKeychain }
             }));
@@ -881,8 +891,8 @@ function hasUsageCacheOutlivedRefresh(now: number): boolean {
     }
 }
 
-function writeUsageLock(blockedUntil: number, error: UsageLockError): string {
-    const contents = JSON.stringify({ blockedUntil, error });
+function writeUsageLock(blockedUntil: number, error: UsageLockError, transient = false): string {
+    const contents = JSON.stringify(transient ? { blockedUntil, error, transient } : { blockedUntil, error });
     try {
         ensureCacheDirExists();
         fs.writeFileSync(getUsageFilePath('lock'), contents);
@@ -906,20 +916,46 @@ function clearOwnUsageLock(ownContents: string): void {
     }
 }
 
-function readActiveUsageLock(now: number): { blockedUntil: number; error: UsageLockError } | null {
+// Swap the in-flight record this process wrote for a failed request's own
+// backoff, so later renders report that failure, and whether it clears up on
+// its own, rather than a timeout. As above, a concurrent render's newer lock
+// is left in place.
+function replaceOwnUsageLock(ownContents: string, blockedUntil: number, error: UsageLockError, transient: boolean): void {
+    try {
+        if (fs.readFileSync(getUsageFilePath('lock'), 'utf8') === ownContents) {
+            writeUsageLock(blockedUntil, error, transient);
+        }
+    } catch {
+        // Ignore lock file errors
+    }
+}
+
+// How far ahead of now each kind of lock may be dated. Only a 429's
+// Retry-After outlasts LOCK_MAX_AGE. Any other lock still counts up to one
+// backoff beyond its own, since a concurrent render may have written it
+// after this one read the clock. Dated further ahead, it was written under a
+// clock since set back, and would block fetching for as long as the clock
+// had been fast.
+function getUsageLockHorizon(error: UsageLockError): number {
+    return error === 'rate-limited' ? MAX_LOCK_HORIZON : 2 * LOCK_MAX_AGE;
+}
+
+function readActiveUsageLock(now: number): { blockedUntil: number; error: UsageLockError; transient: boolean } | null {
     let hasValidJsonLock = false;
 
     try {
         const parsed = parseJsonWithSchema(fs.readFileSync(getUsageFilePath('lock'), 'utf8'), UsageLockSchema);
         if (parsed) {
             hasValidJsonLock = true;
+            const error = parsed.error ?? 'timeout';
             // Past deadline, or one implausibly far ahead: treat as no lock and
             // fetch. The fetch rewrites the file with a sane deadline, so a
             // poisoned lock self-heals on the very next render.
-            if (parsed.blockedUntil > now && parsed.blockedUntil <= now + MAX_LOCK_HORIZON) {
+            if (parsed.blockedUntil > now && parsed.blockedUntil <= now + getUsageLockHorizon(error)) {
                 return {
                     blockedUntil: parsed.blockedUntil,
-                    error: parsed.error ?? 'timeout'
+                    error,
+                    transient: parsed.transient ?? false
                 };
             }
             return null;
@@ -936,10 +972,11 @@ function readActiveUsageLock(now: number): { blockedUntil: number; error: UsageL
         const lockStat = fs.statSync(getUsageFilePath('lock'));
         const lockMtime = Math.floor(lockStat.mtimeMs / 1000);
         const blockedUntil = lockMtime + LOCK_MAX_AGE;
-        if (blockedUntil > now) {
+        if (blockedUntil > now && blockedUntil <= now + getUsageLockHorizon('timeout')) {
             return {
                 blockedUntil,
-                error: 'timeout'
+                error: 'timeout',
+                transient: false
             };
         }
     } catch {
@@ -952,12 +989,12 @@ function readActiveUsageLock(now: number): { blockedUntil: number; error: UsageL
 // While the lock holds requests off, the login's cached snapshot stands in,
 // or else the lock's error until it runs out.
 function getStaleUsageDuringLock(
-    lock: { blockedUntil: number; error: UsageLockError },
+    lock: { blockedUntil: number; error: UsageLockError; transient: boolean },
     now: number,
     cacheIdentity: UsageCacheIdentity | null,
     requiredFields: readonly UsageDataField[]
 ): UsageData {
-    return getStaleUsageOrError(lock.error, now, cacheIdentity, Math.max(1, lock.blockedUntil - now), requiredFields);
+    return getStaleUsageOrError(lock.error, now, cacheIdentity, Math.max(1, lock.blockedUntil - now), requiredFields, lock.transient);
 }
 
 function parseRetryAfterSeconds(headerValue: string | string[] | undefined, nowMs = Date.now()): number | null {
@@ -985,6 +1022,68 @@ const USAGE_API_HOST = 'api.anthropic.com';
 const USAGE_API_PATH = '/api/oauth/usage';
 const PROFILE_API_PATH = '/api/oauth/profile';
 const USAGE_API_TIMEOUT_MS = 5000;
+
+// A 5xx is the server failing, and clears up once it recovers. A 408 is a
+// server that gave up waiting for the request, which a later try may well
+// get through in time. Any other answer refuses the request itself: a 401 or
+// 403 for a token the API rejects, a 407 from a proxy that wants its own
+// login, a 404 for an endpoint that moved, or a 200 with nothing in it.
+// Every render sends the same request, so it is refused again until the
+// login or the setup changes.
+function isTransientUsageApiStatus(statusCode: number | undefined): boolean {
+    return statusCode !== undefined && (statusCode === 408 || statusCode >= 500);
+}
+
+// A server certificate the runtime can't verify, or one issued for another
+// host. Behind a proxy or firewall that intercepts TLS with a certificate the
+// runtime doesn't trust, every request fails this way until the runtime is
+// set up to trust it. Node and Bun report these codes, directly and through a
+// proxy's tunnel: a self-signed certificate, one from an unknown CA (alone,
+// with its root, or with an intermediate but not the root), one whose
+// intermediate is trusted but not its root, one signed by a certificate that
+// isn't a CA, an expired or not-yet-valid one, and one for another host.
+// UNSPECIFIED is both runtimes' code for a certificate that fails
+// verification for a reason with no name of its own, and they give it to
+// nothing else. Node reports it for a CA whose key usage leaves out signing
+// certificates, a leaf key that's too weak and a SHA-1 signature. The rest of
+// the verification error names both runtimes can report are here too, except
+// OUT_OF_MEM, which isn't about the certificate. Every other request error is
+// a network failure that may clear up by the next render.
+const LASTING_REQUEST_ERROR_CODES = new Set([
+    'DEPTH_ZERO_SELF_SIGNED_CERT',
+    'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+    'SELF_SIGNED_CERT_IN_CHAIN',
+    'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+    'UNABLE_TO_GET_ISSUER_CERT',
+    'INVALID_PURPOSE',
+    'CERT_HAS_EXPIRED',
+    'CERT_NOT_YET_VALID',
+    'ERR_TLS_CERT_ALTNAME_INVALID',
+    'UNSPECIFIED',
+    'UNABLE_TO_GET_CRL',
+    'UNABLE_TO_DECRYPT_CERT_SIGNATURE',
+    'UNABLE_TO_DECRYPT_CRL_SIGNATURE',
+    'UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY',
+    'CERT_SIGNATURE_FAILURE',
+    'CRL_SIGNATURE_FAILURE',
+    'CRL_NOT_YET_VALID',
+    'CRL_HAS_EXPIRED',
+    'ERROR_IN_CERT_NOT_BEFORE_FIELD',
+    'ERROR_IN_CERT_NOT_AFTER_FIELD',
+    'ERROR_IN_CRL_LAST_UPDATE_FIELD',
+    'ERROR_IN_CRL_NEXT_UPDATE_FIELD',
+    'CERT_CHAIN_TOO_LONG',
+    'CERT_REVOKED',
+    'INVALID_CA',
+    'PATH_LENGTH_EXCEEDED',
+    'CERT_UNTRUSTED',
+    'CERT_REJECTED',
+    'HOSTNAME_MISMATCH'
+]);
+
+function isLastingRequestError(error: NodeJS.ErrnoException | undefined): boolean {
+    return error?.code !== undefined && LASTING_REQUEST_ERROR_CODES.has(error.code);
+}
 
 function getUsageApiProxyUrl(): string | null {
     const proxyUrl = process.env.HTTPS_PROXY?.trim();
@@ -1022,11 +1121,13 @@ function getUsageApiRequest(token: string, apiPath: string): { options: https.Re
 async function fetchFromUsageApi(token: string, deadlineMs = USAGE_API_TIMEOUT_MS, apiPath = USAGE_API_PATH): Promise<UsageApiFetchResult> {
     const usageRequest = getUsageApiRequest(token, apiPath);
     if (!usageRequest) {
-        return { kind: 'error' };
+        // A proxy setting that can't be used stays that way until it's changed
+        return { kind: 'error', transient: false };
     }
 
     return new Promise((resolve) => {
         let settled = false;
+        let answeredStatus: number | undefined;
 
         const finish = (value: UsageApiFetchResult) => {
             if (settled) {
@@ -1036,8 +1137,21 @@ async function fetchFromUsageApi(token: string, deadlineMs = USAGE_API_TIMEOUT_M
             clearTimeout(deadline);
             resolve(value);
         };
+        // No answer, or one cut short: the network or the server may well be
+        // back by the next try, unless the server's certificate doesn't
+        // verify. A failure after an answer that refused the request is still
+        // that refusal: under Bun, a proxy's refused CONNECT fails the request
+        // before the agent's replay of that answer ends.
+        const failRequest = (error?: NodeJS.ErrnoException) => {
+            const refused = answeredStatus !== undefined
+                && answeredStatus !== 200
+                && answeredStatus !== 429
+                && !isTransientUsageApiStatus(answeredStatus);
+            finish({ kind: 'error', transient: !refused && !isLastingRequestError(error) });
+        };
 
         const request = https.request(usageRequest.options, (response) => {
+            answeredStatus = response.statusCode;
             let data = '';
             response.setEncoding('utf8');
 
@@ -1059,21 +1173,25 @@ async function fetchFromUsageApi(token: string, deadlineMs = USAGE_API_TIMEOUT_M
                     return;
                 }
 
-                finish({ kind: 'error' });
+                finish({ kind: 'error', transient: isTransientUsageApiStatus(response.statusCode) });
             });
+            // A connection dropped mid-body ends neither the response nor the
+            // request, and the idle timeout can't fire on a closed socket
+            response.on('aborted', failRequest);
+            response.on('error', failRequest);
         });
 
-        request.on('error', () => { finish({ kind: 'error' }); });
+        request.on('error', failRequest);
         request.on('timeout', () => {
             request.destroy();
-            finish({ kind: 'error' });
+            failRequest();
         });
         // `timeout` only covers an idle socket, and behind a proxy the request
         // has none until the proxy answers CONNECT
         const deadline = setTimeout(() => {
             request.destroy();
             usageRequest.proxy?.close();
-            finish({ kind: 'error' });
+            failRequest();
         }, deadlineMs);
         request.end();
     });
@@ -1165,7 +1283,8 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
         }
 
         if (response.kind === 'error') {
-            return getStaleUsageOrError('api-error', now, cacheIdentity, LOCK_MAX_AGE, requiredFields);
+            replaceOwnUsageLock(inFlightLock, now + LOCK_MAX_AGE, 'api-error', response.transient);
+            return getStaleUsageOrError('api-error', now, cacheIdentity, LOCK_MAX_AGE, requiredFields, response.transient);
         }
 
         const usageData = parseUsageApiResponse(response.body);
@@ -1208,7 +1327,9 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
 // names the account and organization the credentials belong to, which a
 // refresh doesn't change. Each fingerprint is looked up once and the answer
 // kept in usage-account.json; a failed lookup holds off that fingerprint only.
-const USAGE_ACCOUNT_CACHE_FILE = path.join(CACHE_DIR, 'usage-account.json');
+function getUsageAccountCacheFile(): string {
+    return path.join(getWritableCacheDir(), 'usage-account.json');
+}
 // Each token refresh adds a fingerprint, a few a day per login; this keeps a
 // few days of them for the logins used side by side.
 const MAX_CACHED_USAGE_ACCOUNTS = 32;
@@ -1238,7 +1359,7 @@ export interface UsageAccount {
 
 function readUsageAccountEntries(): UsageAccountEntry[] {
     try {
-        return parseJsonWithSchema(fs.readFileSync(USAGE_ACCOUNT_CACHE_FILE, 'utf8'), UsageAccountEntriesSchema) ?? [];
+        return parseJsonWithSchema(fs.readFileSync(getUsageAccountCacheFile(), 'utf8'), UsageAccountEntriesSchema) ?? [];
     } catch {
         return [];
     }
@@ -1269,11 +1390,11 @@ function claimUsageAccountLookup(tokenHash: string, now: number): boolean {
     let claimed = false;
     try {
         ensureCacheDirExists();
-        withCacheLock(USAGE_ACCOUNT_CACHE_FILE, () => {
+        withCacheLock(getUsageAccountCacheFile(), () => {
             const entries = readUsageAccountEntries();
             const entry = entries.find(existing => existing.tokenHash === tokenHash);
             if (entry?.accountKey === undefined && !isUsageAccountLookupBlocked(entry, now)) {
-                fs.writeFileSync(USAGE_ACCOUNT_CACHE_FILE, JSON.stringify(withUsageAccountEntry(entries, { tokenHash, blockedUntil: now + LOCK_MAX_AGE })));
+                fs.writeFileSync(getUsageAccountCacheFile(), JSON.stringify(withUsageAccountEntry(entries, { tokenHash, blockedUntil: now + LOCK_MAX_AGE })));
                 claimed = true;
             }
         });
@@ -1285,8 +1406,8 @@ function claimUsageAccountLookup(tokenHash: string, now: number): boolean {
 
 function storeUsageAccountEntry(entry: UsageAccountEntry): void {
     try {
-        withCacheLock(USAGE_ACCOUNT_CACHE_FILE, () => {
-            fs.writeFileSync(USAGE_ACCOUNT_CACHE_FILE, JSON.stringify(withUsageAccountEntry(readUsageAccountEntries(), entry)));
+        withCacheLock(getUsageAccountCacheFile(), () => {
+            fs.writeFileSync(getUsageAccountCacheFile(), JSON.stringify(withUsageAccountEntry(readUsageAccountEntries(), entry)));
         });
     } catch {
         // The hold-off from the claim stays, and the lookup is repeated after it
@@ -1299,9 +1420,10 @@ function storeUsageAccountEntry(entry: UsageAccountEntry): void {
 // the usage above, belong to (#538). The profile endpoint answers for the
 // credentials themselves.
 // Read the old shared cache for existing entries, but never modify it.
-const LEGACY_ACCOUNT_EMAIL_CACHE_FILE = path.join(CACHE_DIR, 'account-email.json');
+const LEGACY_ACCOUNT_EMAIL_CACHE_FILE = path.join(os.homedir(), '.cache', 'ccstatusline', 'account-email.json');
+// In the usage cache's folder, so the backoff holds when ~/.cache can't be written
 function getAccountEmailPath(tokenHash: string, suffix: 'json' | 'lock' | 'inflight'): string {
-    return path.join(CACHE_DIR, `account-email-${tokenHash}.${suffix}`);
+    return path.join(getWritableCacheDir(), `account-email-${tokenHash}.${suffix}`);
 }
 
 const ProfileApiResponseSchema = z.looseObject({ account: z.looseObject({ email: z.string().min(1).nullable().optional() }).nullable().optional() });
@@ -1440,7 +1562,7 @@ export async function lookUpUsageAccount(): Promise<UsageAccount | null> {
     }
 
     const response = await fetchFromUsageApi(credentials.accessToken, USAGE_API_TIMEOUT_MS, PROFILE_API_PATH)
-        .catch((): UsageApiFetchResult => ({ kind: 'error' }));
+        .catch((): UsageApiFetchResult => ({ kind: 'error', transient: false }));
     const profile = response.kind === 'success' ? parseJsonWithSchema(response.body, ProfileAccountIdsSchema) : null;
     if (!profile) {
         // Kept within the horizon isUsageAccountLookupBlocked trusts, or a
@@ -1497,7 +1619,7 @@ export async function fetchAccountEmail(): Promise<AccountEmailResult> {
             return { status: 'unavailable' };
         }
         const response = await fetchFromUsageApi(credentials.accessToken, USAGE_API_TIMEOUT_MS, PROFILE_API_PATH)
-            .catch((): UsageApiFetchResult => ({ kind: 'error' }));
+            .catch((): UsageApiFetchResult => ({ kind: 'error', transient: false }));
         if (!ownsAccountEmailLease(tokenHash, owner)) {
             return { status: 'unavailable' };
         }
