@@ -308,6 +308,7 @@ The keybind footer in the TUI only shows shortcuts that apply to the currently s
 Widget-specific shortcuts:
 - **Remote Control Status**: `e` edits the label in `label-check` and `label-mark` formats when raw value is off. The override is shared by these two formats; Tab in the label editor restores `remote `.
 - **Glyph widgets** (Git Branch, Git Worktree, Git Worktree Mode, Git Staged, Git Unstaged, Git Untracked, Git Conflicts, Git Ahead/Behind, Git Status, Git Changes, Git Insertions, Git Deletions, Git Clean Status, Git Is Fork, JJ Revision, JJ Bookmarks, JJ Workspace, JJ Changes, JJ Insertions, JJ Deletions, Remote Control Status with Nerd Font icons): `g` set custom glyphs for the widget's symbols; Backspace in the editor renders without one, Shift+Tab toggles every symbol between none and default, and multi-symbol widgets (Ahead/Behind, Status, Conflicts, Changes, Clean Status, Remote Control Status on/off) edit each part in one list
+- **Glyph picker** (every widget's glyph editor, Current Working Dir's included, and Custom Symbol's editor): typing still sets a glyph, and `→` opens a picker instead. Its groups hold commonly used glyphs: emoji in Unicode's categories (Smileys & Emotion, People & Body and the rest), arrows and symbols, and Nerd Font icons with the Powerline glyphs. Tab/Shift+Tab switch groups, the arrow keys move through one, PgUp/PgDn move a page at a time, the highlighted glyph's name shows below, Enter picks it and ESC goes back. Typing searches by name instead (e.g. `pull req` for the pull request icons, `clown` for 🤡), across the groups, every Unicode emoji, the Unicode symbol blocks (arrows, box drawing, math, dingbats and more) and every Nerd Font icon: Backspace edits the search and ESC clears it. Ctrl+T cycles the emoji skin tone (default, then light to dark); every emoji that takes a tone shows and picks in it, both people in a two-person emoji included, and the tone is saved in the settings as `emojiSkinTone`. The picker opens in the saved tone, or in the glyph's own when it is a toned emoji (👍🏾), so Enter keeps it; only Ctrl+T changes the saved tone. Toned and joined emoji (👍🏾, 👩‍💻) need a terminal that draws them as one character, as iTerm2, Terminal.app, Ghostty, kitty, WezTerm and Windows Terminal do; others show the tone as a separate square. The Nerd Font and Powerline glyphs need a Nerd Font, and show as boxes without one
 - **Git Branch**: `l` toggle clickable branch links (GitHub, GitLab, self-hosted), `f` toggle fish-style abbreviation, `w` set a maximum visible width (blank removes the limit)
 - **Git Worktree**: `f` toggle fish-style abbreviation
 - **Git Root Dir**: `l` cycle IDE links (`off` → `VS Code` → `Cursor`), `w` set a maximum visible width (blank removes the limit)
@@ -400,6 +401,8 @@ Add a single symbol or emoji to your status line when you want a compact visual 
 - Nerd Font or Powerline-friendly glyphs
 - Status markers like `●`, `✓`, or `⚠`
 - Emoji shorthand for environments, workflows, or attention cues
+
+Type the symbol in its editor (`e`), or press `→` to choose one in the glyph picker.
 
 ### Custom Command Widget
 
