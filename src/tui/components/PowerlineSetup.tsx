@@ -172,7 +172,7 @@ export const PowerlineSetup: React.FC<PowerlineSetupProps> = ({
     const [confirmingEnable, setConfirmingEnable] = useState(false);
     const [confirmingFontInstall, setConfirmingFontInstall] = useState(false);
 
-    // Separators only on the lines Powerline would apply to: a line set to plain keeps its own
+    // Separators only on the lines Powerline would apply to: a line set to plain still shows its own
     const hasManualSeparatorItems = settings.lines.some((line, index) => powerlineConfig.lineEnabled?.[index] !== false && line.some(
         item => item.type === 'separator'
     ));
