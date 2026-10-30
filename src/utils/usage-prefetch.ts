@@ -10,7 +10,10 @@ import {
 } from '../widgets/shared/usage-display';
 
 import { observeExtraUsageSpend } from './daily-spend';
-import type { UsageData } from './usage';
+import type {
+    PayloadResetAt,
+    UsageData
+} from './usage';
 import {
     fetchUsageData,
     getUsageAccountKey,
@@ -326,6 +329,19 @@ export function extractUsageDataFromRateLimits(rateLimits: StatusJSON['rate_limi
     return hasAnyUsageDataField(usageData) ? usageData : null;
 }
 
+// The payload's 5-hour and weekly reset ends, which tell fetchUsageData that a
+// cached usage API answer is from before a reset. Undefined when it has neither.
+function getPayloadResetAt(rateLimitsData: UsageData | null): PayloadResetAt | undefined {
+    if (rateLimitsData?.sessionResetAt === undefined && rateLimitsData?.weeklyResetAt === undefined) {
+        return undefined;
+    }
+
+    return {
+        sessionResetAt: rateLimitsData.sessionResetAt,
+        weeklyResetAt: rateLimitsData.weeklyResetAt
+    };
+}
+
 export async function prefetchUsageDataIfNeeded(lines: WidgetItem[][], data?: StatusJSON): Promise<UsageData | null> {
     if (!hasUsageDependentWidgets(lines)) {
         return null;
@@ -340,7 +356,10 @@ export async function prefetchUsageDataIfNeeded(lines: WidgetItem[][], data?: St
         return rateLimitsData;
     }
 
-    const apiData = await fetchUsageData({ requiredFields: missingFields });
+    const apiData = await fetchUsageData({
+        requiredFields: missingFields,
+        payloadResetAt: getPayloadResetAt(rateLimitsData)
+    });
     const hasTransientError = apiData.error !== undefined
         && (TRANSIENT_FETCH_ERRORS.has(apiData.error) || apiData.errorTransient === true);
     if (hasTransientError && missingRequirements.suppressFetchError) {
