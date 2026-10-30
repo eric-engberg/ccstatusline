@@ -15,11 +15,8 @@ function resolveEnabledPowerlineTheme(theme: string | undefined): string {
     return theme;
 }
 
-export function buildEnabledPowerlineSettings(settings: Settings, removeManualSeparators: boolean): Settings {
+export function buildEnabledPowerlineSettings(settings: Settings): Settings {
     const powerlineConfig = settings.powerline;
-    const lines = removeManualSeparators
-        ? settings.lines.map(line => line.filter(item => item.type !== 'separator'))
-        : settings.lines;
 
     return {
         ...settings,
@@ -33,8 +30,7 @@ export function buildEnabledPowerlineSettings(settings: Settings, removeManualSe
             // Unset and empty padding render the same
             paddingToRestore: settings.defaultPadding ?? ''
         },
-        defaultPadding: POWERLINE_PADDING,
-        lines
+        defaultPadding: POWERLINE_PADDING
     };
 }
 

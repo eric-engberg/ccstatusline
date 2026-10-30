@@ -19,7 +19,7 @@ describe('powerline settings helpers', () => {
             }
         };
 
-        const updated = buildEnabledPowerlineSettings(settings, false);
+        const updated = buildEnabledPowerlineSettings(settings);
 
         expect(updated.powerline.enabled).toBe(true);
         expect(updated.powerline.theme).toBe('nord-aurora');
@@ -36,7 +36,7 @@ describe('powerline settings helpers', () => {
             }
         };
 
-        const updated = buildEnabledPowerlineSettings(settings, false);
+        const updated = buildEnabledPowerlineSettings(settings);
         expect(updated.powerline.theme).toBe('catppuccin');
     });
 
@@ -51,7 +51,7 @@ describe('powerline settings helpers', () => {
             }
         };
 
-        const updated = buildEnabledPowerlineSettings(settings, false);
+        const updated = buildEnabledPowerlineSettings(settings);
         expect(updated.powerline.theme).toBe('custom');
     });
 
@@ -65,12 +65,12 @@ describe('powerline settings helpers', () => {
             defaultPadding: padding
         };
 
-        const updated = buildEnabledPowerlineSettings(settings, false);
+        const updated = buildEnabledPowerlineSettings(settings);
         expect(updated.defaultPadding).toBe(' ');
         expect(updated.powerline.paddingToRestore).toBe(remembered);
     });
 
-    it('removes manual separators while preserving flex separators when requested', () => {
+    it('keeps manual separators alongside flex separators when enabling', () => {
         const line: WidgetItem[] = [
             { id: '1', type: 'model' },
             { id: '2', type: 'separator' },
@@ -82,11 +82,11 @@ describe('powerline settings helpers', () => {
             lines: [line]
         };
 
-        const updated = buildEnabledPowerlineSettings(settings, true);
-        expect(updated.lines[0]?.map(item => item.type)).toEqual(['model', 'context-length', 'flex-separator']);
+        const updated = buildEnabledPowerlineSettings(settings);
+        expect(updated.lines[0]?.map(item => item.type)).toEqual(['model', 'separator', 'context-length', 'flex-separator']);
     });
 
-    it('keeps manual separators when removal is not requested', () => {
+    it('does not delete a manual separator across an enable then disable round trip', () => {
         const line: WidgetItem[] = [
             { id: '1', type: 'model' },
             { id: '2', type: 'separator' },
@@ -94,10 +94,22 @@ describe('powerline settings helpers', () => {
         ];
         const settings = {
             ...DEFAULT_SETTINGS,
+            powerline: {
+                ...DEFAULT_SETTINGS.powerline,
+                enabled: false
+            },
             lines: [line]
         };
 
-        const updated = buildEnabledPowerlineSettings(settings, false);
-        expect(updated.lines[0]?.map(item => item.type)).toEqual(['model', 'separator', 'context-length']);
+        const enabled = buildEnabledPowerlineSettings(settings);
+        const disabled = {
+            ...enabled,
+            powerline: {
+                ...enabled.powerline,
+                enabled: false
+            }
+        };
+
+        expect(disabled.lines[0]?.map(item => item.type)).toEqual(['model', 'separator', 'context-length']);
     });
 });
