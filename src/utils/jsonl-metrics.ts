@@ -331,6 +331,42 @@ function getIntervalsDurationMs(intervals: SpeedInterval[]): number {
     return intervals.reduce((total, interval) => total + (interval.endMs - interval.startMs), 0);
 }
 
+/**
+ * Cuts a request down to the part of its time inside the window.
+ *
+ * A request's tokens are produced across the time its response ran, so one that
+ * started before the window produced only some of them inside it. It keeps the
+ * share of its tokens that matches the share of that time inside the window: all
+ * of its tokens over only the clipped time would overstate the speed. That time
+ * is the union of the intervals of the response's records, including those
+ * logged before the window; a request without any interval keeps all of its
+ * tokens.
+ */
+function clipRequestToWindow(request: SpeedRequest, window: SpeedInterval): SpeedRequest {
+    const responseTime = mergeIntervals(request.intervals);
+    const intervals: SpeedInterval[] = [];
+    for (const interval of responseTime) {
+        const startMs = Math.max(interval.startMs, window.startMs);
+        const endMs = Math.min(interval.endMs, window.endMs);
+        if (endMs > startMs) {
+            intervals.push({ startMs, endMs });
+        }
+    }
+
+    const fullMs = getIntervalsDurationMs(responseTime);
+    if (fullMs === 0) {
+        return { ...request, intervals };
+    }
+
+    const insideMs = getIntervalsDurationMs(intervals);
+    return {
+        ...request,
+        inputTokens: request.inputTokens * insideMs / fullMs,
+        outputTokens: request.outputTokens * insideMs / fullMs,
+        intervals
+    };
+}
+
 function createEmptySpeedMetrics(): SpeedMetrics {
     return {
         totalDurationMs: 0,
@@ -472,6 +508,8 @@ function mergeCollectedSpeedMetrics(parts: CollectedSpeedMetrics[]): CollectedSp
     const requestsByMessageId = new Map<string, SpeedRequest>();
 
     for (const part of parts) {
+        // One push per request: spreading a long transcript's requests into a
+        // single call exceeds the engine's argument limit and throws
         for (const request of part.requests) {
             if (request.messageId === null) {
                 requests.push(request);
@@ -520,7 +558,7 @@ function buildSpeedMetrics(
         ? collected.requests.filter(request => request.assistantTimestampMs !== null
             && request.assistantTimestampMs >= windowBounds.startMs
             && request.assistantTimestampMs <= windowBounds.endMs
-        )
+        ).map(request => clipRequestToWindow(request, windowBounds))
         : collected.requests;
 
     let inputTokens = 0;
@@ -532,19 +570,7 @@ function buildSpeedMetrics(
         outputTokens += request.outputTokens;
 
         for (const interval of request.intervals) {
-            if (windowBounds === null) {
-                intervals.push(interval);
-                continue;
-            }
-
-            const clippedStartMs = Math.max(interval.startMs, windowBounds.startMs);
-            const clippedEndMs = Math.min(interval.endMs, windowBounds.endMs);
-            if (clippedEndMs > clippedStartMs) {
-                intervals.push({
-                    startMs: clippedStartMs,
-                    endMs: clippedEndMs
-                });
-            }
+            intervals.push(interval);
         }
     }
 
