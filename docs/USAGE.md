@@ -103,9 +103,8 @@ Powerline Setup can align widgets into shared columns across multiple status lin
 
 Each status line can be Powerline or plain. In **Edit Lines**, select a line and press `p` to switch it; once any line is Powerline, the list shows each line's mode, and a line keeps its mode when it's moved. Powerline Setup's switch is the default for lines you haven't switched.
 
-- A plain line keeps its manual separators and draws its widgets in their own text colors, without the Powerline backgrounds. In plain mode, backgrounds you set yourself still show.
+- A plain line shows its manual separators and draws its widgets in their own text colors, without the Powerline backgrounds. In plain mode, backgrounds you set yourself still show.
 - Align Widgets, Continue Theme, and start/end caps run across the Powerline lines only, skipping plain lines.
-- Turning Powerline on removes manual separators only from the lines it applies to.
 - Under a Powerline theme, Edit Colors still edits the plain lines, and Global Overrides keeps the separator and background options for them.
 
 ## Global Options
