@@ -36,7 +36,6 @@ const contextData: RenderContext['data'] = {
 function createSettings(overrides: Partial<Settings> = {}): Settings {
     return {
         ...DEFAULT_SETTINGS,
-        flexMode: 'full',
         ...overrides,
         powerline: {
             ...DEFAULT_SETTINGS.powerline,
