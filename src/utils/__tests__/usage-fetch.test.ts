@@ -64,6 +64,8 @@ interface TokenHome {
     home: string;
 }
 
+interface DefaultProfileKeychainHome extends TokenHome { readSecurityCalls: () => string[] }
+
 interface ProbeOptions {
     claudeConfigDir?: string;
     claudeSecureStorageConfigDir?: string;
@@ -303,6 +305,60 @@ process.stdout.write(JSON.stringify({
         };
     }
 
+    // The default profile (no CLAUDE_CONFIG_DIR, so ~/.claude) on a Mac where
+    // a second profile, CLAUDE_CONFIG_DIR=/Users/example/.claude-work, is
+    // logged in. The stubbed keychain holds that profile's login under its
+    // suffixed service and lists it in a dump. The default profile's plain
+    // item holds plainItem, or is missing.
+    function createDefaultProfileKeychainHome(name: string, plainItem?: string): DefaultProfileKeychainHome {
+        const home = path.join(tempRoot, `home-${name}`);
+        const bin = path.join(tempRoot, `bin-${name}`);
+        const claudeConfig = path.join(home, '.claude');
+        const plainItemFile = path.join(bin, 'plain-item.json');
+        const otherProfileItemFile = path.join(bin, 'other-profile-item.json');
+        const dumpFile = path.join(bin, 'keychain-dump.txt');
+        const callLog = path.join(bin, 'security-calls.log');
+        const otherProfileService = `Claude Code-credentials-${createHash('sha256').update('/Users/example/.claude-work').digest('hex').slice(0, 8)}`;
+
+        fs.mkdirSync(claudeConfig, { recursive: true });
+        fs.mkdirSync(bin, { recursive: true });
+
+        if (plainItem !== undefined) {
+            fs.writeFileSync(plainItemFile, plainItem);
+        }
+        fs.writeFileSync(otherProfileItemFile, JSON.stringify({ claudeAiOauth: { accessToken: 'other-profile-access', refreshToken: 'other-profile-refresh' } }));
+        fs.writeFileSync(dumpFile, [
+            'keychain: "/Users/example/Library/Keychains/login.keychain-db"',
+            'version: 512',
+            'class: "genp"',
+            'attributes:',
+            `    "svce"<blob>="${otherProfileService}"`,
+            '    "mdat"<timedate>="20240301010101Z"',
+            ''
+        ].join('\n'));
+        fs.writeFileSync(path.join(bin, 'security'), [
+            '#!/bin/sh',
+            `echo "$*" >> '${callLog}'`,
+            'case "$1:$3" in',
+            `    'find-generic-password:Claude Code-credentials') [ -f '${plainItemFile}' ] || exit 44; exec /bin/cat '${plainItemFile}' ;;`,
+            `    'find-generic-password:${otherProfileService}') exec /bin/cat '${otherProfileItemFile}' ;;`,
+            `    dump-keychain:*) exec /bin/cat '${dumpFile}' ;;`,
+            'esac',
+            'exit 44',
+            ''
+        ].join('\n'));
+        fs.chmodSync(path.join(bin, 'security'), 0o755);
+
+        return {
+            bin,
+            claudeConfig,
+            home,
+            readSecurityCalls: () => fs.existsSync(callLog)
+                ? fs.readFileSync(callLog, 'utf8').split('\n').filter(line => line !== '')
+                : []
+        };
+    }
+
     function createTimedOutSecurityHome(name: string): TokenHome {
         const tokenHome = createTokenHome(name);
         const securityScript = path.join(tokenHome.bin, 'security');
@@ -365,6 +421,10 @@ process.stdout.write(JSON.stringify({
             env.HTTPS_PROXY = options.httpsProxy;
         }
 
+        if (options.platform !== undefined) {
+            env.TEST_PLATFORM = options.platform;
+        }
+
         if (options.lockWrittenDuringRequest !== undefined) {
             env.TEST_LOCK_DURING_REQUEST = options.lockWrittenDuringRequest;
         }
@@ -401,6 +461,7 @@ process.stdout.write(JSON.stringify({
 
     return {
         cleanup,
+        createDefaultProfileKeychainHome,
         createEmptyHome,
         createTimedOutSecurityHome,
         createTokenHome,
@@ -1381,9 +1442,9 @@ describe('fetchUsageData error handling', () => {
             expect(renderAt(nowMs).first).toEqual({ error: 'no-credentials' });
 
             // An API-key user has no OAuth login to find, and on macOS each
-            // lookup spawns `security` twice, a full keychain dump included.
-            // Later renders inside the window skip the lookup entirely, so a
-            // login made meanwhile is only picked up once it ends.
+            // lookup spawns `security`. Later renders inside the window skip
+            // the lookup entirely, so a login made meanwhile is only picked up
+            // once it ends.
             fs.writeFileSync(credentialsFile, JSON.stringify({ claudeAiOauth: { accessToken: 'test-token' } }));
             const backedOff = renderAt(nowMs + 10000);
             expect(backedOff.first).toEqual({ error: 'no-credentials' });
@@ -1397,6 +1458,64 @@ describe('fetchUsageData error handling', () => {
             const retried = renderAt(nowMs + 31000);
             expect(retried.first.sessionUsage).toBe(42);
             expect(retried.requestCount).toBe(1);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('uses the default profile\'s own login on macOS, not another profile\'s keychain item, when its plain item is missing', () => {
+        const harness = createProbeHarness();
+
+        try {
+            const home = harness.createDefaultProfileKeychainHome('default-profile-file-login');
+            writeUsageCredentials(home.claudeConfig, { accessToken: 'default-access', refreshToken: 'default-refresh' });
+
+            const result = harness.runProbe({
+                home: home.home,
+                mode: 'success',
+                nowMs,
+                pathDir: home.bin,
+                platform: 'darwin',
+                responseBody: successResponseBody
+            });
+
+            expect(result.first).toMatchObject({ sessionUsage: 42, weeklyUsage: 17 });
+            expect(result.requestCount).toBe(1);
+            expect(result.requestAuthorization).toBe('Bearer default-access');
+            expect(home.readSecurityCalls()).toEqual([
+                'find-generic-password -s Claude Code-credentials -w',
+                `find-generic-password -s Claude Code-credentials -a ${os.userInfo().username} -w`
+            ]);
+        } finally {
+            harness.cleanup();
+        }
+    });
+
+    it('reports no credentials on macOS, not another profile\'s usage, when the default profile has no login', () => {
+        const harness = createProbeHarness();
+
+        try {
+            // A plain item holding only an MCP server's OAuth tokens (#521)
+            const home = harness.createDefaultProfileKeychainHome(
+                'default-profile-no-login',
+                JSON.stringify({ mcpOAuth: { 'example-server': { accessToken: 'mcp-access' } } })
+            );
+
+            const result = harness.runProbe({
+                home: home.home,
+                mode: 'success',
+                nowMs,
+                pathDir: home.bin,
+                platform: 'darwin',
+                responseBody: successResponseBody
+            });
+
+            expect(result.first).toEqual({ error: 'no-credentials' });
+            expect(result.requestCount).toBe(0);
+            expect(home.readSecurityCalls()).toEqual([
+                'find-generic-password -s Claude Code-credentials -w',
+                `find-generic-password -s Claude Code-credentials -a ${os.userInfo().username} -w`
+            ]);
         } finally {
             harness.cleanup();
         }
@@ -2680,7 +2799,7 @@ describe('fetchUsageData keychain reads on macOS', () => {
             writeUsageCredentials(claudeConfig, { accessToken: 'access-a', refreshToken: 'refresh-a' });
             const renderAt = createRenderer(harness, home, keychain);
             const startMs = Date.now();
-            const lookup = [FIND_DEFAULT_ITEM, FIND_DEFAULT_ACCOUNT_ITEM, 'dump-keychain'];
+            const lookup = [FIND_DEFAULT_ITEM, FIND_DEFAULT_ACCOUNT_ITEM];
 
             expect(renderAt(startMs).first.sessionUsage).toBe(42);
             expect(keychain.calls()).toEqual(lookup);
@@ -2912,29 +3031,6 @@ describe('fetchUsageData keychain reads on macOS', () => {
         }
     });
 
-    it('keeps looking past a missing item, to suffixed items and then the credentials file', () => {
-        const harness = createProbeHarness();
-
-        try {
-            const { home } = harness.createEmptyHome('keychain-missing-item');
-            const keychain = createKeychainStub(home);
-            keychain.setItem(`${DEFAULT_KEYCHAIN_SERVICE}-1a2b3c4d`, { accessToken: 'access-a', refreshToken: 'refresh-a' });
-            const renderAt = createRenderer(harness, home, keychain);
-            const startMs = Date.now();
-            const lookup = [FIND_DEFAULT_ITEM, FIND_DEFAULT_ACCOUNT_ITEM, 'dump-keychain', `find-generic-password -s ${DEFAULT_KEYCHAIN_SERVICE}-1a2b3c4d -w`];
-
-            expect(renderAt(startMs).first.sessionUsage).toBe(42);
-            expect(keychain.calls()).toEqual(lookup);
-
-            const refreshed = renderAt(startMs + 200000);
-            expect(refreshed.requestCount).toBe(1);
-            expect(keychain.calls()).toEqual([...lookup, ...lookup]);
-            expect(fs.existsSync(path.join(home, '.cache', 'ccstatusline', 'usage-keychain.lock'))).toBe(false);
-        } finally {
-            harness.cleanup();
-        }
-    });
-
     it('shows No credentials without a login anywhere and repeats the lookup only after 30 seconds', () => {
         const harness = createProbeHarness();
 
@@ -2943,7 +3039,7 @@ describe('fetchUsageData keychain reads on macOS', () => {
             const keychain = createKeychainStub(home);
             const renderAt = createRenderer(harness, home, keychain);
             const startMs = Date.now();
-            const lookup = [FIND_DEFAULT_ITEM, FIND_DEFAULT_ACCOUNT_ITEM, 'dump-keychain'];
+            const lookup = [FIND_DEFAULT_ITEM, FIND_DEFAULT_ACCOUNT_ITEM];
 
             expect(renderAt(startMs).first).toEqual({ error: 'no-credentials' });
             expect(renderAt(startMs + 10000).first).toEqual({ error: 'no-credentials' });
@@ -3165,7 +3261,7 @@ describe('fetchUsageData keychain reads on macOS', () => {
             const loggedOut = renderAt(startMs + 20000, { mode: 'unexpected' });
             expect(loggedOut.first).toEqual({ error: 'no-credentials' });
             expect(loggedOut.requestCount).toBe(0);
-            expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM, FIND_DEFAULT_ITEM, FIND_DEFAULT_ACCOUNT_ITEM, 'dump-keychain']);
+            expect(keychain.calls()).toEqual([FIND_DEFAULT_ITEM, FIND_DEFAULT_ITEM, FIND_DEFAULT_ACCOUNT_ITEM]);
         } finally {
             harness.cleanup();
         }
