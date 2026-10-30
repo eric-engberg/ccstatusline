@@ -64,6 +64,7 @@ bun run docs
 - `~/.cache/ccstatusline/usage-<profileHash>.credentials.lock` - per-profile 30-second backoff after a usage credential lookup finds no OAuth login, also tagged with its credential source
 - `~/.cache/ccstatusline/usage-login.json` - per profile, the fingerprint of the login its credentials held when last read, with a stat stamp of its `.credentials.json` and, on macOS, `~/Library/Keychains/login.keychain-db`, and whether a Keychain read has failed since
 - `~/.cache/ccstatusline/usage-keychain.lock` - per-profile five-minute Keychain backoff after a `security` call fails for any reason other than a missing item, with the stat of `~/Library/Keychains/login.keychain-db` it holds for
+- `~/.cache/ccstatusline/usage-account.json` - the account each usage login fingerprint belongs to (itself fingerprinted), looked up from `/api/oauth/profile` for today's extra usage spend, and each fingerprint's backoff after a failed lookup
 - `~/.cache/ccstatusline/session-usage-history.json` and `~/.cache/ccstatusline/session-usage-history.json.lock` - 5-hour usage readings for Block Forecast and Block Limit Timer, per Claude config directory and login, and the lock a render holds while writing them
 - `~/.cache/ccstatusline/account-email-<loginFingerprint>.json`, `.lock`, and `.inflight` - owner-only Claude Account Email caches, independent failure backoffs, and exclusive in-flight leases per login
 - `~/.cache/ccstatusline/claude-status.json` and `~/.cache/ccstatusline/claude-status.lock` - Claude service-status cache and failed-fetch backoff lock
