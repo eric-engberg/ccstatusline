@@ -66,6 +66,8 @@ export const TerminalOptionsMenu: React.FC<TerminalOptionsMenuProps> = ({
 }) => {
     const [showColorWarning, setShowColorWarning] = useState(false);
     const [pendingColorLevel, setPendingColorLevel] = useState<0 | 1 | 2 | 3 | null>(null);
+    // The warning unmounts the List, so it comes back on the row it was on
+    const [selectedItem, setSelectedItem] = useState(0);
 
     const handleSelect = (value: TerminalOptionsValue | 'back') => {
         if (value === 'back') {
@@ -144,6 +146,10 @@ export const TerminalOptionsMenu: React.FC<TerminalOptionsMenuProps> = ({
                         marginTop={1}
                         items={buildTerminalOptionsItems(settings.colorLevel)}
                         onSelect={handleSelect}
+                        onSelectionChange={(_, index) => {
+                            setSelectedItem(index);
+                        }}
+                        initialSelection={selectedItem}
                         showBackButton={true}
                     />
                 </>
