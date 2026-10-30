@@ -1241,8 +1241,10 @@ async function fetchFromUsageApi(token: string, deadlineMs = USAGE_API_TIMEOUT_M
 // The fingerprint of the login fetchUsageData last resolved, so per-login
 // state outside the usage cache (today's spend) stays with that login.
 let lastUsageAccountKey: string | null = null;
-// That login's credentials, which lookUpUsageAccount asks about.
-let lastUsageCredentials: UsageCredentials | null = null;
+// That login's credentials, which lookUpUsageAccount asks about, or
+// undefined when fetchUsageData answered for a known login without reading
+// them (see readKnownUsageLogin).
+let lastUsageCredentials: UsageCredentials | null | undefined;
 
 /** The token fingerprint of the login the last usage fetch used, or null when none was found. */
 export function getUsageAccountKey(): string | null {
@@ -1274,6 +1276,8 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
     const credentialsStamp = getUsageCredentialsStamp();
     const knownLogin = readKnownUsageLogin(credentialsSource, credentialsStamp);
     if (knownLogin && !knownLogin.keychainFailed) {
+        lastUsageAccountKey = knownLogin.identity.preferredHash;
+        lastUsageCredentials = undefined;
         const knownFileData = readFreshUsageCache(now, knownLogin.identity, options);
         if (knownFileData) {
             return cacheUsageData(knownFileData.data, now, knownFileData.fetchedAtMs);
@@ -1591,17 +1595,33 @@ function writeAccountEmailLock(tokenHash: string, blockedUntil: number): void {
  * failure, or a 429's Retry-After, up to a day.
  */
 export async function lookUpUsageAccount(): Promise<UsageAccount | null> {
-    const credentials = lastUsageCredentials;
     const tokenHash = lastUsageAccountKey;
-    if (!credentials || tokenHash === null) {
+    if (tokenHash === null || lastUsageCredentials === null) {
         return null;
     }
 
     const now = Math.floor(Date.now() / 1000);
     const cached = findUsageAccount(tokenHash);
-    if (cached || !claimUsageAccountLookup(tokenHash, now)) {
+    if (cached) {
+        return cached;
+    }
+
+    // Held off after a failed lookup, there is nothing to ask yet
+    if (isUsageAccountLookupBlocked(readUsageAccountEntries().find(entry => entry.tokenHash === tokenHash), now)) {
+        return null;
+    }
+
+    // Served for a known login, the fetch didn't read the credentials: only
+    // a lookup still to be made reads them, under the same backoffs
+    const credentials = lastUsageCredentials
+        ?? getUsageCredentialsWithBackoff(now, getUsageCredentialsSource(), getUsageCredentialsStamp());
+    if (!credentials || getUsageCacheIdentity(credentials).preferredHash !== tokenHash) {
+        return null;
+    }
+
+    if (!claimUsageAccountLookup(tokenHash, now)) {
         // Another render may have just named it
-        return cached ?? findUsageAccount(tokenHash);
+        return findUsageAccount(tokenHash);
     }
 
     const response = await fetchFromUsageApi(credentials.accessToken, USAGE_API_TIMEOUT_MS, PROFILE_API_PATH)
