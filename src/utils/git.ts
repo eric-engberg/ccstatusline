@@ -285,7 +285,7 @@ function getRepositoryFilterOverrideArgs(cwd: string | undefined): string[] | nu
  * Throws when git fails, prints more than maxBuffer bytes (1 MiB by default),
  * or when the repository's filters can't be turned off.
  */
-export function execGit(args: string[], cwd: string | undefined, maxBuffer?: number): string {
+export function execGit(args: string[], cwd: string | undefined, encoding: 'utf8' | 'latin1' = 'utf8', maxBuffer?: number): string {
     const [subcommand = '', ...rest] = args;
     const workTreeArgs = WORK_TREE_COMMAND_ARGS.get(subcommand);
     const filterArgs = workTreeArgs ? getRepositoryFilterOverrideArgs(cwd) : [];
@@ -297,7 +297,7 @@ export function execGit(args: string[], cwd: string | undefined, maxBuffer?: num
     return execFileSync(
         resolveExecutable('git'),
         [...GIT_HARDENING_ARGS, ...filterArgs, ...wholeRepositoryArgs, subcommand, ...(workTreeArgs ?? []), ...rest],
-        gitExecOptions(cwd, maxBuffer)
+        { ...gitExecOptions(cwd, maxBuffer), encoding }
     );
 }
 
@@ -541,8 +541,16 @@ export function runGit(command: string, context: RenderContext): string | null {
 }
 
 export function runGitArgs(args: string[], context: RenderContext, cacheCommand?: string): string | null {
-    return runCachedGit(context, cacheCommand ?? args.join('\0'), (cwd) => {
-        const output = execGit(args, cwd).trimEnd();
+    return runGitArgsEncoded(args, context, cacheCommand, 'utf8');
+}
+
+function runGitArgsEncoded(args: string[], context: RenderContext, cacheCommand: string | undefined, encoding: 'utf8' | 'latin1'): string | null {
+    const commandToken = cacheCommand ?? args.join('\0');
+    // Byte-preserving output must never reuse an older, lossy UTF-8 entry.
+    const cacheToken = encoding === 'utf8' ? commandToken : `${encoding}\0${commandToken}`;
+    return runCachedGit(context, cacheToken, (cwd) => {
+        const rawOutput = execGit(args, cwd, encoding);
+        const output = encoding === 'utf8' ? rawOutput.trimEnd() : rawOutput;
         return output.length > 0 ? output : null;
     });
 }
@@ -579,18 +587,20 @@ function runCachedGit(
         return persistentEntry.output;
     }
 
+    let result: string | null;
     try {
-        const result = run(cwd);
-        const entry = createCacheEntry(result, metadata, now);
-        gitCommandCache.set(memoryCacheKey, entry);
-        writePersistentCacheEntry(metadata, persistentCacheKey, cwd, entry);
-        return result;
+        result = run(cwd);
     } catch {
-        const entry = createCacheEntry(null, metadata, now);
-        gitCommandCache.set(memoryCacheKey, entry);
-        writePersistentCacheEntry(metadata, persistentCacheKey, cwd, entry);
-        return null;
+        result = null;
     }
+
+    // Stamped after the run, so a command slower than the TTL (status in a
+    // large repository, or one cut off by the timeout) still gets the full TTL
+    // of reuse rather than expiring the moment it returns.
+    const entry = createCacheEntry(result, metadata, Date.now());
+    gitCommandCache.set(memoryCacheKey, entry);
+    writePersistentCacheEntry(metadata, persistentCacheKey, cwd, entry);
+    return result;
 }
 
 /**
@@ -726,7 +736,7 @@ export function getGitUntrackedFileCount(context: RenderContext): number {
     }
 
     const count = runCachedGit(context, UNTRACKED_FILE_COUNT_CACHE_KEY, (cwd) => {
-        const output = execGit(UNTRACKED_FILES_ARGS, cwd, UNTRACKED_FILES_MAX_BUFFER_BYTES);
+        const output = execGit(UNTRACKED_FILES_ARGS, cwd, 'utf8', UNTRACKED_FILES_MAX_BUFFER_BYTES);
         return `${countNulTerminatedEntries(output)}`;
     });
     const parsed = Number.parseInt(count ?? '', 10);
@@ -757,16 +767,18 @@ export function getGitAheadBehind(context: RenderContext): GitAheadBehind | null
 }
 
 export function getGitConflictCount(context: RenderContext): number {
+    // Latin-1 maps each byte to a distinct code point, preserving arbitrary Git
+    // pathnames through string comparisons and the JSON cache. It is not display text.
     // `:/` covers the whole repository, as git status does; without a path
     // ls-files only lists the session's directory
-    const output = runGit('ls-files --unmerged -- :/', context);
+    const output = runGitArgsEncoded(['ls-files', '--unmerged', '-z', '--', ':/'], context, undefined, 'latin1');
     if (!output)
         return 0;
 
-    // Count unique file paths (unmerged files appear 3 times in output)
-    const files = new Set(output.split('\n').map((line) => {
-        const parts = line.split(/\s+/).slice(3);
-        return parts.join(' ');
+    // Preserve exact paths while deduplicating the index stages for each file.
+    const files = new Set(output.split('\0').map((entry) => {
+        const separator = entry.indexOf('\t');
+        return separator === -1 ? '' : entry.slice(separator + 1);
     }).filter(path => path.length > 0));
     return files.size;
 }
