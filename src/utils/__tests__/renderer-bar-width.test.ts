@@ -36,7 +36,6 @@ const contextData: RenderContext['data'] = {
 function createSettings(overrides: Partial<Settings> = {}): Settings {
     return {
         ...DEFAULT_SETTINGS,
-        flexMode: 'full',
         ...overrides,
         powerline: {
             ...DEFAULT_SETTINGS.powerline,
@@ -67,9 +66,10 @@ const text = (id: string, customText: string): WidgetItem => ({ id, type: 'custo
 const flex = (id: string): WidgetItem => ({ id, type: 'flex-separator' });
 const countCells = (line: string): number => line.match(/[█░▓│]/g)?.length ?? 0;
 
-// 'full' flex mode leaves 6 columns free, so a 100-column terminal gives 94
+// The renderer leaves 5 columns free at the right edge, so a 100-column
+// terminal gives 95
 const TERMINAL = 100;
-const LINE = 94;
+const LINE = 95;
 const AUTO_ALIGN: Partial<Settings> = { powerline: { ...DEFAULT_SETTINGS.powerline, enabled: true, autoAlign: true } };
 
 describe('bar width', () => {
@@ -90,10 +90,10 @@ describe('bar width', () => {
     });
 
     it('shrinks a percentage bar so the line still fits', () => {
-        // Half of 44 columns is 22 cells, more than the line has room for
+        // Half of 45 columns is 23 cells, more than the line has room for
         const line = renderLine([contextBar('bar', '50')], 50);
-        expect(getVisibleWidth(line)).toBe(44);
-        expect(countCells(line)).toBeLessThan(22);
+        expect(getVisibleWidth(line)).toBe(45);
+        expect(countCells(line)).toBeLessThan(23);
         expect(line).not.toContain('...');
     });
 
@@ -107,7 +107,7 @@ describe('bar width', () => {
 
     it('splits the room evenly between fill bars', () => {
         const line = renderLine([contextBar('a', 'fill'), contextBar('b', 'fill')], 160);
-        expect(getVisibleWidth(line)).toBe(154);
+        expect(getVisibleWidth(line)).toBe(155);
         const [first = '', second = ''] = line.match(/\[[█░]+\]/g) ?? [];
         expect(second.length).toBeGreaterThan(MIN_BAR_CELLS + 2);
         expect(Math.abs(first.length - second.length)).toBeLessThanOrEqual(1);
