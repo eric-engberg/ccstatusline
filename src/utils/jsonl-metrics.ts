@@ -456,6 +456,16 @@ async function collectSpeedMetricsFromFile(filePath: string, ignoreSidechain: bo
     return state;
 }
 
+function foldRepeatedSpeedRequest(previous: SpeedRequest, request: SpeedRequest): void {
+    previous.inputTokens = Math.max(previous.inputTokens, request.inputTokens);
+    previous.outputTokens = Math.max(previous.outputTokens, request.outputTokens);
+    if (request.assistantTimestampMs !== null
+        && (previous.assistantTimestampMs === null || request.assistantTimestampMs > previous.assistantTimestampMs)) {
+        previous.assistantTimestampMs = request.assistantTimestampMs;
+    }
+    previous.intervals.push(...request.intervals);
+}
+
 function mergeCollectedSpeedMetrics(parts: CollectedSpeedMetrics[]): CollectedSpeedMetrics {
     const requests: SpeedRequest[] = [];
     let latestTimestampMs: number | null = null;
@@ -463,24 +473,21 @@ function mergeCollectedSpeedMetrics(parts: CollectedSpeedMetrics[]): CollectedSp
 
     for (const part of parts) {
         for (const request of part.requests) {
-            // A forked subagent's transcript opens with a copy of the response
-            // that spawned it, so one API call can appear in several files.
-            const previous = request.messageId === null ? undefined : requestsByMessageId.get(request.messageId);
-            if (!previous) {
+            if (request.messageId === null) {
                 requests.push(request);
-                if (request.messageId !== null) {
-                    requestsByMessageId.set(request.messageId, request);
-                }
                 continue;
             }
 
-            previous.inputTokens = Math.max(previous.inputTokens, request.inputTokens);
-            previous.outputTokens = Math.max(previous.outputTokens, request.outputTokens);
-            if (request.assistantTimestampMs !== null
-                && (previous.assistantTimestampMs === null || request.assistantTimestampMs > previous.assistantTimestampMs)) {
-                previous.assistantTimestampMs = request.assistantTimestampMs;
+            // A forked subagent's transcript opens with a copy of the response
+            // that spawned it, so one API call can appear in several files.
+            const previous = requestsByMessageId.get(request.messageId);
+            if (previous) {
+                foldRepeatedSpeedRequest(previous, request);
+                continue;
             }
-            previous.intervals.push(...request.intervals);
+
+            requests.push(request);
+            requestsByMessageId.set(request.messageId, request);
         }
 
         if (part.latestTimestampMs !== null && (latestTimestampMs === null || part.latestTimestampMs > latestTimestampMs)) {
