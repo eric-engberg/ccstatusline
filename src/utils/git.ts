@@ -38,19 +38,25 @@ interface GitCacheEntry {
 }
 
 interface PersistentGitCache {
-    version: 1;
+    version: typeof GIT_CACHE_SCHEMA_VERSION;
     cwd: string | null;
     entries: Record<string, GitCacheEntry>;
 }
 
 const DEFAULT_GIT_CACHE_TTL_SECONDS = 5;
-const GIT_CACHE_SCHEMA_VERSION = 1 as const;
+// 2: empty output is stored as '', so null only ever means the command failed
+const GIT_CACHE_SCHEMA_VERSION = 2 as const;
 
 // Matches the timeout used by every other external CLI call site: a git
 // invocation that blocks (slow network filesystem, hung credential helper)
 // must not freeze the statusline process - the error path below caches null
 // and the widget renders empty instead.
 const GIT_COMMAND_TIMEOUT_MS = 5_000;
+
+// execFileSync fails once output passes its maxBuffer, 1 MiB unless set: about
+// 15,000 paths of `status --porcelain -z`, which a large change set passes. This
+// leaves the timeout above as the practical limit.
+const GIT_COMMAND_MAX_BUFFER_BYTES = 64 * 1024 * 1024;
 
 // In-process cache keeps cwd in the key; the persistent cache uses one file
 // per (repo, cwd) pair, stores cwd once at the file level and keys entries by
@@ -220,6 +226,7 @@ function gitExecOptions(cwd: string | undefined, maxBuffer?: number) {
         stdio: ['pipe', 'pipe', 'ignore'] as ['pipe', 'pipe', 'ignore'],
         env: { ...process.env, GIT_OPTIONAL_LOCKS: '0' },
         timeout: GIT_COMMAND_TIMEOUT_MS,
+        maxBuffer: GIT_COMMAND_MAX_BUFFER_BYTES,
         windowsHide: true,
         ...(cwd ? { cwd } : {}),
         ...(maxBuffer === undefined ? {} : { maxBuffer })
@@ -402,7 +409,13 @@ function isCacheEntryFresh(
         }
     }
 
-    return ttlMs === 0 || now - entry.createdAt <= ttlMs;
+    // TTL 0 leaves output to HEAD and index changes alone. A failure (a
+    // timeout, git missing until it's reinstalled) has nothing to do with
+    // them, so it's still retried after the default TTL.
+    const maxAgeMs = ttlMs === 0 && entry.output === null
+        ? DEFAULT_GIT_CACHE_TTL_SECONDS * 1000
+        : ttlMs;
+    return maxAgeMs === 0 || now - entry.createdAt <= maxAgeMs;
 }
 
 function readPersistentCache(cachePath: string): PersistentGitCache | null {
@@ -535,32 +548,35 @@ export function resolveGitCwd(context: RenderContext): string | undefined {
     return undefined;
 }
 
-export function runGit(command: string, context: RenderContext): string | null {
+export function runGit(command: string, context: RenderContext, allowEmpty = false): string | null {
     const args = command.trim().split(/\s+/).filter(Boolean);
-    return runGitArgs(args, context, command);
+    return runGitArgs(args, context, command, allowEmpty);
 }
 
-export function runGitArgs(args: string[], context: RenderContext, cacheCommand?: string): string | null {
-    return runGitArgsEncoded(args, context, cacheCommand, 'utf8');
+// What git printed, trimmed; null when it failed, and also when it printed
+// nothing unless allowEmpty is set
+export function runGitArgs(args: string[], context: RenderContext, cacheCommand?: string, allowEmpty = false): string | null {
+    const output = runGitArgsEncoded(args, context, cacheCommand, 'utf8');
+    return output === '' && !allowEmpty ? null : output;
 }
 
+// Cached as printed: '' when git printed nothing, null when it failed
 function runGitArgsEncoded(args: string[], context: RenderContext, cacheCommand: string | undefined, encoding: 'utf8' | 'latin1'): string | null {
     const commandToken = cacheCommand ?? args.join('\0');
     // Byte-preserving output must never reuse an older, lossy UTF-8 entry.
     const cacheToken = encoding === 'utf8' ? commandToken : `${encoding}\0${commandToken}`;
     return runCachedGit(context, cacheToken, (cwd) => {
         const rawOutput = execGit(args, cwd, encoding);
-        const output = encoding === 'utf8' ? rawOutput.trimEnd() : rawOutput;
-        return output.length > 0 ? output : null;
+        return encoding === 'utf8' ? rawOutput.trimEnd() : rawOutput;
     });
 }
 
 // What run makes of git's output in the session's directory, kept under
-// cacheToken; null when git fails
+// cacheToken: '' when that is nothing, null when git fails (run throws)
 function runCachedGit(
     context: RenderContext,
     cacheToken: string,
-    run: (cwd: string | undefined) => string | null
+    run: (cwd: string | undefined) => string
 ): string | null {
     const cwd = resolveGitCwd(context);
     const memoryCacheKey = `${cacheToken}|${cwd ?? ''}`;
@@ -648,17 +664,28 @@ export interface GitStatus {
     conflicts: boolean;
 }
 
-export function getGitStatus(context: RenderContext): GitStatus {
-    const output = runGit('status --porcelain -z', context);
+// Sets each flag that one `status --porcelain` entry shows
+function markEntryStatus(status: GitStatus, line: string): void {
+    // Conflict detection: DD, AU, UD, UA, DU, AA, UU
+    if (/^(DD|AU|UD|UA|DU|AA|UU)/.test(line))
+        status.conflicts = true;
+    if (/^[MADRCTU]/.test(line))
+        status.staged = true;
+    if (/^.[MADRCTU]/.test(line))
+        status.unstaged = true;
+    if (line.startsWith('??'))
+        status.untracked = true;
+}
 
-    if (!output) {
-        return { staged: false, unstaged: false, untracked: false, conflicts: false };
+// null when git status fails or times out, which says nothing about the tree
+export function getGitStatus(context: RenderContext): GitStatus | null {
+    const output = runGit('status --porcelain -z', context, true);
+
+    if (output === null) {
+        return null;
     }
 
-    let staged = false;
-    let unstaged = false;
-    let untracked = false;
-    let conflicts = false;
+    const status: GitStatus = { staged: false, unstaged: false, untracked: false, conflicts: false };
 
     const entries = output.split('\0');
 
@@ -666,16 +693,8 @@ export function getGitStatus(context: RenderContext): GitStatus {
         const line = entries[index];
         if (typeof line !== 'string' || line.length < 2)
             continue;
-        // Conflict detection: DD, AU, UD, UA, DU, AA, UU
-        if (!conflicts && /^(DD|AU|UD|UA|DU|AA|UU)/.test(line))
-            conflicts = true;
-        if (!staged && /^[MADRCTU]/.test(line))
-            staged = true;
-        if (!unstaged && /^.[MADRCTU]/.test(line))
-            unstaged = true;
-        if (!untracked && line.startsWith('??'))
-            untracked = true;
-        if (staged && unstaged && untracked && conflicts)
+        markEntryStatus(status, line);
+        if (status.staged && status.unstaged && status.untracked && status.conflicts)
             break;
 
         if (hasRenameOrCopyStatus(line)) {
@@ -683,14 +702,15 @@ export function getGitStatus(context: RenderContext): GitStatus {
         }
     }
 
-    return { staged, unstaged, untracked, conflicts };
+    return status;
 }
 
-export function getGitFileStatusCounts(context: RenderContext): GitFileStatusCounts {
-    const output = runGit('status --porcelain -z', context);
+// null when git status fails or times out
+export function getGitFileStatusCounts(context: RenderContext): GitFileStatusCounts | null {
+    const output = runGit('status --porcelain -z', context, true);
 
-    if (!output) {
-        return { staged: 0, unstaged: 0 };
+    if (output === null) {
+        return null;
     }
 
     let staged = 0;
@@ -729,8 +749,11 @@ function countNulTerminatedEntries(output: string): number {
 // only when the git status Git Status and the other file counts share lists
 // something untracked. Otherwise the count is 0, as git status says, which
 // under status.showUntrackedFiles=no lists no untracked files at all.
-export function getGitUntrackedFileCount(context: RenderContext): number {
+export function getGitUntrackedFileCount(context: RenderContext): number | null {
     const status = getGitStatus(context);
+    if (status === null) {
+        return null;
+    }
     if (!status.untracked) {
         return 0;
     }
@@ -740,7 +763,7 @@ export function getGitUntrackedFileCount(context: RenderContext): number {
         return `${countNulTerminatedEntries(output)}`;
     });
     const parsed = Number.parseInt(count ?? '', 10);
-    return Number.isNaN(parsed) ? 0 : parsed;
+    return Number.isNaN(parsed) ? null : parsed;
 }
 
 export interface GitAheadBehind {
