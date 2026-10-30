@@ -984,7 +984,7 @@ export function preRenderAllWidgets(
     // Resolved only once a sized bar needs it; null when the width is unknown
     let lineWidth: number | null | undefined;
     const getLineWidth = (): number | null => {
-        lineWidth ??= resolveEffectiveTerminalWidth(context.terminalWidth ?? getTerminalWidth(), settings, context);
+        lineWidth ??= resolveEffectiveTerminalWidth(context.terminalWidth ?? getTerminalWidth());
         return lineWidth;
     };
 
