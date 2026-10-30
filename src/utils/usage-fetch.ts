@@ -19,6 +19,7 @@ import {
     createProxyAgent,
     type ClosableProxyAgent
 } from './proxy-agent';
+import { replaceFileSync } from './replace-file';
 import type {
     UsageData,
     UsageDataField,
@@ -745,7 +746,7 @@ function readKnownUsageLogin(source: string, stamp: UsageCredentialsStamp): Know
 function writeUsageLogin(logins: z.infer<typeof UsageLoginsSchema>, login: z.infer<typeof UsageLoginSchema>): void {
     try {
         ensureCacheDirExists();
-        fs.writeFileSync(getUsageLoginFile(), JSON.stringify([
+        replaceFileSync(getUsageLoginFile(), JSON.stringify([
             login,
             ...logins.filter(entry => entry.source !== login.source)
         ].slice(0, MAX_USAGE_LOGINS)));
@@ -818,7 +819,7 @@ function getUsageCredentialsWithBackoff(now: number, source: string, stamp: Usag
             ensureCacheDirExists();
             // Read again: other profiles' renders may have recorded their
             // own failures while this read waited, up to its timeout
-            fs.writeFileSync(getKeychainLockFile(), JSON.stringify({
+            replaceFileSync(getKeychainLockFile(), JSON.stringify({
                 ...readKeychainLocks(now),
                 [source]: { blockedUntil: now + MACOS_KEYCHAIN_BACKOFF, keychainStamp: stamp.loginKeychain }
             }));
@@ -836,7 +837,7 @@ function getUsageCredentialsWithBackoff(now: number, source: string, stamp: Usag
     if (!credentials) {
         try {
             ensureCacheDirExists();
-            fs.writeFileSync(getUsageFilePath('credentials.lock'), JSON.stringify({ blockedUntil: now + LOCK_MAX_AGE, source }));
+            replaceFileSync(getUsageFilePath('credentials.lock'), JSON.stringify({ blockedUntil: now + LOCK_MAX_AGE, source }));
         } catch {
             // Ignore lock file errors
         }
@@ -935,7 +936,7 @@ function writeUsageLock(blockedUntil: number, error: UsageLockError, transient =
     const contents = JSON.stringify(transient ? { blockedUntil, error, transient } : { blockedUntil, error });
     try {
         ensureCacheDirExists();
-        fs.writeFileSync(getUsageFilePath('lock'), contents);
+        replaceFileSync(getUsageFilePath('lock'), contents);
     } catch {
         // Ignore lock file errors
     }
@@ -1342,7 +1343,7 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
         // Save to cache
         try {
             ensureCacheDirExists();
-            fs.writeFileSync(getUsageFilePath('json'), JSON.stringify({ ...usageData, tokenHash: cacheIdentity?.preferredHash }));
+            replaceFileSync(getUsageFilePath('json'), JSON.stringify({ ...usageData, tokenHash: cacheIdentity?.preferredHash }));
         } catch {
             // Ignore cache write errors
         }
@@ -1577,7 +1578,7 @@ function writeAccountEmailLock(tokenHash: string, blockedUntil: number): void {
     try {
         ensureCacheDirExists();
         const deadline = Math.max(blockedUntil, readAccountEmailBackoff(tokenHash, Math.floor(Date.now() / 1000)));
-        fs.writeFileSync(getAccountEmailPath(tokenHash, 'lock'), JSON.stringify({ blockedUntil: deadline, tokenHash }));
+        replaceFileSync(getAccountEmailPath(tokenHash, 'lock'), JSON.stringify({ blockedUntil: deadline, tokenHash }));
     } catch {
         // Ignore lock file errors
     }
