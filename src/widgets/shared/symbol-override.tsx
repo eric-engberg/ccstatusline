@@ -107,6 +107,11 @@ const SymbolSlotsEditor: React.FC<WidgetEditorProps & { slots: SymbolSlot[] }> =
         setValues(values.map((current, index) => (index === selectedIndex ? value : current)));
     };
 
+    // ↑↓ wrap around the rows
+    const moveSelection = (step: number) => {
+        setSelectedIndex((selectedIndex + step + slots.length) % slots.length);
+    };
+
     // The picker takes the keys while it's open
     useInput((input, key) => {
         if (key.rightArrow) {
@@ -116,9 +121,9 @@ const SymbolSlotsEditor: React.FC<WidgetEditorProps & { slots: SymbolSlot[] }> =
         } else if (key.escape) {
             onCancel();
         } else if (key.upArrow && slots.length > 1) {
-            setSelectedIndex(selectedIndex - 1 < 0 ? slots.length - 1 : selectedIndex - 1);
+            moveSelection(-1);
         } else if (key.downArrow && slots.length > 1) {
-            setSelectedIndex(selectedIndex + 1 > slots.length - 1 ? 0 : selectedIndex + 1);
+            moveSelection(1);
         } else if (key.tab && key.shift) {
             // Widgets with several glyphs are mostly blanked whole to save
             // width on the status line, which is one Backspace per row
