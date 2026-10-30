@@ -24,6 +24,7 @@ import {
     getRefreshInterval,
     getRemoteControlStatus,
     getSandboxConfig,
+    getStatusLineConfigPath,
     getVoiceConfig,
     installStatusLine,
     isClaudeCodeVersionAtLeast,
@@ -337,6 +338,39 @@ describe('buildCommand via installStatusLine', () => {
                 hooks: [{ type: 'command', command: `${installedCommand} --hook` }]
             }
         ]);
+    });
+});
+
+describe('getStatusLineConfigPath', () => {
+    it('reads the config a command loads as the shell passes its --config path on', () => {
+        vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
+        config.initConfigPath();
+        const defaultPath = config.getConfigPath();
+        const home = os.homedir();
+
+        expect(getStatusLineConfigPath(CCSTATUSLINE_COMMANDS.NPM)).toBe(defaultPath);
+        expect(getStatusLineConfigPath('~/.claude/ccstatusline-wrapper.sh')).toBe(defaultPath);
+        expect(getStatusLineConfigPath('ccstatusline --config ~/a.json')).toBe(path.join(home, 'a.json'));
+        expect(getStatusLineConfigPath('ccstatusline --config "$HOME/my configs/a.json" --hook')).toBe(path.join(home, 'my configs', 'a.json'));
+        expect(getStatusLineConfigPath('ccstatusline --config my\\ configs/a.json')).toBe(path.resolve('my configs/a.json'));
+        expect(getStatusLineConfigPath('ccstatusline --config')).toBeNull();
+        expect(getStatusLineConfigPath('ccstatusline --config --hook')).toBeNull();
+    });
+
+    it('reads back the config path of every command buildStatusLineCommand writes', () => {
+        vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
+        const getConfigPath = vi.spyOn(config, 'getConfigPath');
+
+        for (const configPath of ['/tmp/settings.json', '/my path/settings.json', '/my\'path/settings.json', '/a "b" $c `d` \\e/settings.json']) {
+            getConfigPath.mockReturnValue(configPath);
+            expect(getStatusLineConfigPath(buildStatusLineCommand('auto-npx'))).toBe(configPath);
+        }
+    });
+
+    it('keeps the backslashes of a Windows path', () => {
+        vi.spyOn(process, 'platform', 'get').mockReturnValue('win32');
+
+        expect(getStatusLineConfigPath('ccstatusline --config "C:\\Users\\me\\my configs\\a.json"')).toBe(path.resolve('C:\\Users\\me\\my configs\\a.json'));
     });
 });
 
