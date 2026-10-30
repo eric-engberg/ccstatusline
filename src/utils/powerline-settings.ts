@@ -12,14 +12,8 @@ function resolveEnabledPowerlineTheme(theme: string | undefined): string {
     return theme;
 }
 
-export function buildEnabledPowerlineSettings(settings: Settings, removeManualSeparators: boolean): Settings {
+export function buildEnabledPowerlineSettings(settings: Settings): Settings {
     const powerlineConfig = settings.powerline;
-    // A line set to plain keeps its separators
-    const lines = removeManualSeparators
-        ? settings.lines.map((line, index) => (
-            powerlineConfig.lineEnabled?.[index] === false ? line : line.filter(item => item.type !== 'separator')
-        ))
-        : settings.lines;
 
     return {
         ...settings,
@@ -31,8 +25,7 @@ export function buildEnabledPowerlineSettings(settings: Settings, removeManualSe
             separators: powerlineConfig.separators,
             separatorInvertBackground: powerlineConfig.separatorInvertBackground
         },
-        defaultPadding: ' ',
-        lines
+        defaultPadding: ' '
     };
 }
 
