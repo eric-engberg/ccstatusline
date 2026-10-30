@@ -253,7 +253,7 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
 
         // The label only shows when raw value is off, so the editor is offered
         // only then. Like 'h', widgets must leave this key unbound.
-        if (widgetImpl.getLabelPrefix && !widget.rawValue) {
+        if (!widget.rawValue && widgetImpl.getLabelPrefix?.(widget) !== undefined) {
             keybinds.push(getLabelKeybind());
         }
 
@@ -505,11 +505,12 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
         return sharedEditor;
     }
 
-    if (customEditorWidget?.action === EDIT_LABEL_ACTION && customEditorWidget.impl.getLabelPrefix) {
+    const editorLabel = customEditorWidget?.impl.getLabelPrefix?.(customEditorWidget.widget);
+    if (customEditorWidget?.action === EDIT_LABEL_ACTION && editorLabel !== undefined) {
         return (
             <LabelEditor
                 widget={customEditorWidget.widget}
-                defaultLabel={customEditorWidget.impl.getLabelPrefix(customEditorWidget.widget)}
+                defaultLabel={editorLabel}
                 onComplete={handleEditorComplete}
                 onCancel={handleEditorCancel}
                 onPreview={(updatedWidget) => {
@@ -678,7 +679,7 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
                                 <Text dimColor>No categories available.</Text>
                             ) : (
                                 <>
-                                    {renderWindowedList(pickerCategories, pickerCategories.findIndex(category => category === selectedPickerCategory), pickerMaxVisible, (category, index) => {
+                                    {renderWindowedList(pickerCategories, selectedPickerCategory === null ? -1 : pickerCategories.indexOf(selectedPickerCategory), pickerMaxVisible, (category, index) => {
                                         const isSelected = category === selectedPickerCategory;
                                         return (
                                             <Box key={category} flexDirection='row' flexWrap='nowrap'>
@@ -755,7 +756,9 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
                                     ? getNumberFormatModifierText(widget)
                                     : undefined;
                                 const hideModifierText = widgetImpl ? getHideModifierText(widget, widgetImpl.getHideableStates?.() ?? []) : undefined;
-                                const labelModifierText = widgetImpl?.getLabelPrefix && !widget.rawValue ? getLabelModifierText(widget) : undefined;
+                                const labelModifierText = !widget.rawValue && widgetImpl?.getLabelPrefix?.(widget) !== undefined
+                                    ? getLabelModifierText(widget)
+                                    : undefined;
 
                                 return (
                                     <Box key={widget.id} flexDirection='row' flexWrap='nowrap'>
