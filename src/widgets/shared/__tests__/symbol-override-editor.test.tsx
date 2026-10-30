@@ -281,4 +281,44 @@ describe('SymbolSlotsEditor', () => {
             cleanupEditor(rendered);
         }
     });
+
+    it('wraps ↑ from the first row to the last and ↓ from the last back to the first', async () => {
+        const rendered = renderEditor({
+            id: 'git-status',
+            type: 'git-status',
+            metadata: {
+                symbolConflicts: 'x',
+                symbolStaged: 'x',
+                symbolUnstaged: 'x',
+                symbolUntracked: 'x'
+            }
+        });
+
+        try {
+            await waitFor(() => {
+                expect(rendered.stdout.getOutput()).toContain('Conflicts:');
+            });
+            // ↑ on Conflicts, then Tab resets Untracked; ↓ there, then Tab resets
+            // Conflicts. Any new frame after a key means it was handled.
+            for (const key of ['\u001B[A', '\t', '\u001B[B', '\t']) {
+                rendered.stdout.clearOutput();
+                rendered.stdin.write(key);
+                await waitFor(() => {
+                    expect(rendered.stdout.getOutput()).toContain('Conflicts:');
+                });
+            }
+            rendered.stdin.write('\r');
+            await waitFor(() => {
+                expect(rendered.onComplete).toHaveBeenCalledTimes(1);
+            });
+
+            const updated = rendered.onComplete.mock.calls[0]?.[0] as WidgetItem | undefined;
+            expect(updated?.metadata).toEqual({
+                symbolStaged: 'x',
+                symbolUnstaged: 'x'
+            });
+        } finally {
+            cleanupEditor(rendered);
+        }
+    });
 });
