@@ -4,7 +4,7 @@ import {
     useState
 } from 'react';
 
-import { shouldInsertInput } from '../../utils/input-guards';
+import { getInsertableText } from '../../utils/input-guards';
 
 import { useCursorBlink } from './cursor-blink';
 
@@ -63,8 +63,9 @@ export function applyTextCursorInput(state: TextCursorState, input: string, key:
             ? state
             : { text: text.slice(0, cursor) + text.slice(next), cursor };
     }
-    if (shouldInsertInput(input, key)) {
-        return { text: text.slice(0, cursor) + input + text.slice(cursor), cursor: cursor + input.length };
+    const inserted = getInsertableText(input, key);
+    if (inserted) {
+        return { text: text.slice(0, cursor) + inserted + text.slice(cursor), cursor: cursor + inserted.length };
     }
     return null;
 }

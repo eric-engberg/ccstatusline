@@ -6,7 +6,7 @@ import {
 import React, { useState } from 'react';
 
 import type { MatchSegment } from '../../utils/fuzzy';
-import { shouldInsertInput } from '../../utils/input-guards';
+import { getInsertableText } from '../../utils/input-guards';
 
 const MAX_VISIBLE_OPTIONS = 10;
 
@@ -113,8 +113,9 @@ export function SearchableOptionEditor<T extends SearchableOption>({
             return;
         }
 
-        if (shouldInsertInput(input, key)) {
-            setQuery(previous => previous + input);
+        const text = getInsertableText(input, key);
+        if (text) {
+            setQuery(previous => previous + text);
             setSelectedIndex(0);
         }
     });

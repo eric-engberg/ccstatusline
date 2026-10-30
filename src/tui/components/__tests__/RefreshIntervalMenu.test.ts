@@ -330,6 +330,57 @@ describe('RefreshIntervalMenu', () => {
         }
     });
 
+    // A number copied with its line ending arrives in the same input chunk
+    it('takes a pasted refresh interval', async () => {
+        const stdin = createMockStdin();
+        const stdout = createMockStdout();
+        const stderr = createMockStdout();
+        const onUpdate = vi.fn();
+        const instance = render(
+            React.createElement(RefreshIntervalMenu, {
+                currentInterval: null,
+                supportsRefreshInterval: true,
+                gitCacheTtlSeconds: 5,
+                customCommandCacheTtlSeconds: 5,
+                terminalWidthCacheTtlSeconds: 5,
+                onUpdate,
+                onGitCacheTtlUpdate: vi.fn(),
+                onCustomCommandCacheTtlUpdate: vi.fn(),
+                onTerminalWidthCacheTtlUpdate: vi.fn(),
+                onBack: vi.fn()
+            }),
+            {
+                stdin,
+                stdout,
+                stderr,
+                debug: true,
+                exitOnCtrlC: false,
+                patchConsole: false
+            }
+        );
+
+        try {
+            await waitFor(() => {
+                expect(stdout.getOutput()).toMatch(selected('Refresh Interval'));
+            });
+            await press(stdin, stdout, '\r', 'Enter refresh interval in seconds (1-60):');
+
+            await press(stdin, stdout, '15\r', 'Enter refresh interval in seconds (1-60): 15s');
+            // The pasted line break doesn't save the interval; Enter does
+            expect(onUpdate).not.toHaveBeenCalled();
+            stdin.write('\r');
+            await waitFor(() => {
+                expect(onUpdate).toHaveBeenCalledWith(15);
+            });
+        } finally {
+            instance.unmount();
+            instance.cleanup();
+            stdin.destroy();
+            stdout.destroy();
+            stderr.destroy();
+        }
+    });
+
     it('shows helper text while editing Git cache TTL and saves updates', async () => {
         const stdin = createMockStdin();
         const stdout = createMockStdout();

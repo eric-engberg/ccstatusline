@@ -16,7 +16,7 @@ import type {
     WidgetItem
 } from '../types/Widget';
 import type { WidgetHookDef } from '../utils/hooks';
-import { shouldInsertInput } from '../utils/input-guards';
+import { getInsertableText } from '../utils/input-guards';
 
 import { BlinkingCursor } from './shared/BlinkingCursor';
 import { makeModifierText } from './shared/editor-display';
@@ -169,6 +169,7 @@ const SkillsEditor: React.FC<WidgetEditorProps> = ({ widget, onComplete, onCance
     const [limitInput, setLimitInput] = useState(() => parseListLimit(widget).toString());
 
     useInput((input, key) => {
+        const text = getInsertableText(input, key);
         if (action !== EDIT_LIST_LIMIT_ACTION) {
             return;
         }
@@ -181,8 +182,8 @@ const SkillsEditor: React.FC<WidgetEditorProps> = ({ widget, onComplete, onCance
             onCancel();
         } else if (key.backspace) {
             setLimitInput(limitInput.slice(0, -1));
-        } else if (shouldInsertInput(input, key) && /\d/.test(input)) {
-            setLimitInput(limitInput + input);
+        } else if (/\d/.test(text)) {
+            setLimitInput(limitInput + text);
         }
     });
 
