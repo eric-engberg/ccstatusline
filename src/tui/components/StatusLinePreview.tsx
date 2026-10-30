@@ -34,7 +34,6 @@ export interface StatusLinePreviewProps {
     lines: WidgetItem[][];
     terminalWidth: number;
     settings?: Settings;
-    onTruncationChange?: (isTruncated: boolean) => void;
 }
 
 const renderSingleLine = (
@@ -74,12 +73,12 @@ export function preparePreviewLineForTerminal(line: string, terminalWidth: numbe
     return truncateStyledText(printableLine, availableWidth, { ellipsis: true });
 }
 
-export const StatusLinePreview: React.FC<StatusLinePreviewProps> = ({ lines, terminalWidth, settings, onTruncationChange }) => {
+export const StatusLinePreview: React.FC<StatusLinePreviewProps> = ({ lines, terminalWidth, settings }) => {
     // Render each configured line
     // Pass the full terminal width - the renderer will handle preview adjustments
-    const { renderedLines, anyTruncated } = React.useMemo(() => {
+    const renderedLines = React.useMemo(() => {
         if (!settings)
-            return { renderedLines: [], anyTruncated: false };
+            return [];
 
         // Always pre-render all widgets once (for efficiency)
         const preRenderedLines = preRenderAllWidgets(lines, settings, {
@@ -93,7 +92,6 @@ export const StatusLinePreview: React.FC<StatusLinePreviewProps> = ({ lines, ter
 
         let counters = START_LINE_COUNTERS;
         const result: string[] = [];
-        let truncated = false;
 
         for (let i = 0; i < lines.length; i++) {
             const lineItems = lines[i];
@@ -112,21 +110,13 @@ export const StatusLinePreview: React.FC<StatusLinePreviewProps> = ({ lines, ter
                     preCalculatedMaxWidths
                 );
                 result.push(renderResult.line);
-                if (renderResult.wasTruncated) {
-                    truncated = true;
-                }
 
                 counters = advanceLineCounters(counters, settings, i, lineItems, preRenderedWidgets);
             }
         }
 
-        return { renderedLines: result, anyTruncated: truncated };
+        return result;
     }, [lines, terminalWidth, settings]);
-
-    // Notify parent when truncation status changes
-    React.useEffect(() => {
-        onTruncationChange?.(anyTruncated);
-    }, [anyTruncated, onTruncationChange]);
 
     return (
         <Box flexDirection='column'>
