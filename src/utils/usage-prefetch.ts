@@ -9,10 +9,14 @@ import {
     SESSION_UNDER_LIMIT_HIDEABLE_STATE
 } from '../widgets/shared/usage-display';
 
+import { observeExtraUsageSpend } from './daily-spend';
 import type { UsageData } from './usage';
 import {
     fetchUsageData,
-    isStaleUsageFallback
+    getUsageAccountKey,
+    getUsageFetchedAtMs,
+    isStaleUsageFallback,
+    lookUpUsageAccount
 } from './usage';
 import type { UsageDataField } from './usage-types';
 import {
@@ -38,6 +42,7 @@ const BASE_USAGE_WIDGET_TYPES = [
     'extra-usage-used',
     'extra-usage-limit',
     'extra-usage-daily-budget',
+    'extra-usage-today',
     'spend-limit-usage',
     'spend-limit-amount'
 ];
@@ -111,8 +116,53 @@ const USAGE_WIDGET_REQUIREMENTS: Record<string, UsageFieldRequirement[]> = {
         { field: 'extraUsageEnabled' },
         { field: 'extraUsageLimit' },
         { field: 'extraUsageUsed' }
+    ],
+    'extra-usage-today': [
+        { field: 'extraUsageEnabled' },
+        { field: 'extraUsageUsed' }
     ]
 };
+
+const SPEND_TODAY_WIDGET_TYPES = new Set<string>(['extra-usage-today']);
+
+// Daily Cost Rate only needs the usage fetch when it divides billed spend;
+// with Claude Code's own session costs it needs nothing from the API.
+const BILLED_SPEND_REQUIREMENTS: UsageFieldRequirement[] = [
+    { field: 'extraUsageEnabled' },
+    { field: 'extraUsageUsed' }
+];
+
+function isBilledDailyCostRate(item: WidgetItem): boolean {
+    return item.type === 'daily-cost-rate' && item.metadata?.billedSpend === 'true';
+}
+
+function needsSpendToday(lines: WidgetItem[][]): boolean {
+    return lines.some(line => line.some(item => SPEND_TODAY_WIDGET_TYPES.has(item.type) || isBilledDailyCostRate(item)));
+}
+
+// Today's spend needs the month-to-date total, the login it belongs to (the
+// daily state file keeps each login's start-of-day total separately), and when
+// the usage API returned it: a cached total fetched before midnight is not
+// today's. The login's token fingerprint changes each time Claude Code
+// refreshes its tokens, so the record is kept under the account the profile
+// lookup names, and under the fingerprint only until that lookup answers.
+async function withSpendToday(data: UsageData, lines: WidgetItem[][]): Promise<UsageData> {
+    if (!needsSpendToday(lines) || data.extraUsageUsed === undefined) {
+        return data;
+    }
+
+    const accountKey = getUsageAccountKey();
+    const fetchedAtMs = getUsageFetchedAtMs();
+    if (accountKey === null || fetchedAtMs === undefined) {
+        return data;
+    }
+
+    const account = await lookUpUsageAccount();
+    const spentToday = account
+        ? observeExtraUsageSpend(account.key, data.extraUsageUsed, fetchedAtMs, undefined, account.fingerprints)
+        : observeExtraUsageSpend(accountKey, data.extraUsageUsed, fetchedAtMs);
+    return spentToday === undefined ? data : { ...data, extraUsageUsedToday: spentToday };
+}
 
 const USAGE_CURSOR_REQUIREMENTS: Record<string, UsageFieldRequirement> = {
     'session-usage': { field: 'sessionResetAt' },
@@ -142,7 +192,7 @@ function isFromCurrentBlock(apiData: UsageData): boolean {
 }
 
 export function hasUsageDependentWidgets(lines: WidgetItem[][]): boolean {
-    return lines.some(line => line.some(item => USAGE_WIDGET_TYPES.has(item.type)));
+    return lines.some(line => line.some(item => USAGE_WIDGET_TYPES.has(item.type) || isBilledDailyCostRate(item)));
 }
 
 function isUsageCursorEnabled(item: WidgetItem): boolean {
@@ -159,6 +209,10 @@ function getUsageFieldRequirements(lines: WidgetItem[][]): UsageFieldRequirement
             const cursorRequirement = USAGE_CURSOR_REQUIREMENTS[item.type];
             if (cursorRequirement && isUsageCursorEnabled(item)) {
                 requirements.push(cursorRequirement);
+            }
+
+            if (isBilledDailyCostRate(item)) {
+                requirements.push(...BILLED_SPEND_REQUIREMENTS);
             }
 
             if (readsSessionLimit(item)) {
@@ -307,5 +361,5 @@ export async function prefetchUsageDataIfNeeded(lines: WidgetItem[][], data?: St
     if (requirements.includes(SESSION_LIMIT_HIDE_REQUIREMENT) && apiData.sessionUsage !== undefined && isFromCurrentBlock(apiData) && !isStaleUsageFallback(apiData)) {
         usageData.apiSessionUsage = apiData.sessionUsage;
     }
-    return usageData;
+    return withSpendToday(usageData, lines);
 }
