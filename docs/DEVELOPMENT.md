@@ -64,6 +64,7 @@ With `CCSTATUSLINE_DEV_RELOAD=1`, Ctrl+R restarts the interactive process with i
 - `~/.cache/ccstatusline/terminal-width.json` - per-session no-width probe results; detected numeric widths are not persisted by the renderer
 - `~/.cache/ccstatusline/usage-<profileHash>.json` and `~/.cache/ccstatusline/usage-<profileHash>.lock` - per-profile usage API data cache and fetch backoff lock
 - `~/.cache/ccstatusline/usage-<profileHash>.credentials.lock` - per-profile 30-second backoff after a usage credential lookup finds no OAuth login, also tagged with its credential source
+- `~/.cache/ccstatusline/usage-account.json` - the account each usage login fingerprint belongs to (itself fingerprinted), looked up from `/api/oauth/profile` for today's extra usage spend, and each fingerprint's backoff after a failed lookup
 - `~/.cache/ccstatusline/session-usage-history.json` and `~/.cache/ccstatusline/session-usage-history.json.lock` - 5-hour usage readings for Block Forecast and Block Limit Timer, per Claude config directory and login, and the lock a render holds while writing them
 - `~/.cache/ccstatusline/account-email-<loginFingerprint>.json`, `.lock`, and `.inflight` - owner-only Claude Account Email caches, independent failure backoffs, and exclusive in-flight leases per login
 - `~/.cache/ccstatusline/claude-status.json` and `~/.cache/ccstatusline/claude-status.lock` - Claude service-status cache and failed-fetch backoff lock
