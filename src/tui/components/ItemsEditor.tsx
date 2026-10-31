@@ -31,6 +31,11 @@ import {
     getWidgetCatalog,
     getWidgetCatalogCategories
 } from '../../utils/widgets';
+import { EDIT_BAR_WIDTH_ACTION } from '../../widgets/shared/bar-width';
+import {
+    filterGradientKeybinds,
+    noteGradientNeedsTruecolor
+} from '../../widgets/shared/gradient-bar';
 import {
     EDIT_HIDE_STATES_ACTION,
     getHideKeybind,
@@ -42,6 +47,7 @@ import {
     getLabelModifierText
 } from '../../widgets/shared/raw-or-labeled';
 
+import { BarWidthEditor } from './BarWidthEditor';
 import { ConfirmDialog } from './ConfirmDialog';
 import { HideStatesEditor } from './HideStatesEditor';
 import { LabelEditor } from './LabelEditor';
@@ -87,6 +93,37 @@ function isMergedIntoPreviousWidget(widgets: WidgetItem[], index: number): boole
     return Boolean(widgets[index - 1]?.merge);
 }
 
+// What the preview shows: the bar width editor's draft in place of the widget it
+// edits, or else the line with the picker's highlighted widget, if any
+function getPreviewWidgets(widgets: WidgetItem[], index: number, barWidthDraft: WidgetItem | null, pickerPreview: WidgetItem[] | null): WidgetItem[] | null {
+    return barWidthDraft ? widgets.map((widget, i) => (i === index ? barWidthDraft : widget)) : pickerPreview;
+}
+
+interface SharedEditorHandlers {
+    onDraft: (draft: WidgetItem) => void;
+    onComplete: (updatedWidget: WidgetItem) => void;
+    onCancel: () => void;
+}
+
+// The hide-state checklist and the bar width editor are shared by every widget
+// that offers them, so they render here rather than via widget renderEditor
+function renderSharedEditor(editor: CustomEditorWidgetState | null, { onDraft, onComplete, onCancel }: SharedEditorHandlers): React.ReactElement | null {
+    if (editor?.action === EDIT_HIDE_STATES_ACTION) {
+        return (
+            <HideStatesEditor
+                widget={editor.widget}
+                states={editor.impl.getHideableStates?.() ?? []}
+                onComplete={onComplete}
+                onCancel={onCancel}
+            />
+        );
+    }
+    if (editor?.action === EDIT_BAR_WIDTH_ACTION) {
+        return <BarWidthEditor widget={editor.widget} onChange={onDraft} onComplete={onComplete} onCancel={onCancel} />;
+    }
+    return null;
+}
+
 // The highlighted widget's description is indented under the picker list
 const DESCRIPTION_INDENT = 2;
 
@@ -130,6 +167,8 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
     const [selectedIndex, setSelectedIndex] = useState(() => Math.min(initialSelectedIndex, Math.max(0, widgets.length - 1)));
     const [moveMode, setMoveMode] = useState(false);
     const [customEditorWidget, setCustomEditorWidget] = useState<CustomEditorWidgetState | null>(null);
+    // The widget at the width the bar width editor is showing, for the preview
+    const [barWidthDraft, setBarWidthDraft] = useState<WidgetItem | null>(null);
     const [widgetPicker, setWidgetPicker] = useState<WidgetPickerState | null>(null);
     // Identity and powerline background of the widget an add/insert would
     // create, fixed when the picker opens so the preview doesn't change color
@@ -184,15 +223,17 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
         onUpdate(newWidgets);
         onPreviewChange?.(null);
         setCustomEditorWidget(null);
+        setBarWidthDraft(null);
     };
 
     const handleEditorCancel = () => {
         onPreviewChange?.(null);
         setCustomEditorWidget(null);
+        setBarWidthDraft(null);
     };
 
     const getCustomKeybindsForWidget = (widgetImpl: Widget, widget: WidgetItem): CustomKeybind[] => {
-        const keybinds = widgetImpl.getCustomKeybinds ? [...widgetImpl.getCustomKeybinds(widget)] : [];
+        const keybinds = filterGradientKeybinds(widgetImpl.getCustomKeybinds ? [...widgetImpl.getCustomKeybinds(widget)] : [], settings);
 
         // Numeric widgets get the precision cycle here rather than in the color
         // menu, so every non-color override stays on this screen and stays
@@ -359,7 +400,8 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
         // Handle regular widgets - delegate to widget for display
         const widgetImpl = getWidget(widget.type);
         if (widgetImpl) {
-            const { displayText, modifierText } = widgetImpl.getEditorDisplay(widget);
+            const { displayText, modifierText: widgetModifierText } = widgetImpl.getEditorDisplay(widget);
+            const modifierText = noteGradientNeedsTruecolor(widgetModifierText, settings);
             // Return plain text without colors
             return displayText + (modifierText ? ` ${modifierText}` : '');
         }
@@ -405,13 +447,17 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
     const searchResultType = widgetPicker && widgetPicker.categoryQuery.trim().length > 0 ? selectedTopLevelSearchEntry?.type : undefined;
     const highlightedPickerType = widgetPicker?.level === 'widget' ? selectedPickerEntry?.type : searchResultType;
     const pickerAction = widgetPicker?.action;
-    const previewWidgets = useMemo(() => {
+    const pickerPreviewWidgets = useMemo(() => {
         if (!pickerAction || !highlightedPickerType || !pickerNewWidget) {
             return null;
         }
 
         return placePickerSelection(widgets, pickerAction, selectedIndex, highlightedPickerType, pickerNewWidget).widgets;
     }, [widgets, pickerAction, selectedIndex, highlightedPickerType, pickerNewWidget]);
+    const previewWidgets = useMemo(
+        () => getPreviewWidgets(widgets, selectedIndex, barWidthDraft, pickerPreviewWidgets),
+        [widgets, selectedIndex, barWidthDraft, pickerPreviewWidgets]
+    );
 
     useEffect(() => {
         onPreviewChange?.(previewWidgets);
@@ -450,17 +496,13 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
             ? 'Insert Widget'
             : 'Change Widget Type';
 
-    // The hide-state checklist is shared across all widgets that declare
-    // hideable states, so it renders here rather than via widget renderEditor
-    if (customEditorWidget?.action === EDIT_HIDE_STATES_ACTION) {
-        return (
-            <HideStatesEditor
-                widget={customEditorWidget.widget}
-                states={customEditorWidget.impl.getHideableStates?.() ?? []}
-                onComplete={handleEditorComplete}
-                onCancel={handleEditorCancel}
-            />
-        );
+    const sharedEditor = renderSharedEditor(customEditorWidget, {
+        onDraft: setBarWidthDraft,
+        onComplete: handleEditorComplete,
+        onCancel: handleEditorCancel
+    });
+    if (sharedEditor) {
+        return sharedEditor;
     }
 
     const editorLabel = customEditorWidget?.impl.getLabelPrefix?.(customEditorWidget.widget);
@@ -486,7 +528,8 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
             widget: customEditorWidget.widget,
             onComplete: handleEditorComplete,
             onCancel: handleEditorCancel,
-            action: customEditorWidget.action
+            action: customEditorWidget.action,
+            settings
         });
     }
 
@@ -706,7 +749,8 @@ export const ItemsEditor: React.FC<ItemsEditorProps> = ({
                             {widgets.map((widget, index) => {
                                 const isSelected = index === selectedIndex;
                                 const widgetImpl = widget.type !== 'separator' && widget.type !== 'flex-separator' ? getWidget(widget.type) : null;
-                                const { displayText, modifierText } = widgetImpl?.getEditorDisplay(widget) ?? { displayText: getWidgetDisplay(widget) };
+                                const { displayText, modifierText: widgetModifierText } = widgetImpl?.getEditorDisplay(widget) ?? { displayText: getWidgetDisplay(widget) };
+                                const modifierText = noteGradientNeedsTruecolor(widgetModifierText, settings);
                                 const supportsRawValue = widgetImpl?.supportsRawValue() ?? false;
                                 const numberFormatModifierText = widgetImpl?.supportsNumberFormat?.()
                                     ? getNumberFormatModifierText(widget)
