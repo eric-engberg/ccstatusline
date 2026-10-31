@@ -85,7 +85,7 @@ export class BlockTimerWidget implements Widget {
         if (context.isPreview) {
             const previewPercent = inverted ? 26.1 : 73.9;
 
-            const bar = formatUsageBar(item, previewPercent, format, settings);
+            const bar = formatUsageBar(item, previewPercent, format, settings, context);
             if (bar !== null) {
                 return formatRawOrLabeledValue(item, this.getLabelPrefix(item), bar);
             }
@@ -100,7 +100,7 @@ export class BlockTimerWidget implements Widget {
             if (isHidden(item, NO_DATA_HIDEABLE_STATE.key)) {
                 return null;
             }
-            const bar = formatUsageBar(item, 0, format, settings);
+            const bar = formatUsageBar(item, 0, format, settings, context);
             if (bar !== null) {
                 return formatRawOrLabeledValue(item, this.getLabelPrefix(item), bar);
             }
@@ -108,7 +108,7 @@ export class BlockTimerWidget implements Widget {
             return formatRawOrLabeledValue(item, this.getLabelPrefix(item), compact ? '0h' : '0hr 0m');
         }
 
-        const bar = formatUsageBar(item, inverted ? window.remainingPercent : window.elapsedPercent, format, settings);
+        const bar = formatUsageBar(item, inverted ? window.remainingPercent : window.elapsedPercent, format, settings, context);
         if (bar !== null) {
             return formatRawOrLabeledValue(item, this.getLabelPrefix(item), bar);
         }
