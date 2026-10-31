@@ -147,6 +147,49 @@ describe('powerline settings helpers', () => {
         expect(enabledAgain.lines[0]?.map(item => item.type)).toEqual(['model', 'separator', 'context-length']);
         expect(enabledAgain.powerline.theme).toBe('custom');
     });
+
+    // A line set to Powerline with (p) already replaced the padding and remembered the one before
+    it('keeps the padding remembered by a line already on Powerline when enabling powerline', () => {
+        const settings: Settings = {
+            ...DEFAULT_SETTINGS,
+            defaultPadding: ' ',
+            powerline: { ...DEFAULT_SETTINGS.powerline, enabled: false, lineEnabled: [true], paddingToRestore: '' }
+        };
+
+        const updated = buildEnabledPowerlineSettings(settings);
+        expect(updated.defaultPadding).toBe(' ');
+        expect(updated.powerline.paddingToRestore).toBe('');
+    });
+
+    // A line set to Powerline with (p) stays Powerline, and its text would run into its arrows
+    it('keeps the padding while a line set to Powerline stays Powerline after disabling powerline', () => {
+        const settings: Settings = {
+            ...DEFAULT_SETTINGS,
+            defaultPadding: ' ',
+            powerline: { ...DEFAULT_SETTINGS.powerline, enabled: true, lineEnabled: [true], paddingToRestore: '' }
+        };
+
+        const updated = buildDisabledPowerlineSettings(settings);
+        expect(updated.powerline.enabled).toBe(false);
+        expect(updated.defaultPadding).toBe(' ');
+        expect(updated.powerline.paddingToRestore).toBe('');
+    });
+
+    // A padding set while a line was Powerline is the user's own choice
+    it('keeps a padding changed while a line was Powerline through enabling and disabling powerline', () => {
+        const settings: Settings = {
+            ...DEFAULT_SETTINGS,
+            defaultPadding: '  ',
+            powerline: { ...DEFAULT_SETTINGS.powerline, enabled: false, lineEnabled: [true], paddingToRestore: '' }
+        };
+
+        const enabled = buildEnabledPowerlineSettings(settings);
+        const disabled = buildDisabledPowerlineSettings(enabled);
+        const plain = buildLinesUpdateSettings(disabled, disabled.lines, undefined);
+        expect(enabled.powerline.paddingToRestore).toBe('  ');
+        expect(disabled.defaultPadding).toBe(' ');
+        expect(plain.defaultPadding).toBe('  ');
+    });
 });
 
 // A line switched to Powerline with (p) in Edit Lines, before any line was
@@ -163,7 +206,7 @@ describe('buildLinesUpdateSettings', () => {
         const updated = buildLinesUpdateSettings(withTheme('catppuccin'), moved, [null, true]);
 
         expect(updated.lines).toBe(moved);
-        expect(updated.powerline).toEqual({ ...withTheme('catppuccin').powerline, lineEnabled: [null, true] });
+        expect(updated.powerline).toEqual({ ...withTheme('catppuccin').powerline, lineEnabled: [null, true], paddingToRestore: '' });
     });
 
     it('picks the default theme when the first line turns Powerline and none was picked', () => {
@@ -188,5 +231,47 @@ describe('buildLinesUpdateSettings', () => {
         expect(unchanged.defaultPadding).toBeUndefined();
         expect(alreadyInUse.powerline.theme).toBeUndefined();
         expect(alreadyInUse.defaultPadding).toBe('');
+    });
+
+    // Unset and empty padding render the same
+    it('remembers the padding it replaces when the first line turns Powerline', () => {
+        expect(buildLinesUpdateSettings(withTheme(undefined), lines, [true]).powerline.paddingToRestore).toBe('');
+        expect(buildLinesUpdateSettings({ ...withTheme(undefined), defaultPadding: '  ' }, lines, [true]).powerline.paddingToRestore).toBe('  ');
+    });
+
+    // As turning Powerline off does
+    it('puts the padding back when the last Powerline line turns plain', () => {
+        const onPowerline = buildLinesUpdateSettings({ ...withTheme(undefined), defaultPadding: '  ' }, lines, [true, true]);
+        const oneLeft = buildLinesUpdateSettings(onPowerline, lines, [true]);
+        const plain = buildLinesUpdateSettings(oneLeft, lines, undefined);
+
+        expect(oneLeft.defaultPadding).toBe(' ');
+        expect(plain.defaultPadding).toBe('  ');
+        expect(plain.powerline.paddingToRestore).toBeUndefined();
+    });
+
+    // A padding set while a line was Powerline is the user's own choice
+    it('keeps a padding changed since the first line turned Powerline', () => {
+        const changed = { ...withTheme(undefined, [true]), defaultPadding: '  ' };
+        const plain = buildLinesUpdateSettings({ ...changed, powerline: { ...changed.powerline, paddingToRestore: '' } }, lines, undefined);
+
+        expect(plain.defaultPadding).toBe('  ');
+        expect(plain.powerline.paddingToRestore).toBeUndefined();
+    });
+
+    // Turning Powerline on while every line was plain by its own setting
+    // already replaced the padding and remembered the one before
+    it('keeps the padding remembered by enabling powerline when the first line turns Powerline', () => {
+        const settings: Settings = {
+            ...DEFAULT_SETTINGS,
+            lines: [lines[0] ?? []],
+            defaultPadding: ' ',
+            powerline: { ...DEFAULT_SETTINGS.powerline, enabled: true, lineEnabled: [false], paddingToRestore: '  ' }
+        };
+
+        const onPowerline = buildLinesUpdateSettings(settings, settings.lines, undefined);
+        const plain = buildLinesUpdateSettings(onPowerline, settings.lines, [false]);
+        expect(onPowerline.powerline.paddingToRestore).toBe('  ');
+        expect(plain.defaultPadding).toBe('  ');
     });
 });
