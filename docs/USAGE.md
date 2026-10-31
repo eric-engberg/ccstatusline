@@ -232,7 +232,7 @@ Today's extra usage spend has to stay with a login all day, but Claude Code save
 
 ### Proxy Settings
 
-Usage and Claude Account Email requests to `api.anthropic.com` and Claude Status requests to `status.claude.com` honor uppercase `HTTPS_PROXY`. Both `NO_PROXY` and `no_proxy` supply exclusions; matching either variable sends the request directly.
+Usage and Claude Account Email requests to `api.anthropic.com`, Claude Status requests to `status.claude.com`, and the TUI's **Check for Updates** request to `registry.npmjs.org` honor uppercase `HTTPS_PROXY`. Both `NO_PROXY` and `no_proxy` supply exclusions; matching either variable sends the request directly.
 
 Exclusions are separated by commas or whitespace and matched without regard to case. Use `*` for all hosts, a hostname such as `api.anthropic.com`, or a domain such as `anthropic.com`, `.anthropic.com`, or `*.anthropic.com` to match that domain and its subdomains. An optional `:443` suffix is supported; entries for other ports do not match these HTTPS requests.
 
