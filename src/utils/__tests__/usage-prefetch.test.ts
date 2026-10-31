@@ -1,3 +1,6 @@
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import {
     afterEach,
     beforeEach,
@@ -1098,6 +1101,274 @@ describe('today\'s extra usage spend', () => {
         await prefetchUsageDataIfNeeded(makeLines([{ id: '1', type: 'extra-usage-today' }]), {});
 
         expect(mockLookUpAccount.mock.calls).toEqual([]);
+    });
+});
+
+describe('extractUsageDataFromRateLimits', () => {
+    it('extracts spend_limit percentage and dollar amounts', () => {
+        const result = extractUsageDataFromRateLimits({
+            spend_limit: {
+                used_percentage: 62.8,
+                resets_at: 1740787200,
+                used_usd: 314.12,
+                limit_usd: 500,
+                period: 'monthly'
+            }
+        });
+
+        expect(result).toEqual({
+            spendLimitUsage: 62.8,
+            spendLimitUsedUsd: 314.12,
+            spendLimitLimitUsd: 500
+        });
+    });
+
+    it('extracts spend_limit when the dollar fields are absent', () => {
+        const result = extractUsageDataFromRateLimits({ spend_limit: { used_percentage: 0, resets_at: 1740787200 } });
+
+        expect(result).toEqual({ spendLimitUsage: 0 });
+    });
+
+    it('leaves spend limit fields undefined when spend_limit is absent or null', () => {
+        const result = extractUsageDataFromRateLimits({ five_hour: { used_percentage: 42 }, spend_limit: null });
+
+        expect(result?.spendLimitUsage).toBeUndefined();
+    });
+
+    it('extracts session and weekly usage from rate_limits', () => {
+        const result = extractUsageDataFromRateLimits({
+            five_hour: { used_percentage: 42, resets_at: 1774020000 },
+            seven_day: { used_percentage: 15, resets_at: 1774540000 }
+        });
+
+        expect(result).not.toBeNull();
+        expect(result?.sessionUsage).toBe(42);
+        expect(result?.weeklyUsage).toBe(15);
+    });
+
+    it('converts epoch seconds to ISO strings for resets_at', () => {
+        const result = extractUsageDataFromRateLimits({
+            five_hour: { used_percentage: 42, resets_at: 1774020000 },
+            seven_day: { used_percentage: 15, resets_at: 1774540000 }
+        });
+
+        expect(result?.sessionResetAt).toBe(new Date(1774020000 * 1000).toISOString());
+        expect(result?.weeklyResetAt).toBe(new Date(1774540000 * 1000).toISOString());
+    });
+
+    it('returns null when rate_limits is null', () => {
+        expect(extractUsageDataFromRateLimits(null)).toBeNull();
+    });
+
+    it('returns null when rate_limits is undefined', () => {
+        expect(extractUsageDataFromRateLimits(undefined)).toBeNull();
+    });
+
+    it('extracts reset-only data when percentages are missing', () => {
+        const result = extractUsageDataFromRateLimits({ five_hour: { resets_at: 1774020000 } });
+
+        expect(result).not.toBeNull();
+        expect(result?.sessionUsage).toBeUndefined();
+        expect(result?.sessionResetAt).toBe(epochToIso(1774020000));
+        expect(result?.weeklyUsage).toBeUndefined();
+    });
+
+    it('extracts partial data when only five_hour is present', () => {
+        const result = extractUsageDataFromRateLimits({ five_hour: { used_percentage: 50, resets_at: 1774020000 } });
+
+        expect(result).not.toBeNull();
+        expect(result?.sessionUsage).toBe(50);
+        expect(result?.weeklyUsage).toBeUndefined();
+    });
+
+    it('extracts partial data when only seven_day is present', () => {
+        const result = extractUsageDataFromRateLimits({ seven_day: { used_percentage: 10, resets_at: 1774540000 } });
+
+        expect(result).not.toBeNull();
+        expect(result?.sessionUsage).toBeUndefined();
+        expect(result?.weeklyUsage).toBe(10);
+    });
+
+    it('treats used_percentage of 0 as valid data', () => {
+        const result = extractUsageDataFromRateLimits({ five_hour: { used_percentage: 0, resets_at: 1774020000 } });
+
+        expect(result).not.toBeNull();
+        expect(result?.sessionUsage).toBe(0);
+    });
+
+    it('treats null used_percentage as missing while keeping reset data', () => {
+        const result = extractUsageDataFromRateLimits({ five_hour: { used_percentage: null, resets_at: 1774020000 } });
+
+        expect(result?.sessionUsage).toBeUndefined();
+        expect(result?.sessionResetAt).toBe(epochToIso(1774020000));
+    });
+
+    it('extracts per-model weekly buckets when present', () => {
+        const result = extractUsageDataFromRateLimits({
+            five_hour: { used_percentage: 42, resets_at: 1774020000 },
+            seven_day: { used_percentage: 15, resets_at: 1774540000 },
+            seven_day_sonnet: { used_percentage: 8, resets_at: 1774540001 },
+            seven_day_opus: { used_percentage: 2, resets_at: 1774540002 }
+        });
+
+        expect(result?.weeklySonnetUsage).toBe(8);
+        expect(result?.weeklyOpusUsage).toBe(2);
+        expect(result?.weeklySonnetResetAt).toBe(new Date(1774540001 * 1000).toISOString());
+        expect(result?.weeklyOpusResetAt).toBe(new Date(1774540002 * 1000).toISOString());
+    });
+
+    it('leaves per-model fields undefined when buckets are absent', () => {
+        const result = extractUsageDataFromRateLimits({
+            five_hour: { used_percentage: 42, resets_at: 1774020000 },
+            seven_day: { used_percentage: 15, resets_at: 1774540000 }
+        });
+
+        expect(result?.weeklySonnetUsage).toBeUndefined();
+        expect(result?.weeklyOpusUsage).toBeUndefined();
+    });
+
+    it('treats null per-model buckets as missing until the API is checked', () => {
+        const result = extractUsageDataFromRateLimits({
+            five_hour: { used_percentage: 42, resets_at: 1774020000 },
+            seven_day: { used_percentage: 15, resets_at: 1774540000 },
+            seven_day_sonnet: null,
+            seven_day_opus: null
+        });
+
+        expect(result?.weeklySonnetUsage).toBeUndefined();
+        expect(result?.weeklyOpusUsage).toBeUndefined();
+    });
+});
+
+// Claude Code sends the usage percents with each of a session's API responses,
+// so an idle session's payload keeps the percents from its last one
+describe('usage prefetch in a session left idle', () => {
+    const MINUTE = 60 * 1000;
+    const NOW = Date.UTC(2026, 9, 28, 14, 0);
+    const BLOCK_RESET = (NOW + 2 * 60 * MINUTE) / 1000;
+    const WEEK_RESET = (NOW + 3 * 24 * 60 * MINUTE) / 1000;
+    let dir: string;
+    let mockFetchUsageData: {
+        mock: { calls: unknown[][] };
+        mockResolvedValue: (value: UsageData) => void;
+    };
+    let mockFetchedAt: { mockReturnValue: (value: number | undefined) => void };
+
+    function payloadAfterResponse(lastResponseAtMs: number | null, rateLimits: StatusJSON['rate_limits'] = {
+        five_hour: { used_percentage: 20, resets_at: BLOCK_RESET },
+        seven_day: { used_percentage: 50, resets_at: WEEK_RESET }
+    }): StatusJSON {
+        const transcriptPath = path.join(dir, 'session.jsonl');
+        const entries = [{ type: 'user', timestamp: new Date(NOW - 90 * MINUTE).toISOString() }];
+        if (lastResponseAtMs !== null) {
+            entries.push({ type: 'assistant', timestamp: new Date(lastResponseAtMs).toISOString() });
+        }
+        fs.writeFileSync(transcriptPath, entries.map(entry => JSON.stringify(entry)).join('\n') + '\n');
+        return { transcript_path: transcriptPath, rate_limits: rateLimits };
+    }
+
+    const lines = makeLines([{ id: '1', type: 'session-usage' }, { id: '2', type: 'weekly-usage' }]);
+
+    beforeEach(() => {
+        vi.restoreAllMocks();
+        vi.useFakeTimers({ now: NOW, toFake: ['Date'] });
+        dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-idle-usage-'));
+        mockFetchUsageData = vi.spyOn(usage, 'fetchUsageData');
+        mockFetchedAt = vi.spyOn(usage, 'getUsageFetchedAtMs');
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+        vi.useRealTimers();
+        fs.rmSync(dir, { recursive: true, force: true });
+    });
+
+    it('takes the usage API\'s newer percents once the session\'s last response is over three minutes old', async () => {
+        mockFetchUsageData.mockResolvedValue({
+            sessionUsage: 60,
+            sessionResetAt: epochToIso(BLOCK_RESET),
+            weeklyUsage: 55,
+            weeklyResetAt: epochToIso(WEEK_RESET)
+        });
+        mockFetchedAt.mockReturnValue(NOW - MINUTE);
+
+        const usageData = await prefetchUsageDataIfNeeded(lines, payloadAfterResponse(NOW - 20 * MINUTE));
+
+        expect(usageData).toMatchObject({ sessionUsage: 60, weeklyUsage: 55 });
+        expect(mockFetchUsageData.mock.calls).toHaveLength(1);
+        expect(mockFetchUsageData.mock.calls[0]?.[0]).toMatchObject({ requiredFields: ['sessionUsage', 'weeklyUsage'] });
+    });
+
+    it('asks only for the windows the line shows', async () => {
+        mockFetchUsageData.mockResolvedValue({ sessionUsage: 60, sessionResetAt: epochToIso(BLOCK_RESET) });
+        mockFetchedAt.mockReturnValue(NOW - MINUTE);
+
+        await prefetchUsageDataIfNeeded(makeLines([{ id: '1', type: 'session-usage' }]), payloadAfterResponse(NOW - 20 * MINUTE));
+
+        expect(mockFetchUsageData.mock.calls).toHaveLength(1);
+        expect(mockFetchUsageData.mock.calls[0]?.[0]).toMatchObject({ requiredFields: ['sessionUsage'] });
+    });
+
+    it.each([
+        ['while the session\'s last response is recent', NOW - 2 * MINUTE],
+        ['without a response in the transcript to date them by', null]
+    ])('keeps the payload\'s percents without asking the API %s', async (_label, lastResponseAtMs) => {
+        const usageData = await prefetchUsageDataIfNeeded(lines, payloadAfterResponse(lastResponseAtMs));
+
+        expect(usageData).toMatchObject({ sessionUsage: 20, weeklyUsage: 50 });
+        expect(mockFetchUsageData.mock.calls).toEqual([]);
+    });
+
+    it.each([
+        ['the API\'s answer is older than the session\'s last response', { sessionUsage: 60, sessionResetAt: epochToIso(BLOCK_RESET) }, NOW - 30 * MINUTE],
+        ['the API\'s percent is lower, as another login\'s would be', { sessionUsage: 10, sessionResetAt: epochToIso(BLOCK_RESET) }, NOW - MINUTE],
+        ['the API answers another window that the payload\'s hasn\'t reached', { sessionUsage: 60, sessionResetAt: epochToIso(BLOCK_RESET + 60 * 60) }, NOW - MINUTE]
+    ])('keeps the payload\'s 5-hour percent when %s', async (_label, apiData: UsageData, fetchedAtMs) => {
+        mockFetchUsageData.mockResolvedValue(apiData);
+        mockFetchedAt.mockReturnValue(fetchedAtMs);
+
+        const usageData = await prefetchUsageDataIfNeeded(makeLines([{ id: '1', type: 'session-usage' }]), payloadAfterResponse(NOW - 20 * MINUTE));
+
+        expect(usageData?.sessionUsage).toBe(20);
+        expect(usageData?.sessionResetAt).toBe(epochToIso(BLOCK_RESET));
+    });
+
+    it('takes the API\'s new window once the payload\'s has reset', async () => {
+        const newReset = (NOW + 290 * MINUTE) / 1000;
+        mockFetchUsageData.mockResolvedValue({ sessionUsage: 3, sessionResetAt: epochToIso(newReset) });
+        mockFetchedAt.mockReturnValue(NOW - MINUTE);
+
+        const rateLimits = { five_hour: { used_percentage: 100, resets_at: (NOW - 10 * MINUTE) / 1000 } };
+
+        const usageData = await prefetchUsageDataIfNeeded(makeLines([{ id: '1', type: 'session-usage' }]), payloadAfterResponse(NOW - 20 * MINUTE, rateLimits));
+
+        expect(usageData).toMatchObject({ sessionUsage: 3, sessionResetAt: epochToIso(newReset) });
+    });
+
+    // The usage API sends no reset time for a window nothing has used yet
+    it('takes the API\'s percent once the payload\'s window has reset, before the next one starts', async () => {
+        mockFetchUsageData.mockResolvedValue({ sessionUsage: 0 });
+        mockFetchedAt.mockReturnValue(NOW - MINUTE);
+        const rateLimits = { five_hour: { used_percentage: 100, resets_at: (NOW - 10 * MINUTE) / 1000 } };
+
+        const usageData = await prefetchUsageDataIfNeeded(makeLines([{ id: '1', type: 'session-usage' }]), payloadAfterResponse(NOW - 20 * MINUTE, rateLimits));
+
+        expect(usageData?.sessionUsage).toBe(0);
+        expect(usageData?.sessionResetAt).toBeUndefined();
+    });
+
+    it('keeps the payload\'s percents, with no error, when the API can\'t answer', async () => {
+        mockFetchUsageData.mockResolvedValue({ error: 'rate-limited' });
+        mockFetchedAt.mockReturnValue(undefined);
+
+        const usageData = await prefetchUsageDataIfNeeded(lines, payloadAfterResponse(NOW - 20 * MINUTE));
+
+        expect(usageData).toEqual({
+            sessionUsage: 20,
+            sessionResetAt: epochToIso(BLOCK_RESET),
+            weeklyUsage: 50,
+            weeklyResetAt: epochToIso(WEEK_RESET)
+        });
     });
 });
 
