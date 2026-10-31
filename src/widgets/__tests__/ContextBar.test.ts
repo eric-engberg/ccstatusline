@@ -10,7 +10,7 @@ import {
 import type { RenderContext } from '../../types';
 import { DEFAULT_SETTINGS } from '../../types/Settings';
 import type { WidgetItem } from '../../types/Widget';
-import * as usage from '../../utils/usage';
+import { makeUsageProgressBar } from '../../utils/usage';
 import { ContextBarWidget } from '../ContextBar';
 import { ContextLengthWidget } from '../ContextLength';
 import { ContextWindowWidget } from '../ContextWindow';
@@ -32,7 +32,6 @@ const BAND_COLORS = {
 describe('ContextBarWidget', () => {
     beforeEach(() => {
         vi.restoreAllMocks();
-        vi.spyOn(usage, 'makeUsageProgressBar').mockImplementation((percent: number, width = 15) => `[bar:${percent.toFixed(1)}:${width}]`);
     });
 
     afterEach(() => {
@@ -55,7 +54,7 @@ describe('ContextBarWidget', () => {
         };
         const widget = new ContextBarWidget();
 
-        expect(widget.render({ id: 'ctx', type: 'context-bar' }, context, DEFAULT_SETTINGS)).toBe('Context: [bar:15.0:16] 30k/200k (15%)');
+        expect(widget.render({ id: 'ctx', type: 'context-bar' }, context, DEFAULT_SETTINGS)).toBe(`Context: ${makeUsageProgressBar(15, 16)} 30k/200k (15%)`);
     });
 
     it('falls back to token metrics and model context size', () => {
@@ -71,7 +70,7 @@ describe('ContextBarWidget', () => {
         };
         const widget = new ContextBarWidget();
 
-        expect(widget.render({ id: 'ctx', type: 'context-bar' }, context, DEFAULT_SETTINGS)).toBe('Context: [bar:25.0:16] 50k/200k (25%)');
+        expect(widget.render({ id: 'ctx', type: 'context-bar' }, context, DEFAULT_SETTINGS)).toBe(`Context: ${makeUsageProgressBar(25, 16)} 50k/200k (25%)`);
     });
 
     it('uses 1M context label model IDs in fallback mode', () => {
@@ -87,7 +86,7 @@ describe('ContextBarWidget', () => {
         };
         const widget = new ContextBarWidget();
 
-        expect(widget.render({ id: 'ctx', type: 'context-bar' }, context, DEFAULT_SETTINGS)).toBe('Context: [bar:5.0:16] 50k/1.0M (5%)');
+        expect(widget.render({ id: 'ctx', type: 'context-bar' }, context, DEFAULT_SETTINGS)).toBe(`Context: ${makeUsageProgressBar(5, 16)} 50k/1.0M (5%)`);
     });
 
     it('uses 1M in parentheses model IDs in fallback mode', () => {
@@ -103,7 +102,7 @@ describe('ContextBarWidget', () => {
         };
         const widget = new ContextBarWidget();
 
-        expect(widget.render({ id: 'ctx', type: 'context-bar' }, context, DEFAULT_SETTINGS)).toBe('Context: [bar:5.0:16] 50k/1.0M (5%)');
+        expect(widget.render({ id: 'ctx', type: 'context-bar' }, context, DEFAULT_SETTINGS)).toBe(`Context: ${makeUsageProgressBar(5, 16)} 50k/1.0M (5%)`);
     });
 
     it('clamps usage percentage to 100 when context length exceeds total', () => {
@@ -122,7 +121,7 @@ describe('ContextBarWidget', () => {
         };
         const widget = new ContextBarWidget();
 
-        expect(widget.render({ id: 'ctx', type: 'context-bar' }, context, DEFAULT_SETTINGS)).toBe('Context: [bar:100.0:16] 250k/200k (100%)');
+        expect(widget.render({ id: 'ctx', type: 'context-bar' }, context, DEFAULT_SETTINGS)).toBe(`Context: ${makeUsageProgressBar(100, 16)} 250k/200k (100%)`);
     });
 
     it('supports raw mode without context label', () => {
@@ -141,7 +140,7 @@ describe('ContextBarWidget', () => {
         };
         const widget = new ContextBarWidget();
 
-        expect(widget.render({ id: 'ctx', type: 'context-bar', rawValue: true }, context, DEFAULT_SETTINGS)).toBe('[bar:2.5:16] 5k/200k (3%)');
+        expect(widget.render({ id: 'ctx', type: 'context-bar', rawValue: true }, context, DEFAULT_SETTINGS)).toBe(`${makeUsageProgressBar(2.5, 16)} 5k/200k (3%)`);
     });
 
     it('renders long progress bar mode when configured', () => {
@@ -164,7 +163,7 @@ describe('ContextBarWidget', () => {
             id: 'ctx',
             type: 'context-bar',
             metadata: { display: 'progress' }
-        }, context, DEFAULT_SETTINGS)).toBe('Context: [bar:15.0:32] 30k/200k (15%)');
+        }, context, DEFAULT_SETTINGS)).toBe(`Context: ${makeUsageProgressBar(15, 32)} 30k/200k (15%)`);
     });
 
     it('shows both numbers, the percent only, the counts only, or none after the bar', () => {
@@ -189,18 +188,20 @@ describe('ContextBarWidget', () => {
         expect(widget.getEditorDisplay(item).modifierText).toBe('(block bar, medium, % only)');
     });
 
-    // (p) switches between a block bar and a slider of the same size
-    it('switches between a block bar and a slider, keeping the size', () => {
+    // (p) steps through a block bar, a slider and the cell bars, all the same size
+    it('steps through a block bar, a slider and the cell bars, keeping the size', () => {
         const widget = new ContextBarWidget();
         const base: WidgetItem = { id: 'ctx', type: 'context-bar' };
 
         const slider = widget.handleEditorAction('toggle-progress', base);
-        const block = widget.handleEditorAction('toggle-progress', slider ?? base);
+        const cells = widget.handleEditorAction('toggle-progress', slider ?? base);
+        const block = widget.handleEditorAction('toggle-progress', { ...base, metadata: { display: 'cells', barCell: 'parallelogram' } });
 
         expect(slider?.metadata).toEqual({ display: 'slider', barWidth: 'medium' });
+        expect(cells?.metadata).toEqual({ display: 'cells' });
         expect(block?.metadata).toEqual({ display: 'progress-short' });
         expect(widget.handleEditorAction('toggle-progress', { ...base, metadata: { display: 'slider-only' } })?.metadata)
-            .toEqual({ display: 'progress-short', barWidth: 'short', barNumbers: 'none' });
+            .toEqual({ display: 'cells', barWidth: 'short', barNumbers: 'none' });
     });
 
     it('formats context preview samples with the selected styles', () => {
@@ -220,7 +221,7 @@ describe('ContextBarWidget', () => {
             id: 'bar',
             type: 'context-bar',
             numberFormat: { decimals: 2 }
-        }, context, DEFAULT_SETTINGS)).toBe('Context: [bar:90.0:16] 180.00k/200.00k (90.00%)');
+        }, context, DEFAULT_SETTINGS)).toBe(`Context: ${makeUsageProgressBar(90, 16)} 180.00k/200.00k (90.00%)`);
     });
 
     // The bar takes one color for how much of the context is used, its numbers too
@@ -232,10 +233,10 @@ describe('ContextBarWidget', () => {
             const widget = new ContextBarWidget();
             const quarter: RenderContext = { data: { context_window: { context_window_size: 200000, current_usage: { input_tokens: 50000, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 } } } };
 
-            expect(widget.render(colored, preview, DEFAULT_SETTINGS)).toBe(`${HIGH_256}[bar:90.0:16] 180k/200k (90%)${FG_RESET}`);
-            expect(widget.render(colored, quarter, DEFAULT_SETTINGS)).toBe(`${LOW_256}[bar:25.0:16] 50k/200k (25%)${FG_RESET}`);
-            expect(widget.render({ ...colored, rawValue: false }, preview, DEFAULT_SETTINGS)).toBe(`Context: ${HIGH_256}[bar:90.0:16] 180k/200k (90%)${FG_RESET}`);
-            expect(widget.render({ id: 'bar', type: 'context-bar', rawValue: true }, preview, DEFAULT_SETTINGS)).toBe('[bar:90.0:16] 180k/200k (90%)');
+            expect(widget.render(colored, preview, DEFAULT_SETTINGS)).toBe(`${HIGH_256}${makeUsageProgressBar(90, 16)} 180k/200k (90%)${FG_RESET}`);
+            expect(widget.render(colored, quarter, DEFAULT_SETTINGS)).toBe(`${LOW_256}${makeUsageProgressBar(25, 16)} 50k/200k (25%)${FG_RESET}`);
+            expect(widget.render({ ...colored, rawValue: false }, preview, DEFAULT_SETTINGS)).toBe(`Context: ${HIGH_256}${makeUsageProgressBar(90, 16)} 180k/200k (90%)${FG_RESET}`);
+            expect(widget.render({ id: 'bar', type: 'context-bar', rawValue: true }, preview, DEFAULT_SETTINGS)).toBe(`${makeUsageProgressBar(90, 16)} 180k/200k (90%)`);
         });
 
         it('offers (v), names it on the editor row, opens its editor and colors around its value', () => {
@@ -268,7 +269,7 @@ describe('ContextBarWidget', () => {
             item: { id: 'bar', type: 'context-bar', metadata: BAND_COLORS },
             context: preview,
             label: 'Context: ',
-            value: '[bar:90.0:16] 180k/200k (90%)',
+            value: `${makeUsageProgressBar(90, 16)} 180k/200k (90%)`,
             valueCode: HIGH,
             fallbacks: []
         });

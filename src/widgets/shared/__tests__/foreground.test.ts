@@ -21,6 +21,12 @@ describe('paintCode', () => {
         expect(paintCode('Opus', '')).toBe('Opus');
         expect(paintCode('', ORANGE)).toBe('');
     });
+
+    // Such as a cell bar's gray empty cells inside a value color
+    it('returns to its own code after a run colored inside the text', () => {
+        const gray = '\x1b[38;2;60;60;60m';
+        expect(paintCode(`▮▮${gray}▮▮${FG_RESET} 50%`, ORANGE)).toBe(`${ORANGE}▮▮${gray}▮▮${ORANGE} 50%${FG_RESET}`);
+    });
 });
 
 describe('paintForeground', () => {
