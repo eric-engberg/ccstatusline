@@ -217,6 +217,21 @@ describe('EffortColorsEditor', () => {
         }
     });
 
+    // A terminal paste reaches Ink as one input chunk, line break and all
+    it('sets a custom color pasted after (x), without taking it on the line break', async () => {
+        const editor = renderEditor(rawWithParens);
+
+        try {
+            await editor.ready();
+            await editor.press(DOWN, DOWN, DOWN, 'x', '#ff8800\r');
+            expect(editor.takeOutput()).toContain('(#RRGGBB or 0-255): #ff8800');
+            await editor.press(ENTER, ENTER);
+            expect(editor.savedMetadata()?.['levelColor.xhigh']).toBe('hex:ff8800');
+        } finally {
+            editor.cleanup();
+        }
+    });
+
     it('keeps asking when the custom color is invalid, and ESC leaves the prompt', async () => {
         const editor = renderEditor(rawWithParens);
 

@@ -7,7 +7,7 @@ import {
 import React, { useState } from 'react';
 
 import { applyColors } from '../../../utils/colors';
-import { shouldInsertInput } from '../../../utils/input-guards';
+import { getInsertableText } from '../../../utils/input-guards';
 
 import {
     PALETTE_ROW_COUNT,
@@ -77,11 +77,13 @@ export const PalettePicker: React.FC<PalettePickerProps> = ({ title, initialInde
             return;
         }
 
-        // Digits jump to that color number; a digit that would go past 255
-        // starts a new number
-        if (shouldInsertInput(input, key) && /^\d$/.test(input)) {
-            const appended = typed + input;
-            const next = appended.length <= 3 && Number(appended) <= 255 ? appended : input;
+        // Digits jump to that color number; digits that would go past 255
+        // start a new number. Pasted digits go in whole, so only a number
+        // within 255 is taken.
+        const digits = getInsertableText(input, key).trim();
+        if (/^\d{1,3}$/.test(digits) && Number(digits) <= 255) {
+            const appended = typed + digits;
+            const next = appended.length <= 3 && Number(appended) <= 255 ? appended : digits;
             setTyped(next);
             highlight(Number(next));
         }

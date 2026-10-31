@@ -87,6 +87,21 @@ describe('level break points editor', () => {
         }
     });
 
+    // A terminal paste reaches Ink as one input chunk, line break and all
+    it('takes a pasted break point without saving it on the line break', async () => {
+        const editor = renderEditor(EDIT_LEVELS_ACTION);
+
+        try {
+            await editor.ready();
+            await editor.press(DOWN, DOWN, '95\r');
+            expect(editor.takeOutput()).toContain('Critical from (1-100): 95');
+            await editor.press(ENTER, ENTER);
+            expect(editor.savedMetadata()).toEqual({ display: 'glyph', levelFromCritical: '95' });
+        } finally {
+            editor.cleanup();
+        }
+    });
+
     it('says what\'s wrong with a typed break point and lets ESC drop it', async () => {
         const editor = renderEditor(EDIT_LEVELS_ACTION);
 
