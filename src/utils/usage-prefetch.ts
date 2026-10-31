@@ -9,10 +9,14 @@ import {
     SESSION_UNDER_LIMIT_HIDEABLE_STATE
 } from '../widgets/shared/usage-display';
 
+import { observeExtraUsageSpend } from './daily-spend';
 import type { UsageData } from './usage';
 import {
     fetchUsageData,
-    isStaleUsageFallback
+    getUsageAccountKey,
+    getUsageFetchedAtMs,
+    isStaleUsageFallback,
+    lookUpUsageAccount
 } from './usage';
 import type { UsageDataField } from './usage-types';
 import {
@@ -38,6 +42,7 @@ const BASE_USAGE_WIDGET_TYPES = [
     'extra-usage-used',
     'extra-usage-limit',
     'extra-usage-daily-budget',
+    'extra-usage-today',
     'spend-limit-usage',
     'spend-limit-amount'
 ];
@@ -111,14 +116,52 @@ const USAGE_WIDGET_REQUIREMENTS: Record<string, UsageFieldRequirement[]> = {
         { field: 'extraUsageEnabled' },
         { field: 'extraUsageLimit' },
         { field: 'extraUsageUsed' }
+    ],
+    'extra-usage-today': [
+        { field: 'extraUsageEnabled' },
+        { field: 'extraUsageUsed' }
     ]
 };
+
+const SPEND_TODAY_WIDGET_TYPES = new Set<string>(['extra-usage-today']);
+
+function needsSpendToday(lines: WidgetItem[][]): boolean {
+    return lines.some(line => line.some(item => SPEND_TODAY_WIDGET_TYPES.has(item.type)));
+}
+
+// Today's spend needs the month-to-date total, the login it belongs to (the
+// daily state file keeps each login's start-of-day total separately), and when
+// the usage API returned it: a cached total fetched before midnight is not
+// today's. The login's token fingerprint changes each time Claude Code
+// refreshes its tokens, so the record is kept under the account the profile
+// lookup names, and under the fingerprint only until that lookup answers.
+async function withSpendToday(data: UsageData, lines: WidgetItem[][]): Promise<UsageData> {
+    if (!needsSpendToday(lines) || data.extraUsageUsed === undefined) {
+        return data;
+    }
+
+    const accountKey = getUsageAccountKey();
+    const fetchedAtMs = getUsageFetchedAtMs();
+    if (accountKey === null || fetchedAtMs === undefined) {
+        return data;
+    }
+
+    const account = await lookUpUsageAccount();
+    const spentToday = account
+        ? observeExtraUsageSpend(account.key, data.extraUsageUsed, fetchedAtMs, undefined, account.fingerprints)
+        : observeExtraUsageSpend(accountKey, data.extraUsageUsed, fetchedAtMs);
+    return spentToday === undefined ? data : { ...data, extraUsageUsedToday: spentToday };
+}
 
 const USAGE_CURSOR_REQUIREMENTS: Record<string, UsageFieldRequirement> = {
     'session-usage': { field: 'sessionResetAt' },
     'weekly-usage': { field: 'weeklyResetAt' },
     ...Object.fromEntries(WEEKLY_MODEL_USAGE_BUCKETS.map(bucket => [bucket.widgetType, { field: bucket.resetField, alternatives: ['weeklyResetAt'] }]))
 };
+
+// Extra Usage Today's value colors measure today's spend against what was left
+// of the monthly limit when the day began
+const VALUE_COLORS_REQUIREMENTS: Record<string, UsageFieldRequirement> = { 'extra-usage-today': { field: 'extraUsageLimit' } };
 
 // Block Reset Timer's under-limit and Block Usage's at-limit hide states read
 // the 5-hour block's percent from the usage API, kept as apiSessionUsage. The
@@ -149,6 +192,10 @@ function isUsageCursorEnabled(item: WidgetItem): boolean {
     return item.metadata?.cursor === 'true';
 }
 
+function isValueColorsEnabled(item: WidgetItem): boolean {
+    return item.metadata?.valueColors === 'true';
+}
+
 function getUsageFieldRequirements(lines: WidgetItem[][]): UsageFieldRequirement[] {
     const requirements: UsageFieldRequirement[] = [];
 
@@ -159,6 +206,11 @@ function getUsageFieldRequirements(lines: WidgetItem[][]): UsageFieldRequirement
             const cursorRequirement = USAGE_CURSOR_REQUIREMENTS[item.type];
             if (cursorRequirement && isUsageCursorEnabled(item)) {
                 requirements.push(cursorRequirement);
+            }
+
+            const valueColorsRequirement = VALUE_COLORS_REQUIREMENTS[item.type];
+            if (valueColorsRequirement && isValueColorsEnabled(item)) {
+                requirements.push(valueColorsRequirement);
             }
 
             if (readsSessionLimit(item)) {
@@ -307,5 +359,5 @@ export async function prefetchUsageDataIfNeeded(lines: WidgetItem[][], data?: St
     if (requirements.includes(SESSION_LIMIT_HIDE_REQUIREMENT) && apiData.sessionUsage !== undefined && isFromCurrentBlock(apiData) && !isStaleUsageFallback(apiData)) {
         usageData.apiSessionUsage = apiData.sessionUsage;
     }
-    return usageData;
+    return withSpendToday(usageData, lines);
 }

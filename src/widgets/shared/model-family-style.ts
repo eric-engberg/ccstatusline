@@ -1,7 +1,7 @@
 import type { ColorLevelString } from '../../types/ColorLevel';
 import type { WidgetItem } from '../../types/Widget';
-import { getColorAnsiCode } from '../../utils/colors';
 
+import { paintForeground } from './foreground';
 import {
     removeMetadataKeys,
     setMetadataValue
@@ -76,6 +76,5 @@ export function formatModelName(item: WidgetItem, name: string, family: ModelFam
     // Only the name of a known family is painted, ending with the
     // default-foreground code; the renderer colors the label and other models
     // with the widget color (Widget.colorsOnlyItsRuns)
-    const code = family ? getColorAnsiCode(getFamilyColor(item, family), options.colorLevel) : '';
-    return name && code ? `${label}${code}${name}\x1b[39m` : `${label}${name}`;
+    return family ? `${label}${paintForeground(name, getFamilyColor(item, family), options.colorLevel)}` : `${label}${name}`;
 }
