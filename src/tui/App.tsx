@@ -77,6 +77,7 @@ import {
     checkPowerlineFonts,
     checkPowerlineFontsAsync,
     installPowerlineFonts,
+    type FontInstallResult,
     type PowerlineFontStatus
 } from '../utils/powerline';
 import {
@@ -574,7 +575,7 @@ export const App: React.FC = () => {
     const [terminalWidth, setTerminalWidth] = useState(process.stdout.columns || 80);
     const [powerlineFontStatus, setPowerlineFontStatus] = useState<PowerlineFontStatus>({ installed: false });
     const [installingFonts, setInstallingFonts] = useState(false);
-    const [fontInstallMessage, setFontInstallMessage] = useState<string | null>(null);
+    const [fontInstallMessage, setFontInstallMessage] = useState<FontInstallResult | null>(null);
     const [existingStatusLine, setExistingStatusLine] = useState<string | null>(null);
     const [flashMessage, setFlashMessage] = useState<FlashMessage | null>(null);
     const [currentRefreshInterval, setCurrentRefreshInterval] = useState<number | null>(null);
@@ -1670,7 +1671,7 @@ export const App: React.FC = () => {
                             setTimeout(() => {
                                 void installPowerlineFonts().then((result) => {
                                     setInstallingFonts(false);
-                                    setFontInstallMessage(result.message);
+                                    setFontInstallMessage(result);
                                     // Refresh font status
                                     void checkPowerlineFontsAsync().then((asyncStatus) => {
                                         setPowerlineFontStatus(asyncStatus);
