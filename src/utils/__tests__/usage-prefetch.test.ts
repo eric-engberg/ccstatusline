@@ -786,7 +786,6 @@ describe('usage prefetch', () => {
             [{ requiredFields: ['extraUsageEnabled', 'extraUsageLimit', 'extraUsageUsed'] }]
         ]);
     });
-
     it('preserves API errors when extra usage fields are missing', async () => {
         mockFetchUsageData.mockResolvedValue({ error: 'no-credentials' });
 
@@ -1003,6 +1002,17 @@ describe('today\'s extra usage spend', () => {
         expect(mockObserveSpend.mock.calls).toEqual([['work-login', 12345, FETCHED_AT]]);
         expect(mockFetchUsageData.mock.calls).toEqual([
             [{ requiredFields: ['extraUsageEnabled', 'extraUsageUsed'] }]
+        ]);
+    });
+
+    it('also fetches the monthly limit when Extra Usage Today has value colors', async () => {
+        vi.spyOn(usage, 'getUsageAccountKey').mockReturnValue('work-login');
+        vi.spyOn(usage, 'getUsageFetchedAtMs').mockReturnValue(FETCHED_AT);
+
+        await prefetchUsageDataIfNeeded(makeLines([{ id: '1', type: 'extra-usage-today', metadata: { valueColors: 'true' } }]), {});
+
+        expect(mockFetchUsageData.mock.calls).toEqual([
+            [{ requiredFields: ['extraUsageEnabled', 'extraUsageUsed', 'extraUsageLimit'] }]
         ]);
     });
 

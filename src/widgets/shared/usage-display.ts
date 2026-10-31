@@ -248,6 +248,8 @@ interface UsageDisplayModifierOptions {
     includeCursor?: boolean;
     includeDate?: boolean;
     showUsageDirection?: boolean;
+    /** The widget's own modifiers, after the shared ones. */
+    extraModifiers?: string[];
 }
 
 export function getUsageDisplayModifierText(
@@ -294,6 +296,7 @@ export function getUsageDisplayModifierText(
         modifiers.push(gradientModifier);
     }
 
+    modifiers.push(...(options.extraModifiers ?? []));
     return makeModifierText(modifiers);
 }
 
