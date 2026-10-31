@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { ColorLevelSchema } from './ColorLevel';
 import { GlobalNumberFormatSchema } from './NumberFormat';
 import { PowerlineConfigSchema } from './PowerlineConfig';
+import { SkinToneSchema } from './SkinTone';
 import { WidgetItemSchema } from './Widget';
 
 // Current version - bump this when making breaking changes to the schema
@@ -78,6 +79,9 @@ export const SettingsSchema = z.object({
     terminalWidthCacheTtlSeconds: z.number().min(0).max(300).default(5),
     customCommandCacheTtlSeconds: z.number().min(0).max(60).default(0),
     minimalistMode: z.boolean().default(false),
+    // The glyph picker's emoji skin tone (Ctrl+T there). An unknown one falls
+    // back to the default rather than invalidating the settings.
+    emojiSkinTone: SkinToneSchema.optional().catch(undefined),
     powerline: PowerlineConfigSchema.default({
         enabled: false,
         separators: ['\uE0B0'],
