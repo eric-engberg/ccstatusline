@@ -59,7 +59,7 @@ function createMockStdout(): CapturedWriteStream {
     });
 }
 
-function renderColorMenu(widgets: WidgetItem[]) {
+function renderColorMenu(widgets: WidgetItem[], props: Pick<ColorMenuProps, 'showsBackgrounds'> = {}) {
     const stdin = createMockStdin();
     const stdout = createMockStdout();
     const stderr = createMockStdout();
@@ -69,6 +69,7 @@ function renderColorMenu(widgets: WidgetItem[]) {
         React.createElement(ColorMenu, {
             widgets,
             settings: DEFAULT_SETTINGS,
+            ...props,
             onUpdate,
             onBack
         }),
@@ -235,6 +236,95 @@ describe('ColorMenu', () => {
             expect(menu.onUpdate.mock.calls[0]?.[0]?.[0]).toMatchObject({ id: '1', bold: true });
         } finally {
             menu.cleanup();
+        }
+    });
+
+    // A line set to plain while Powerline is on hides its widgets' backgrounds,
+    // which show again once the line is Powerline
+    it('keeps the backgrounds a plain line does not show when styling is reset or cleared', async () => {
+        const widgets: WidgetItem[] = [
+            { id: '1', type: 'model', color: 'red', backgroundColor: 'bgBlue', bold: true },
+            { id: '2', type: 'version', color: 'green', backgroundColor: 'bgMagenta' }
+        ];
+        const menu = renderColorMenu(widgets, { showsBackgrounds: false });
+
+        try {
+            await waitFor(() => {
+                expect(menu.latestFrame()).toContain('▶  1: Model');
+            });
+
+            menu.stdin.write('r');
+            await waitFor(() => {
+                expect(menu.onUpdate).toHaveBeenCalledTimes(1);
+            });
+            expect(menu.onUpdate.mock.calls[0]?.[0]).toEqual([
+                { id: '1', type: 'model', backgroundColor: 'bgBlue' },
+                widgets[1]
+            ]);
+
+            menu.stdin.write('c');
+            await waitFor(() => {
+                expect(menu.latestFrame()).toContain('Confirm Clear All Colors');
+            });
+            menu.stdin.write('\r');
+            await waitFor(() => {
+                expect(menu.onUpdate).toHaveBeenCalledTimes(2);
+            });
+            expect(menu.onUpdate.mock.calls[1]?.[0]).toEqual([
+                { id: '1', type: 'model', backgroundColor: 'bgBlue' },
+                { id: '2', type: 'version', backgroundColor: 'bgMagenta' }
+            ]);
+        } finally {
+            menu.cleanup();
+        }
+    });
+
+    // A line set to plain while Powerline is on drops its widgets' backgrounds
+    it('leaves backgrounds out where the line does not draw them', async () => {
+        const stdin = createMockStdin();
+        const stdout = createMockStdout();
+        const stderr = createMockStdout();
+        const widgets: WidgetItem[] = [{ id: '1', type: 'model', color: 'hex:FFFFFF', backgroundColor: 'hex:0000FF' }];
+
+        const instance = render(
+            React.createElement(ColorMenu, {
+                widgets,
+                settings: { ...DEFAULT_SETTINGS, colorLevel: 3 },
+                showsBackgrounds: false,
+                onUpdate: vi.fn(),
+                onBack: vi.fn()
+            }),
+            {
+                stdin,
+                stdout,
+                stderr,
+                debug: true,
+                exitOnCtrlC: false,
+                patchConsole: false
+            }
+        );
+
+        try {
+            await waitFor(() => {
+                expect(stdout.getOutput()).toContain('Current foreground');
+            });
+            const output = stdout.getOutput();
+            expect(output).not.toContain('(f) to toggle bg/fg');
+            expect(output).toContain('This line is plain, so its backgrounds don\'t show while Powerline is on.');
+            expect(output).not.toContain('48;2;0;0;255');
+
+            // f does nothing: Ink has read it, and nothing switched to the background
+            stdin.write('f');
+            await waitFor(() => {
+                expect(stdin.readableLength).toBe(0);
+            });
+            expect(stdout.getOutput()).not.toContain('[Background Mode]');
+        } finally {
+            instance.unmount();
+            instance.cleanup();
+            stdin.destroy();
+            stdout.destroy();
+            stderr.destroy();
         }
     });
 

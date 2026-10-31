@@ -4,9 +4,15 @@ import {
     it
 } from 'vitest';
 
-import { DEFAULT_SETTINGS } from '../../types/Settings';
+import {
+    DEFAULT_SETTINGS,
+    type Settings
+} from '../../types/Settings';
 import type { WidgetItem } from '../../types/Widget';
-import { buildEnabledPowerlineSettings } from '../powerline-settings';
+import {
+    buildEnabledPowerlineSettings,
+    buildLinesUpdateSettings
+} from '../powerline-settings';
 
 describe('powerline settings helpers', () => {
     it('enables powerline with default theme and default padding', () => {
@@ -81,5 +87,47 @@ describe('powerline settings helpers', () => {
         };
 
         expect(disabled.lines[0]?.map(item => item.type)).toEqual(['model', 'separator', 'context-length']);
+    });
+});
+
+// A line switched to Powerline with (p) in Edit Lines, before any line was
+// Powerline, gets the theme and padding turning Powerline on sets
+describe('buildLinesUpdateSettings', () => {
+    const lines: WidgetItem[][] = [[{ id: '1', type: 'model' }], [{ id: '2', type: 'git-branch' }]];
+
+    function withTheme(theme: string | undefined, lineEnabled?: (boolean | null)[]): Settings {
+        return { ...DEFAULT_SETTINGS, lines, powerline: { ...DEFAULT_SETTINGS.powerline, enabled: false, theme, lineEnabled } };
+    }
+
+    it('stores the lines and their Powerline modes', () => {
+        const moved = [lines[1] ?? [], lines[0] ?? []];
+        const updated = buildLinesUpdateSettings(withTheme('catppuccin'), moved, [null, true]);
+
+        expect(updated.lines).toBe(moved);
+        expect(updated.powerline).toEqual({ ...withTheme('catppuccin').powerline, lineEnabled: [null, true] });
+    });
+
+    it('picks the default theme when the first line turns Powerline and none was picked', () => {
+        expect(buildLinesUpdateSettings(withTheme(undefined), lines, [true]).powerline.theme).toBe('nord-aurora');
+    });
+
+    it('keeps a theme the user picked, Custom included', () => {
+        expect(buildLinesUpdateSettings(withTheme('catppuccin'), lines, [true]).powerline.theme).toBe('catppuccin');
+        expect(buildLinesUpdateSettings(withTheme('custom'), lines, [true]).powerline.theme).toBe('custom');
+    });
+
+    it('sets the padding turning Powerline on sets when the first line turns Powerline', () => {
+        expect(buildLinesUpdateSettings(withTheme(undefined), lines, [true]).defaultPadding).toBe(' ');
+        expect(buildLinesUpdateSettings({ ...withTheme('catppuccin'), defaultPadding: '' }, lines, [true]).defaultPadding).toBe(' ');
+    });
+
+    it('leaves the theme and padding alone unless Powerline comes into use', () => {
+        const unchanged = buildLinesUpdateSettings(withTheme(undefined), lines, undefined);
+        const alreadyInUse = buildLinesUpdateSettings({ ...withTheme(undefined, [true]), defaultPadding: '' }, lines, [true, true]);
+
+        expect(unchanged.powerline.theme).toBeUndefined();
+        expect(unchanged.defaultPadding).toBeUndefined();
+        expect(alreadyInUse.powerline.theme).toBeUndefined();
+        expect(alreadyInUse.defaultPadding).toBe('');
     });
 });
