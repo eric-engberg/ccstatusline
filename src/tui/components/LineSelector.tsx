@@ -255,6 +255,7 @@ const LineSelector: React.FC<LineSelectorProps> = ({
                         <Text>
                             <Text>
                                 ☰ Line
+                                {' '}
                                 {selectedIndex + 1}
                             </Text>
                             {' '}
