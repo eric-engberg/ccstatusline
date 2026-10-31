@@ -1,5 +1,11 @@
 import { HttpsProxyAgent } from 'https-proxy-agent';
+import type * as childProcess from 'node:child_process';
 import { EventEmitter } from 'node:events';
+import * as fs from 'node:fs';
+import { createRequire } from 'node:module';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
     afterEach,
     beforeEach,
@@ -9,6 +15,7 @@ import {
     vi
 } from 'vitest';
 
+import { __testing as cacheDirTesting } from '../cache-dir';
 import type { ClaudeIncidentWindow } from '../claude-service-status';
 import {
     INCIDENT_HISTORY_BUCKET_COUNT,
@@ -19,13 +26,22 @@ import {
     hasClaudeStatusWidgets,
     isClaudeStatusHistoryEnabled,
     parseClaudeIncidentsResponse,
-    parseClaudeStatusResponse
+    parseClaudeStatusResponse,
+    prefetchClaudeStatusIfNeeded
 } from '../claude-service-status';
 
 import {
+    startRefusingProxy,
     startStalledProxy,
+    type RefusingProxy,
     type StalledProxy
 } from './proxy-test-helpers';
+
+const require = createRequire(import.meta.url);
+const { execFile: realExecFile, execFileSync: realExecFileSync } = require('node:child_process') as {
+    execFile: typeof childProcess.execFile;
+    execFileSync: typeof childProcess.execFileSync;
+};
 
 type StatusPageRequestFn = NonNullable<Parameters<typeof __testing.fetchStatusPagePath>[1]>;
 
@@ -358,6 +374,41 @@ describe('status page response handling', () => {
     });
 });
 
+describe('Claude Status failure backoff', () => {
+    isolateHttpsProxyEnv();
+
+    let proxy: RefusingProxy | null = null;
+    let cacheDir = '';
+
+    beforeEach(() => {
+        cacheDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-status-test-'));
+        cacheDirTesting.setWritableCacheDir(cacheDir);
+    });
+
+    afterEach(async () => {
+        await proxy?.stop();
+        proxy = null;
+        cacheDirTesting.setWritableCacheDir(null);
+        fs.rmSync(cacheDir, { recursive: true, force: true });
+    });
+
+    // Every render is a new process, so the lock file is all that keeps an
+    // unreachable status page from being tried again on every render. It
+    // belongs in the folder getWritableCacheDir() picks, which moves to the
+    // temp folder when ~/.cache can't be written.
+    it('keeps its failure backoff in the writable cache folder', async () => {
+        proxy = await startRefusingProxy();
+        process.env.HTTPS_PROXY = proxy.url;
+        const lines = [[{ id: '1', type: 'claude-status' }]];
+
+        await expect(prefetchClaudeStatusIfNeeded(lines)).resolves.toEqual({ error: true });
+        await expect(prefetchClaudeStatusIfNeeded(lines)).resolves.toEqual({ error: true });
+
+        expect(proxy.connectionCount()).toBe(1);
+        expect(fs.readdirSync(cacheDir)).toEqual(['claude-status.lock']);
+    });
+});
+
 describe('getClaudeStatusFgCode', () => {
     it('uses the 16-color escapes as-is, with major falling back to red and critical to bright red', () => {
         expect(getClaudeStatusFgCode('major', 'ansi16')).toBe('\x1b[31m');
@@ -376,4 +427,458 @@ describe('claude-status prefetch predicates', () => {
         expect(isClaudeStatusHistoryEnabled({ id: '1', type: 'claude-status', metadata: { history: 'true' } })).toBe(true);
         expect(isClaudeStatusHistoryEnabled({ id: '1', type: 'custom-text', metadata: { history: 'true' } })).toBe(false);
     });
+});
+
+// A file left read-only in a folder this account can still write to, as a
+// run under sudo leaves one it created. Every render is a new process that
+// finds its cache folder from the home directory as the module loads, so each
+// render here runs in a child process with a scratch HOME.
+describe.skipIf(process.platform === 'win32')('Claude Status cache files left read-only', () => {
+    let tempRoot = '';
+    let home = '';
+    let cacheDir = '';
+    let probeScriptPath = '';
+
+    beforeEach(() => {
+        tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-claude-status-files-'));
+        home = path.join(tempRoot, 'home');
+        cacheDir = path.join(home, '.cache', 'ccstatusline');
+        probeScriptPath = path.join(tempRoot, 'probe.mjs');
+        fs.mkdirSync(cacheDir, { recursive: true });
+        // An empty TEST_STATUS_BODY fails the request, as when the page can't be reached
+        fs.writeFileSync(probeScriptPath, `
+import * as os from 'node:os';
+import { createRequire } from 'node:module';
+
+const https = createRequire(import.meta.url)('node:https');
+const body = process.env.TEST_STATUS_BODY;
+let requestCount = 0;
+https.request = (options, onResponse) => {
+    requestCount += 1;
+    const handlers = new Map();
+    const request = {
+        on(event, handler) { handlers.set(event, handler); return request; },
+        destroy() {},
+        end() {
+            if (!body) {
+                handlers.get('error')?.(new Error('connect ECONNREFUSED'));
+                return;
+            }
+            const responseHandlers = new Map();
+            onResponse({
+                statusCode: 200,
+                setEncoding() {},
+                on(event, handler) { responseHandlers.set(event, handler); }
+            });
+            responseHandlers.get('data')?.(body);
+            responseHandlers.get('end')?.();
+        }
+    };
+    return request;
+};
+
+const { prefetchClaudeStatusIfNeeded } = await import(${JSON.stringify(fileURLToPath(new URL('../claude-service-status.ts', import.meta.url)))});
+const result = await prefetchClaudeStatusIfNeeded([[{ id: '1', type: 'claude-status' }]]);
+process.stdout.write(JSON.stringify({ result, requestCount, homedir: os.homedir() }));
+`);
+    });
+
+    afterEach(() => {
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+    });
+
+    function render(statusBody: string): { result: unknown; requestCount: number } {
+        const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => {
+            const normalizedKey = key.toUpperCase();
+            return normalizedKey !== 'HTTPS_PROXY' && normalizedKey !== 'NO_PROXY';
+        }));
+        // os.homedir() prefers USERPROFILE on Windows
+        Object.assign(env, { HOME: home, USERPROFILE: home, TEST_STATUS_BODY: statusBody });
+
+        const output = JSON.parse(realExecFileSync(process.execPath, [probeScriptPath], { encoding: 'utf8', env })) as {
+            homedir: string;
+            requestCount: number;
+            result: unknown;
+        };
+        // A probe resolving a different home has escaped its sandbox and would
+        // read or write the real user's ~/.cache/ccstatusline
+        expect(output.homedir).toBe(home);
+        return { result: output.result, requestCount: output.requestCount };
+    }
+
+    function writeReadOnlyFile(name: string, contents: string, mtimeMs: number): void {
+        const filePath = path.join(cacheDir, name);
+        fs.writeFileSync(filePath, contents);
+        fs.utimesSync(filePath, mtimeMs / 1000, mtimeMs / 1000);
+        fs.chmodSync(filePath, 0o444);
+    }
+
+    it('backs off after a failed fetch when the lock file was left read-only', () => {
+        writeReadOnlyFile('claude-status.lock', '', Date.now() - HOUR_MS);
+
+        expect(render('')).toEqual({ result: { error: true }, requestCount: 1 });
+        expect(render('')).toEqual({ result: { error: true }, requestCount: 0 });
+    });
+
+    it('serves the next render from the cache when the cache file was left read-only', () => {
+        const fetchedAt = Date.now() - HOUR_MS;
+        writeReadOnlyFile('claude-status.json', JSON.stringify({ fetchedAt, indicator: 'major', incidents: null, incidentsQueried: false }), fetchedAt);
+
+        expect(render('{"status":{"indicator":"none"}}')).toEqual({ result: { indicator: 'none' }, requestCount: 1 });
+        expect(render('')).toEqual({ result: { indicator: 'none' }, requestCount: 0 });
+    });
+});
+
+interface StatusProbeResult {
+    result: Record<string, unknown>;
+    requestCount: number;
+    homedir: string;
+}
+
+// Runs prefetchClaudeStatusIfNeeded in a separate process against a faked
+// https.request, so concurrent statusline sessions can be modelled as real
+// processes sharing one ~/.cache/ccstatusline. With TEST_HOLD set, the fake
+// request marks itself in flight and only answers once the release file exists.
+function createStatusProbeHarness() {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ccstatusline-status-test-'));
+    const probeScriptPath = path.join(tempRoot, 'probe-status.mjs');
+    const statusModulePath = fileURLToPath(new URL('../claude-service-status.ts', import.meta.url));
+    const home = path.join(tempRoot, 'home');
+    const cacheDir = path.join(home, '.cache', 'ccstatusline');
+    const inFlightFile = path.join(tempRoot, 'in-flight');
+    const releaseFile = path.join(tempRoot, 'release');
+    const barrierDir = path.join(tempRoot, 'barrier');
+    const barrierReleaseFile = path.join(tempRoot, 'release-barrier');
+    fs.mkdirSync(cacheDir, { recursive: true });
+    fs.mkdirSync(barrierDir);
+
+    const probeScript = `
+import * as fs from 'fs';
+import * as os from 'os';
+import { createRequire, syncBuiltinESMExports } from 'module';
+
+const require = createRequire(import.meta.url);
+const https = require('https');
+const mutableFs = require('fs');
+const originalWrite = mutableFs.writeFileSync;
+const originalRename = mutableFs.renameSync;
+const originalUnlink = mutableFs.unlinkSync;
+let barrierPassed = false;
+const waitAtBarrier = () => {
+    if (barrierPassed) return;
+    barrierPassed = true;
+    originalWrite(process.env.TEST_BARRIER_DIR + '/' + process.pid, '');
+    const deadline = Date.now() + 20000;
+    while (!fs.existsSync(process.env.TEST_BARRIER_RELEASE)) {
+        if (Date.now() > deadline) throw new Error('acquisition barrier timed out');
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+    }
+};
+// Pause immediately before publishing a claim, including the old nonexclusive
+// file write so this regression test exercises the original race as well.
+mutableFs.writeFileSync = (file, ...args) => {
+    if (process.env.TEST_BARRIER === 'publish' && String(file).endsWith('/claude-status.lock')) {
+        waitAtBarrier();
+    }
+    return originalWrite(file, ...args);
+};
+mutableFs.renameSync = (source, destination) => {
+    if (process.env.TEST_BARRIER === 'publish' && String(destination).endsWith('/claude-status.inflight')) {
+        waitAtBarrier();
+    }
+    return originalRename(source, destination);
+};
+mutableFs.unlinkSync = (file) => {
+    if (process.env.TEST_BARRIER === 'reclaim' && String(file).endsWith('/expired-owner')) {
+        waitAtBarrier();
+    }
+    return originalUnlink(file);
+};
+syncBuiltinESMExports();
+// Bun binds built-in fs imports directly; replace the module as well so the
+// filesystem barriers apply inside the imported TypeScript module.
+if (process.versions.bun) {
+    const { mock } = await import('bun:test');
+    mock.module('node:fs', () => ({ ...mutableFs }));
+}
+const hold = process.env.TEST_HOLD === '1';
+const indicator = process.env.TEST_INDICATOR || 'none';
+let requestCount = 0;
+
+https.request = (options, callback) => {
+    requestCount += 1;
+    const responseHandlers = new Map();
+    const response = {
+        statusCode: process.env.TEST_FAIL === '1' ? 503 : 200,
+        setEncoding() {},
+        on(event, handler) {
+            responseHandlers.set(event, handler);
+            return response;
+        }
+    };
+    const respond = () => {
+        callback(response);
+        responseHandlers.get('data')?.(JSON.stringify({ status: { indicator } }));
+        responseHandlers.get('end')?.();
+    };
+    let responseTimer;
+    const request = {
+        on() { return request; },
+        destroy() { clearInterval(responseTimer); },
+        end() {
+            if (!hold) {
+                respond();
+                return;
+            }
+            fs.writeFileSync(process.env.TEST_IN_FLIGHT_FILE, '');
+            responseTimer = setInterval(() => {
+                if (fs.existsSync(process.env.TEST_RELEASE_FILE)) {
+                    clearInterval(responseTimer);
+                    respond();
+                }
+            }, 10);
+        }
+    };
+    return request;
+};
+
+const { prefetchClaudeStatusIfNeeded } = await import(${JSON.stringify(statusModulePath)});
+const result = await prefetchClaudeStatusIfNeeded([[{ id: 'status', type: 'claude-status' }]]);
+process.stdout.write(JSON.stringify({ result, requestCount, homedir: os.homedir() }));
+`;
+    fs.writeFileSync(probeScriptPath, probeScript);
+
+    function runProbe(options: { hold?: boolean; fail?: boolean; indicator?: string; barrier?: 'publish' | 'reclaim' }): Promise<StatusProbeResult> {
+        const env: NodeJS.ProcessEnv = {
+            ...process.env,
+            HOME: home,
+            USERPROFILE: home,
+            TEST_HOLD: options.hold ? '1' : '0',
+            TEST_FAIL: options.fail ? '1' : '0',
+            TEST_INDICATOR: options.indicator ?? 'none',
+            TEST_IN_FLIGHT_FILE: inFlightFile,
+            TEST_RELEASE_FILE: releaseFile,
+            TEST_BARRIER: options.barrier ?? '',
+            TEST_BARRIER_DIR: barrierDir,
+            TEST_BARRIER_RELEASE: barrierReleaseFile
+        };
+        delete env.HTTPS_PROXY;
+        delete env.https_proxy;
+
+        return new Promise((resolve, reject) => {
+            realExecFile(process.execPath, [probeScriptPath], { encoding: 'utf8', env }, (error, stdout) => {
+                if (error) {
+                    reject(new Error(`status probe failed: ${error.message}`));
+                    return;
+                }
+                const parsed = JSON.parse(stdout) as StatusProbeResult;
+                // A probe resolving a different home has escaped its sandbox
+                // and would touch the real user's ~/.cache/ccstatusline
+                expect(parsed.homedir).toBe(home);
+                resolve(parsed);
+            });
+        });
+    }
+
+    async function waitForInFlight(): Promise<void> {
+        const deadline = Date.now() + 20000;
+        while (!fs.existsSync(inFlightFile)) {
+            if (Date.now() > deadline) {
+                throw new Error('held status request never started');
+            }
+            await new Promise(resolve => setTimeout(resolve, 10));
+        }
+    }
+
+    async function waitForContenders(count: number): Promise<void> {
+        const deadline = Date.now() + 20000;
+        while (fs.readdirSync(barrierDir).length < count) {
+            if (Date.now() > deadline) {
+                throw new Error('status contenders never reached acquisition barrier');
+            }
+            await new Promise(resolve => setTimeout(resolve, 10));
+        }
+    }
+
+    return {
+        cacheFile: path.join(cacheDir, 'claude-status.json'),
+        lockFile: path.join(cacheDir, 'claude-status.lock'),
+        fetchLockDir: path.join(cacheDir, 'claude-status.inflight'),
+        cleanup: () => { fs.rmSync(tempRoot, { recursive: true, force: true }); },
+        release: () => { fs.writeFileSync(releaseFile, ''); },
+        releaseContenders: () => { fs.writeFileSync(barrierReleaseFile, ''); },
+        runProbe,
+        waitForContenders,
+        waitForInFlight
+    };
+}
+
+describe('claude-status fetch lock across processes', () => {
+    let harness: ReturnType<typeof createStatusProbeHarness>;
+
+    beforeEach(() => {
+        harness = createStatusProbeHarness();
+        // An expired cache (older than the 300 s refresh interval)
+        fs.writeFileSync(harness.cacheFile, JSON.stringify({
+            fetchedAt: Date.now() - 400 * 1000,
+            indicator: 'minor',
+            incidents: null,
+            incidentsQueried: false
+        }));
+    });
+
+    afterEach(() => {
+        harness.cleanup();
+    });
+
+    it('serves the expired cache instead of fetching while another process fetches', async () => {
+        const first = harness.runProbe({ hold: true, indicator: 'none' });
+        try {
+            await harness.waitForInFlight();
+
+            const concurrent = await harness.runProbe({ indicator: 'major' });
+            expect(concurrent.requestCount).toBe(0);
+            expect(concurrent.result).toEqual({ indicator: 'minor' });
+        } finally {
+            harness.release();
+        }
+
+        const firstResult = await first;
+        expect(firstResult.requestCount).toBe(1);
+        expect(firstResult.result).toEqual({ indicator: 'none' });
+        // The fetching process removes its own in-flight lock on success
+        expect(fs.existsSync(harness.lockFile)).toBe(false);
+        expect(fs.existsSync(harness.fetchLockDir)).toBe(false);
+    }, 30000);
+
+    it('allows only one fetch when processes reach acquisition simultaneously', async () => {
+        const probes = Array.from({ length: 4 }, () => harness.runProbe({ hold: true, barrier: 'publish' }));
+        try {
+            await harness.waitForContenders(probes.length);
+            harness.releaseContenders();
+            await harness.waitForInFlight();
+            const loser = await Promise.race(probes);
+            expect(loser.requestCount).toBe(0);
+            expect(loser.result).toEqual({ indicator: 'minor' });
+        } finally {
+            harness.releaseContenders();
+            harness.release();
+            await Promise.all(probes);
+        }
+        const results = await Promise.all(probes);
+        expect(results.reduce((sum, result) => sum + result.requestCount, 0)).toBe(1);
+        expect(fs.existsSync(harness.fetchLockDir)).toBe(false);
+    }, 30000);
+
+    it('does not remove a replacement claim when processes reclaim the same expired lock', async () => {
+        fs.mkdirSync(harness.fetchLockDir);
+        const marker = path.join(harness.fetchLockDir, 'expired-owner');
+        fs.writeFileSync(marker, '');
+        const expired = new Date(Date.now() - 31000);
+        fs.utimesSync(marker, expired, expired);
+
+        const probes = Array.from({ length: 4 }, () => harness.runProbe({ hold: true, barrier: 'reclaim' }));
+        try {
+            await harness.waitForContenders(probes.length);
+            harness.releaseContenders();
+            await harness.waitForInFlight();
+            expect((await Promise.race(probes)).requestCount).toBe(0);
+            expect(fs.readdirSync(harness.fetchLockDir)).toHaveLength(1);
+        } finally {
+            harness.releaseContenders();
+            harness.release();
+            await Promise.all(probes);
+        }
+        const results = await Promise.all(probes);
+        expect(results.reduce((sum, result) => sum + result.requestCount, 0)).toBe(1);
+        expect(fs.existsSync(harness.fetchLockDir)).toBe(false);
+    }, 30000);
+
+    it.each([false, true])('rechecks a completed refresh after delayed acquisition (failure: %s)', async (fail) => {
+        const delayed = harness.runProbe({ barrier: 'publish' });
+        try {
+            await harness.waitForContenders(1);
+            const completed = await harness.runProbe({ fail });
+            expect(completed.requestCount).toBe(1);
+        } finally {
+            harness.releaseContenders();
+        }
+        const result = await delayed;
+        expect(result.requestCount).toBe(0);
+        expect(result.result).toEqual({ indicator: fail ? 'minor' : 'none' });
+        expect(fs.existsSync(harness.fetchLockDir)).toBe(false);
+    }, 30000);
+
+    it('recovers an empty claim directory left by interrupted cleanup', async () => {
+        fs.mkdirSync(harness.fetchLockDir);
+        const result = await harness.runProbe({});
+        expect(result.requestCount).toBe(1);
+        expect(result.result).toEqual({ indicator: 'none' });
+        expect(fs.existsSync(harness.fetchLockDir)).toBe(false);
+    }, 30000);
+
+    it('retries after a legacy failure lock expires', async () => {
+        fs.writeFileSync(harness.lockFile, '');
+        const expired = new Date(Date.now() - 31000);
+        fs.utimesSync(harness.lockFile, expired, expired);
+        const result = await harness.runProbe({});
+        expect(result.requestCount).toBe(1);
+        expect(result.result).toEqual({ indicator: 'none' });
+    }, 30000);
+
+    it('releases the fetch claim and preserves backoff after a failed request', async () => {
+        const failed = await harness.runProbe({ fail: true });
+        expect(failed.requestCount).toBe(1);
+        expect(failed.result).toEqual({ indicator: 'minor' });
+        expect(fs.existsSync(harness.fetchLockDir)).toBe(false);
+        expect(fs.readFileSync(harness.lockFile, 'utf8')).toBe('');
+
+        const retry = await harness.runProbe({});
+        expect(retry.requestCount).toBe(0);
+        expect(retry.result).toEqual({ indicator: 'minor' });
+    }, 30000);
+
+    it('serves stale data when it cannot acquire the fetch lock', async () => {
+        fs.writeFileSync(harness.fetchLockDir, 'not a directory');
+        const result = await harness.runProbe({});
+        expect(result.requestCount).toBe(0);
+        expect(result.result).toEqual({ indicator: 'minor' });
+    }, 30000);
+
+    it('returns the existing error fallback when another fetch owns the lock and no cache exists', async () => {
+        fs.unlinkSync(harness.cacheFile);
+        const first = harness.runProbe({ hold: true });
+        try {
+            await harness.waitForInFlight();
+            const concurrent = await harness.runProbe({});
+            expect(concurrent.requestCount).toBe(0);
+            expect(concurrent.result).toEqual({ error: true });
+        } finally {
+            harness.release();
+            await first;
+        }
+    }, 30000);
+
+    it('keeps a failure lock another process wrote during its fetch', async () => {
+        const first = harness.runProbe({ hold: true, indicator: 'none' });
+        try {
+            await harness.waitForInFlight();
+            // A concurrent render failed and wrote its (empty) backoff lock
+            fs.writeFileSync(harness.lockFile, '');
+        } finally {
+            harness.release();
+        }
+
+        const firstResult = await first;
+        expect(firstResult.result).toEqual({ indicator: 'none' });
+        expect(fs.readFileSync(harness.lockFile, 'utf8')).toBe('');
+    }, 30000);
+
+    it('still honours a legacy empty failure lock', async () => {
+        fs.writeFileSync(harness.lockFile, '');
+
+        const result = await harness.runProbe({ indicator: 'none' });
+        expect(result.requestCount).toBe(0);
+        expect(result.result).toEqual({ indicator: 'minor' });
+    }, 30000);
 });

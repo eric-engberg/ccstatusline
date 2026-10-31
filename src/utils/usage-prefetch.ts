@@ -9,12 +9,22 @@ import {
     SESSION_UNDER_LIMIT_HIDEABLE_STATE
 } from '../widgets/shared/usage-display';
 
-import type { UsageData } from './usage';
+import { observeExtraUsageSpend } from './daily-spend';
+import type {
+    PayloadResetAt,
+    UsageData
+} from './usage';
 import {
     fetchUsageData,
-    isStaleUsageFallback
+    getUsageAccountKey,
+    getUsageFetchedAtMs,
+    isStaleUsageFallback,
+    lookUpUsageAccount
 } from './usage';
-import type { UsageDataField } from './usage-types';
+import type {
+    UsageDataField,
+    UsageError
+} from './usage-types';
 import {
     WEEKLY_MODEL_USAGE_BUCKETS,
     setUsageField
@@ -28,6 +38,8 @@ const BASE_USAGE_WIDGET_TYPES = [
     'block-forecast',
     'block-limit-timer',
     'weekly-usage',
+    'weekly-limit-timer',
+    'fable-weekly-limit-timer',
     'block-timer',
     'reset-timer',
     'weekly-reset-timer',
@@ -36,6 +48,7 @@ const BASE_USAGE_WIDGET_TYPES = [
     'extra-usage-used',
     'extra-usage-limit',
     'extra-usage-daily-budget',
+    'extra-usage-today',
     'spend-limit-usage',
     'spend-limit-amount'
 ];
@@ -71,6 +84,15 @@ interface UsageFieldRequirement {
 
 const EMPTY_USAGE_REQUIREMENTS: UsageFieldRequirement[] = [];
 
+// Fetch errors that only mean the data hasn't arrived yet: a 429 while Claude
+// Code starts up, before its payload carries rate_limits, or another render's
+// fetch still in flight. An API error joins them when the fetch marks it as
+// one that clears up on its own: a 5xx or 408 response, a network error or a
+// request past its deadline. Any other failure, a missing login, a rejected
+// token or a server certificate that doesn't verify among them, may never
+// clear up, so it is shown rather than a loading placeholder that never ends.
+const TRANSIENT_FETCH_ERRORS = new Set<UsageError>(['rate-limited', 'timeout']);
+
 // The spend limit widgets have no entry here on purpose: rate_limits.spend_limit
 // only exists in the statusline payload, so a missing value must not trigger an
 // OAuth usage fetch.
@@ -80,6 +102,9 @@ const USAGE_WIDGET_REQUIREMENTS: Record<string, UsageFieldRequirement[]> = {
     // for them isn't an error for the rest of the line.
     'block-forecast': [{ field: 'sessionUsage', suppressFetchError: true }, { field: 'sessionResetAt', suppressFetchError: true }],
     'block-limit-timer': [{ field: 'sessionUsage', suppressFetchError: true }, { field: 'sessionResetAt', suppressFetchError: true }],
+    'weekly-limit-timer': [{ field: 'weeklyUsage', suppressFetchError: true }, { field: 'weeklyResetAt', suppressFetchError: true }],
+    // Fable's window resets with the all-models one when the API sends no reset of its own
+    'fable-weekly-limit-timer': [{ field: 'fableUsage', suppressFetchError: true }, { field: 'fableResetAt', alternatives: ['weeklyResetAt'], suppressFetchError: true }],
     'weekly-usage': [{ field: 'weeklyUsage' }],
     ...Object.fromEntries(WEEKLY_MODEL_USAGE_BUCKETS.map(bucket => [bucket.widgetType, [{ field: bucket.usageField }]])),
     'block-timer': [{ field: 'sessionResetAt', suppressFetchError: true }],
@@ -106,8 +131,42 @@ const USAGE_WIDGET_REQUIREMENTS: Record<string, UsageFieldRequirement[]> = {
         { field: 'extraUsageEnabled' },
         { field: 'extraUsageLimit' },
         { field: 'extraUsageUsed' }
+    ],
+    'extra-usage-today': [
+        { field: 'extraUsageEnabled' },
+        { field: 'extraUsageUsed' }
     ]
 };
+
+const SPEND_TODAY_WIDGET_TYPES = new Set<string>(['extra-usage-today']);
+
+function needsSpendToday(lines: WidgetItem[][]): boolean {
+    return lines.some(line => line.some(item => SPEND_TODAY_WIDGET_TYPES.has(item.type)));
+}
+
+// Today's spend needs the month-to-date total, the login it belongs to (the
+// daily state file keeps each login's start-of-day total separately), and when
+// the usage API returned it: a cached total fetched before midnight is not
+// today's. The login's token fingerprint changes each time Claude Code
+// refreshes its tokens, so the record is kept under the account the profile
+// lookup names, and under the fingerprint only until that lookup answers.
+async function withSpendToday(data: UsageData, lines: WidgetItem[][]): Promise<UsageData> {
+    if (!needsSpendToday(lines) || data.extraUsageUsed === undefined) {
+        return data;
+    }
+
+    const accountKey = getUsageAccountKey();
+    const fetchedAtMs = getUsageFetchedAtMs();
+    if (accountKey === null || fetchedAtMs === undefined) {
+        return data;
+    }
+
+    const account = await lookUpUsageAccount();
+    const spentToday = account
+        ? observeExtraUsageSpend(account.key, data.extraUsageUsed, fetchedAtMs, undefined, account.fingerprints)
+        : observeExtraUsageSpend(accountKey, data.extraUsageUsed, fetchedAtMs);
+    return spentToday === undefined ? data : { ...data, extraUsageUsedToday: spentToday };
+}
 
 const USAGE_CURSOR_REQUIREMENTS: Record<string, UsageFieldRequirement> = {
     'session-usage': { field: 'sessionResetAt' },
@@ -275,6 +334,19 @@ export function extractUsageDataFromRateLimits(rateLimits: StatusJSON['rate_limi
     return hasAnyUsageDataField(usageData) ? usageData : null;
 }
 
+// The payload's 5-hour and weekly reset ends, which tell fetchUsageData that a
+// cached usage API answer is from before a reset. Undefined when it has neither.
+function getPayloadResetAt(rateLimitsData: UsageData | null): PayloadResetAt | undefined {
+    if (rateLimitsData?.sessionResetAt === undefined && rateLimitsData?.weeklyResetAt === undefined) {
+        return undefined;
+    }
+
+    return {
+        sessionResetAt: rateLimitsData.sessionResetAt,
+        weeklyResetAt: rateLimitsData.weeklyResetAt
+    };
+}
+
 export async function prefetchUsageDataIfNeeded(lines: WidgetItem[][], data?: StatusJSON): Promise<UsageData | null> {
     if (!hasUsageDependentWidgets(lines)) {
         return null;
@@ -289,8 +361,13 @@ export async function prefetchUsageDataIfNeeded(lines: WidgetItem[][], data?: St
         return rateLimitsData;
     }
 
-    const apiData = await fetchUsageData({ requiredFields: missingFields });
-    if (apiData.error && missingRequirements.suppressFetchError) {
+    const apiData = await fetchUsageData({
+        requiredFields: missingFields,
+        payloadResetAt: getPayloadResetAt(rateLimitsData)
+    });
+    const hasTransientError = apiData.error !== undefined
+        && (TRANSIENT_FETCH_ERRORS.has(apiData.error) || apiData.errorTransient === true);
+    if (hasTransientError && missingRequirements.suppressFetchError) {
         return hasAnyUsageDataField(apiData)
             ? mergeUsageData(rateLimitsData, { ...apiData, error: undefined })
             : rateLimitsData;
@@ -302,5 +379,5 @@ export async function prefetchUsageDataIfNeeded(lines: WidgetItem[][], data?: St
     if (requirements.includes(SESSION_LIMIT_HIDE_REQUIREMENT) && apiData.sessionUsage !== undefined && isFromCurrentBlock(apiData) && !isStaleUsageFallback(apiData)) {
         usageData.apiSessionUsage = apiData.sessionUsage;
     }
-    return usageData;
+    return withSpendToday(usageData, lines);
 }
