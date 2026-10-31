@@ -22,7 +22,7 @@ import {
     buildIdeFileUrl,
     renderOsc8Link
 } from '../utils/hyperlink';
-import { shouldInsertInput } from '../utils/input-guards';
+import { getInsertableText } from '../utils/input-guards';
 
 import { BlinkingCursor } from './shared/BlinkingCursor';
 import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
@@ -331,6 +331,7 @@ const CurrentWorkingDirEditor: React.FC<WidgetEditorProps> = ({ widget, onComple
     const [segmentsInput, setSegmentsInput] = useState(widget.metadata?.segments ?? '');
 
     useInput((input, key) => {
+        const text = getInsertableText(input, key);
         if (action === 'edit-segments') {
             if (key.return) {
                 const segments = Number.parseInt(segmentsInput, 10);
@@ -354,8 +355,8 @@ const CurrentWorkingDirEditor: React.FC<WidgetEditorProps> = ({ widget, onComple
                 onCancel();
             } else if (key.backspace) {
                 setSegmentsInput(segmentsInput.slice(0, -1));
-            } else if (shouldInsertInput(input, key) && /\d/.test(input)) {
-                setSegmentsInput(segmentsInput + input);
+            } else if (/\d/.test(text)) {
+                setSegmentsInput(segmentsInput + text);
             }
         }
     });

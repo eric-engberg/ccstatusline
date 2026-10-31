@@ -5,7 +5,7 @@ import {
 } from 'ink';
 import React, { useState } from 'react';
 
-import { shouldInsertInput } from '../../utils/input-guards';
+import { getInsertableText } from '../../utils/input-guards';
 
 import {
     List,
@@ -205,6 +205,7 @@ export const RefreshIntervalMenu: React.FC<RefreshIntervalMenuProps> = ({
     };
 
     useInput((input, key) => {
+        const text = getInsertableText(input, key);
         if (editingRefreshInterval) {
             if (key.return) {
                 if (refreshInput === '') {
@@ -233,8 +234,8 @@ export const RefreshIntervalMenu: React.FC<RefreshIntervalMenuProps> = ({
                 setValidationError(null);
             } else if (key.delete) {
                 // No cursor position in simple input
-            } else if (shouldInsertInput(input, key) && /\d/.test(input)) {
-                const newValue = refreshInput + input;
+            } else if (/\d/.test(text)) {
+                const newValue = refreshInput + text;
                 if (newValue.length <= 2) {
                     setRefreshInput(newValue);
                     setValidationError(null);
@@ -266,8 +267,8 @@ export const RefreshIntervalMenu: React.FC<RefreshIntervalMenuProps> = ({
                 setValidationError(null);
             } else if (key.delete) {
                 // No cursor position in simple input
-            } else if (shouldInsertInput(input, key) && /\d/.test(input)) {
-                const newValue = ttlInput + input;
+            } else if (/\d/.test(text)) {
+                const newValue = ttlInput + text;
                 if (newValue.length <= field.maxInputLength) {
                     setTtlInput(newValue);
                     setValidationError(null);
