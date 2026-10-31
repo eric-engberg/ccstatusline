@@ -12,23 +12,28 @@ import {
     getVisibleWidth,
     truncateStyledText
 } from '../../utils/ansi';
-import { advanceGlobalPowerlineThemeIndex } from '../../utils/powerline-theme-index';
+import {
+    START_LINE_COUNTERS,
+    advanceLineCounters
+} from '../../utils/line-counters';
+import {
+    getAutoAlignLines,
+    getLineRenderItems,
+    getLineSettings
+} from '../../utils/powerline-lines';
 import {
     calculateMaxWidthsFromPreRendered,
-    countPowerlineStartCapSlots,
     preRenderAllWidgets,
     renderStatusLineWithInfo,
     type PreRenderedWidget,
     type RenderResult
 } from '../../utils/renderer';
-import { advanceGlobalSeparatorIndex } from '../../utils/separator-index';
 import { sanitizeTerminalText } from '../../utils/terminal-sanitize';
 
 export interface StatusLinePreviewProps {
     lines: WidgetItem[][];
     terminalWidth: number;
     settings?: Settings;
-    onTruncationChange?: (isTruncated: boolean) => void;
 }
 
 const renderSingleLine = (
@@ -68,12 +73,12 @@ export function preparePreviewLineForTerminal(line: string, terminalWidth: numbe
     return truncateStyledText(printableLine, availableWidth, { ellipsis: true });
 }
 
-export const StatusLinePreview: React.FC<StatusLinePreviewProps> = ({ lines, terminalWidth, settings, onTruncationChange }) => {
+export const StatusLinePreview: React.FC<StatusLinePreviewProps> = ({ lines, terminalWidth, settings }) => {
     // Render each configured line
     // Pass the full terminal width - the renderer will handle preview adjustments
-    const { renderedLines, anyTruncated } = React.useMemo(() => {
+    const renderedLines = React.useMemo(() => {
         if (!settings)
-            return { renderedLines: [], anyTruncated: false };
+            return [];
 
         // Always pre-render all widgets once (for efficiency)
         const preRenderedLines = preRenderAllWidgets(lines, settings, {
@@ -83,51 +88,35 @@ export const StatusLinePreview: React.FC<StatusLinePreviewProps> = ({ lines, ter
             gitCacheTtlSeconds: settings.gitCacheTtlSeconds,
             customCommandCacheTtlSeconds: settings.customCommandCacheTtlSeconds
         });
-        const preCalculatedMaxWidths = calculateMaxWidthsFromPreRendered(preRenderedLines, settings);
+        const preCalculatedMaxWidths = calculateMaxWidthsFromPreRendered(getAutoAlignLines(settings, preRenderedLines), settings);
 
-        let globalSeparatorIndex = 0;
-        let globalPowerlineThemeIndex = 0;
-        let globalPowerlineStartCapIndex = 0;
+        let counters = START_LINE_COUNTERS;
         const result: string[] = [];
-        let truncated = false;
 
         for (let i = 0; i < lines.length; i++) {
             const lineItems = lines[i];
             if (lineItems && lineItems.length > 0) {
                 const preRenderedWidgets = preRenderedLines[i] ?? [];
+                // Each line renders in its own mode, Powerline or plain
                 const renderResult = renderSingleLine(
-                    lineItems,
+                    getLineRenderItems(settings, i, lineItems),
                     terminalWidth,
-                    settings,
+                    getLineSettings(settings, i),
                     i,
-                    globalSeparatorIndex,
-                    globalPowerlineThemeIndex,
-                    globalPowerlineStartCapIndex,
+                    counters.separator,
+                    counters.theme,
+                    counters.startCap,
                     preRenderedWidgets,
                     preCalculatedMaxWidths
                 );
                 result.push(renderResult.line);
-                if (renderResult.wasTruncated) {
-                    truncated = true;
-                }
 
-                globalSeparatorIndex = advanceGlobalSeparatorIndex(globalSeparatorIndex, lineItems, preRenderedWidgets);
-                if (settings.powerline.enabled) {
-                    globalPowerlineStartCapIndex += countPowerlineStartCapSlots(lineItems, preRenderedWidgets);
-                }
-                if (settings.powerline.enabled && settings.powerline.continueThemeAcrossLines) {
-                    globalPowerlineThemeIndex = advanceGlobalPowerlineThemeIndex(globalPowerlineThemeIndex, preRenderedWidgets);
-                }
+                counters = advanceLineCounters(counters, settings, i, lineItems, preRenderedWidgets);
             }
         }
 
-        return { renderedLines: result, anyTruncated: truncated };
+        return result;
     }, [lines, terminalWidth, settings]);
-
-    // Notify parent when truncation status changes
-    React.useEffect(() => {
-        onTruncationChange?.(anyTruncated);
-    }, [anyTruncated, onTruncationChange]);
 
     return (
         <Box flexDirection='column'>

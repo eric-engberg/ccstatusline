@@ -21,15 +21,21 @@ import {
 } from './utils/git-review-cache';
 import { handleHookInput } from './utils/hook-handler';
 import { getTranscriptAnalysis } from './utils/jsonl';
-import { advanceGlobalPowerlineThemeIndex } from './utils/powerline-theme-index';
+import {
+    START_LINE_COUNTERS,
+    advanceLineCounters
+} from './utils/line-counters';
+import {
+    getAutoAlignLines,
+    getLineRenderItems,
+    getLineSettings
+} from './utils/powerline-lines';
 import {
     buildConfigWarningBadge,
     calculateMaxWidthsFromPreRendered,
-    countPowerlineStartCapSlots,
     preRenderAllWidgets,
     renderStatusLine
 } from './utils/renderer';
-import { advanceGlobalSeparatorIndex } from './utils/separator-index';
 import { computeSessionForecastIfNeeded } from './utils/session-forecast-prefetch';
 import { getDefaultSessionUsageHistoryDeps } from './utils/session-usage-history';
 import { getSkillsMetrics } from './utils/skills';
@@ -104,7 +110,7 @@ async function readStdin(): Promise<string | null> {
     }
 }
 
-async function renderMultipleLines(data: StatusJSON) {
+async function renderMultipleLines(data: StatusJSON, rawData: Record<string, unknown>) {
     const settings = await loadSettings();
     const configError = getConfigLoadError();
 
@@ -173,6 +179,7 @@ async function renderMultipleLines(data: StatusJSON) {
     // Create render context
     const context: RenderContext = {
         data,
+        rawData,
         tokenMetrics,
         speedMetrics,
         windowedSpeedMetrics,
@@ -202,12 +209,10 @@ async function renderMultipleLines(data: StatusJSON) {
 
     // Always pre-render all widgets once (for efficiency)
     const preRenderedLines = preRenderAllWidgets(lines, settings, context);
-    const preCalculatedMaxWidths = calculateMaxWidthsFromPreRendered(preRenderedLines, settings);
+    const preCalculatedMaxWidths = calculateMaxWidthsFromPreRendered(getAutoAlignLines(settings, preRenderedLines), settings);
 
-    // Render each line using pre-rendered content
-    let globalSeparatorIndex = 0;
-    let globalPowerlineThemeIndex = 0;
-    let globalPowerlineStartCapIndex = 0;
+    // Render each line using pre-rendered content, each in its own mode
+    let counters = START_LINE_COUNTERS;
     let configBadgePrepended = false;
     for (let i = 0; i < lines.length; i++) {
         const lineItems = lines[i];
@@ -216,11 +221,11 @@ async function renderMultipleLines(data: StatusJSON) {
             const lineContext = {
                 ...context,
                 lineIndex: i,
-                globalSeparatorIndex,
-                globalPowerlineThemeIndex,
-                globalPowerlineStartCapIndex
+                globalSeparatorIndex: counters.separator,
+                globalPowerlineThemeIndex: counters.theme,
+                globalPowerlineStartCapIndex: counters.startCap
             };
-            let line = renderStatusLine(lineItems, settings, lineContext, preRenderedWidgets, preCalculatedMaxWidths);
+            let line = renderStatusLine(getLineRenderItems(settings, i, lineItems), getLineSettings(settings, i), lineContext, preRenderedWidgets, preCalculatedMaxWidths);
 
             // Only output the line if it has content (not just ANSI codes)
             // Strip ANSI codes to check if there's actual text
@@ -241,13 +246,7 @@ async function renderMultipleLines(data: StatusJSON) {
                 outputLine = '\x1b[0m' + outputLine;
                 console.log(outputLine);
 
-                globalSeparatorIndex = advanceGlobalSeparatorIndex(globalSeparatorIndex, lineItems, preRenderedWidgets);
-                if (settings.powerline.enabled) {
-                    globalPowerlineStartCapIndex += countPowerlineStartCapSlots(lineItems, preRenderedWidgets);
-                }
-                if (settings.powerline.enabled && settings.powerline.continueThemeAcrossLines) {
-                    globalPowerlineThemeIndex = advanceGlobalPowerlineThemeIndex(globalPowerlineThemeIndex, preRenderedWidgets);
-                }
+                counters = advanceLineCounters(counters, settings, i, lineItems, preRenderedWidgets);
             }
         }
     }
@@ -362,14 +361,16 @@ async function main() {
                     return;
                 }
 
-                // Parse and validate JSON in one step
-                const result = StatusJSONSchema.safeParse(parsed);
+                // Widgets read the validated copy; custom commands get the JSON
+                // as it arrived. Validation fails for anything but an object.
+                const rawData = parsed as Record<string, unknown>;
+                const result = StatusJSONSchema.safeParse(rawData);
                 if (!result.success) {
                     console.error('Invalid status JSON format:', result.error.message);
                     process.exit(1);
                 }
 
-                await renderMultipleLines(result.data);
+                await renderMultipleLines(result.data, rawData);
             } catch (error) {
                 console.error('Error parsing JSON:', error);
                 process.exit(1);

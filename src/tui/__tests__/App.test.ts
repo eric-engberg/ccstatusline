@@ -1,6 +1,8 @@
 import chalk from 'chalk';
 import * as childProcess from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import {
     afterEach,
@@ -16,6 +18,7 @@ import {
     type InstallationMetadata
 } from '../../types/Settings';
 import * as claudeSettings from '../../utils/claude-settings';
+import { DEV_RELOAD_CHILD_ARG_PREFIX } from '../../utils/dev-reload';
 import * as globalCommandResolution from '../../utils/global-command-resolution';
 import * as globalPackageManager from '../../utils/global-package-manager';
 import { getPackageVersion } from '../../utils/terminal';
@@ -411,8 +414,7 @@ describe('App after a global update run from the TUI', () => {
             await pressKey(rendered, KEYS.down, '▶  🎨 Edit Colors');
             await pressKey(rendered, KEYS.down, '▶  ⚡ Powerline Setup');
             await pressKey(rendered, KEYS.down, '▶  💻 Terminal Options');
-            await pressKey(rendered, KEYS.enter, '▶  ◱ Terminal Width');
-            await pressKey(rendered, KEYS.down, '▶  ▓ Color Level');
+            await pressKey(rendered, KEYS.enter, '▶  ▓ Color Level');
             await pressKey(rendered, KEYS.enter, '(Truecolor)');
             await pressKey(rendered, KEYS.escape, '💾 Save & Exit');
 
@@ -642,6 +644,78 @@ describe('App lookup of the global ccstatusline command', () => {
     });
 });
 
+describe('App Powerline per line', () => {
+    let sandbox: AppSandbox;
+
+    beforeEach(() => {
+        sandbox = setUpAppSandbox();
+        vi.spyOn(claudeStatus, 'loadClaudeStatusLineState').mockResolvedValue({ existingStatusLine: null, refreshInterval: null });
+        vi.spyOn(claudeSettings, 'isInstalled').mockResolvedValue(false);
+    });
+
+    afterEach(() => {
+        sandbox.restore();
+    });
+
+    // With no theme a Powerline line's segments have no colors, and with no
+    // padding its text runs into the arrows
+    it('gives the first line switched to Powerline with p the theme and padding turning Powerline on sets', async () => {
+        fs.writeFileSync(sandbox.settingsPath, JSON.stringify({
+            ...DEFAULT_SETTINGS,
+            lines: [
+                [{ id: 'a', type: 'custom-text', customText: 'LineOne' }],
+                [{ id: 'b', type: 'custom-text', customText: 'LineTwo' }]
+            ]
+        }));
+        const rendered = renderApp();
+
+        try {
+            await waitFor(() => {
+                expect(rendered.getFrame()).toContain('Main Menu');
+            });
+            await pressKey(rendered, KEYS.enter, 'Select Line to Edit Items');
+            await pressKey(rendered, 'p', 'Line 1 (1 widget, Powerline)');
+            await pressKey(rendered, KEYS.ctrlS, '✓ Configuration saved');
+
+            const saved = JSON.parse(fs.readFileSync(sandbox.settingsPath, 'utf-8')) as { defaultPadding?: string; powerline: { enabled: boolean; lineEnabled?: unknown; theme?: string } };
+            expect(saved.powerline).toMatchObject({ enabled: false, lineEnabled: [true], theme: 'nord-aurora' });
+            expect(saved.defaultPadding).toBe(' ');
+        } finally {
+            rendered.cleanup();
+        }
+    });
+
+    // As turning Powerline off in Powerline Setup does. The padding was unset,
+    // which renders the same as none
+    it('puts the padding back when p switches the only Powerline line back to plain', async () => {
+        fs.writeFileSync(sandbox.settingsPath, JSON.stringify({
+            ...DEFAULT_SETTINGS,
+            lines: [
+                [{ id: 'a', type: 'custom-text', customText: 'LineOne' }],
+                [{ id: 'b', type: 'custom-text', customText: 'LineTwo' }]
+            ]
+        }));
+        const rendered = renderApp();
+
+        try {
+            await waitFor(() => {
+                expect(rendered.getFrame()).toContain('Main Menu');
+            });
+            await pressKey(rendered, KEYS.enter, 'Select Line to Edit Items');
+            await pressKey(rendered, 'p', 'Line 1 (1 widget, Powerline)');
+            await pressKey(rendered, 'p', 'Line 1 (1 widget)');
+            await pressKey(rendered, KEYS.ctrlS, '✓ Configuration saved');
+
+            const saved = JSON.parse(fs.readFileSync(sandbox.settingsPath, 'utf-8')) as { defaultPadding?: string; powerline: { lineEnabled?: unknown; paddingToRestore?: string } };
+            expect(saved.powerline.lineEnabled).toBeUndefined();
+            expect(saved.powerline.paddingToRestore).toBeUndefined();
+            expect(saved.defaultPadding).toBe('');
+        } finally {
+            rendered.cleanup();
+        }
+    });
+});
+
 describe('App save guard for an invalid settings.json', () => {
     let sandbox: AppSandbox;
 
@@ -735,8 +809,7 @@ describe('App save with a widget whose hooks the status line command can\'t run'
             await pressKey(rendered, KEYS.down, '▶  🎨 Edit Colors');
             await pressKey(rendered, KEYS.down, '▶  ⚡ Powerline Setup');
             await pressKey(rendered, KEYS.down, '▶  💻 Terminal Options');
-            await pressKey(rendered, KEYS.enter, '▶  ◱ Terminal Width');
-            await pressKey(rendered, KEYS.down, '▶  ▓ Color Level');
+            await pressKey(rendered, KEYS.enter, '▶  ▓ Color Level');
             await pressKey(rendered, KEYS.enter, '(Truecolor)');
             await pressKey(rendered, KEYS.escape, '💾 Save & Exit');
 
@@ -769,17 +842,26 @@ function createPendingRun() {
 
 describe('App while an install or update runs', () => {
     let sandbox: AppSandbox;
+    let devReloadDir: string;
+    let devReloadStateFile: string;
     const savedEnv = { ...process.env };
+    const savedArgv = [...process.argv];
 
     beforeEach(() => {
         sandbox = setUpAppSandbox();
+        const capability = randomBytes(32).toString('hex');
+        devReloadDir = path.join(os.tmpdir(), `ccstatusline-dev-reload-${capability}`);
+        devReloadStateFile = path.join(devReloadDir, 'snapshot.json');
+        fs.mkdirSync(devReloadDir, { mode: 0o700 });
         process.env.CCSTATUSLINE_DEV_RELOAD = '1';
-        process.env.CCSTATUSLINE_DEV_RELOAD_STATE = `${sandbox.settingsPath}.reload`;
+        process.argv = [...savedArgv, `${DEV_RELOAD_CHILD_ARG_PREFIX}${capability}`];
     });
 
     afterEach(() => {
         sandbox.restore();
         process.env = { ...savedEnv };
+        process.argv = [...savedArgv];
+        fs.rmSync(devReloadDir, { recursive: true, force: true });
     });
 
     it('runs a confirmed install once, ignoring Enter, ESC and Ctrl+R until it finishes', async () => {
@@ -822,7 +904,7 @@ describe('App while an install or update runs', () => {
             await letReactCatchUp();
             rendered.stdin.write('\u0012');
             await letReactCatchUp();
-            expect(fs.existsSync(`${sandbox.settingsPath}.reload`)).toBe(false);
+            expect(fs.existsSync(devReloadStateFile)).toBe(false);
             expect(globalInstall.run).toHaveBeenCalledOnce();
             expect(rendered.getFrame()).toContain('Working...');
             expect(rendered.getFrame()).not.toContain('Select update style');
@@ -872,7 +954,7 @@ describe('App while an install or update runs', () => {
             await letReactCatchUp();
             rendered.stdin.write('\u0012');
             await letReactCatchUp();
-            expect(fs.existsSync(`${sandbox.settingsPath}.reload`)).toBe(false);
+            expect(fs.existsSync(devReloadStateFile)).toBe(false);
             expect(globalInstall.run).toHaveBeenCalledOnce();
             expect(rendered.getFrame()).toContain('Updating npm global install to v');
             expect(rendered.getFrame()).not.toContain('Exit');
