@@ -455,7 +455,7 @@ describe('usage prefetch', () => {
 
         expect(usageData).toEqual({ weeklyUsage: 72, weeklyResetAt: epochToIso(1776211200), fableUsage: 8 });
         expect(mockFetchUsageData.mock.calls).toEqual([
-            [{ requiredFields: ['fableUsage'] }]
+            [{ requiredFields: ['fableUsage'], payloadResetAt: { weeklyResetAt: epochToIso(1776211200) } }]
         ]);
     });
 
@@ -468,7 +468,7 @@ describe('usage prefetch', () => {
 
         expect(usageData).toEqual({ weeklyUsage: 72, weeklyResetAt: epochToIso(1776211200) });
         expect(mockFetchUsageData.mock.calls).toEqual([
-            [{ requiredFields: ['fableUsage'] }]
+            [{ requiredFields: ['fableUsage'], payloadResetAt: { weeklyResetAt: epochToIso(1776211200) } }]
         ]);
     });
 
