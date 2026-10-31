@@ -84,6 +84,10 @@ import {
     runGlobalUpdateAction,
     type UpdateAction
 } from '../utils/update-checker';
+import {
+    SkinToneContext,
+    type SkinToneSetting
+} from '../widgets/shared/skin-tone';
 
 import { loadClaudeStatusLineState } from './claude-status';
 import {
@@ -937,6 +941,16 @@ export const App: React.FC = () => {
         setScreen('main');
     }, [importValidation, settings]);
 
+    // The glyph picker's skin tone (Ctrl+T there) is a setting; the same object
+    // until the tone changes, so the context doesn't redraw the editor otherwise
+    const emojiSkinTone = settings?.emojiSkinTone;
+    const skinToneSetting = useMemo<SkinToneSetting>(() => ({
+        tone: emojiSkinTone,
+        setTone: (tone) => {
+            setSettings(prev => (prev ? { ...prev, emojiSkinTone: tone } : prev));
+        }
+    }), [emojiSkinTone]);
+
     const savedInstallation = settings?.installation;
     const hasLoaded = settings !== null && hasLoadedClaudeStatus && hasLoadedInstalledState;
     // Looking up the global ccstatusline command runs `which -a`, `npm prefix -g` and
@@ -1345,20 +1359,22 @@ export const App: React.FC = () => {
                     />
                 )}
                 {screen === 'items' && (
-                    <ItemsEditor
-                        widgets={settings.lines[selectedLine] ?? []}
-                        onUpdate={(widgets) => { updateLine(selectedLine, widgets); }}
-                        onPreviewChange={setPreviewWidgets}
-                        initialSelectedIndex={itemsCursor}
-                        onSelectedIndexChange={setItemsCursor}
-                        onBack={() => {
-                            // When going back to lines menu, preserve which line was selected
-                            setMenuSelections(prev => ({ ...prev, lines: selectedLine }));
-                            setScreen('lines');
-                        }}
-                        lineNumber={selectedLine + 1}
-                        settings={settings}
-                    />
+                    <SkinToneContext.Provider value={skinToneSetting}>
+                        <ItemsEditor
+                            widgets={settings.lines[selectedLine] ?? []}
+                            onUpdate={(widgets) => { updateLine(selectedLine, widgets); }}
+                            onPreviewChange={setPreviewWidgets}
+                            initialSelectedIndex={itemsCursor}
+                            onSelectedIndexChange={setItemsCursor}
+                            onBack={() => {
+                                // When going back to lines menu, preserve which line was selected
+                                setMenuSelections(prev => ({ ...prev, lines: selectedLine }));
+                                setScreen('lines');
+                            }}
+                            lineNumber={selectedLine + 1}
+                            settings={settings}
+                        />
+                    </SkinToneContext.Provider>
                 )}
                 {screen === 'colorLines' && (
                     <LineSelector
