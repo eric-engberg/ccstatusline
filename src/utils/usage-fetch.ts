@@ -57,6 +57,10 @@ const MACOS_SECURITY_TIMEOUT_MS = 5000;
 // `security` exits with the low byte of the OSStatus it failed with: 44 for
 // errSecItemNotFound (-25300), the one failure that means the item isn't there.
 const MACOS_SECURITY_ITEM_NOT_FOUND = 44;
+// Claude Code saves its keychain login under an account named for the user,
+// or under this one for a name with characters outside the pattern.
+const MACOS_KEYCHAIN_ACCOUNT_PATTERN = /^[a-zA-Z0-9._-]+$/;
+const MACOS_KEYCHAIN_FALLBACK_ACCOUNT = 'claude-code-user';
 // How long the keychain is left alone after a `security` call fails any
 // other way. A keychain that timed out or is locked stays that way while
 // nobody is at the machine, and each further call queues one more unlock
@@ -86,9 +90,11 @@ export interface FetchUsageDataOptions {
 
 // The access token is what the API is called with; the refresh token is kept
 // alongside it only to fingerprint the account (see getUsageCacheIdentity).
+// expiresAt is when the access token expires (ms), as Claude Code saves it.
 interface UsageCredentials {
     accessToken: string;
     refreshToken?: string;
+    expiresAt?: number;
 }
 
 interface UsageCacheIdentity {
@@ -123,17 +129,21 @@ const WINDOW_RESET_FIELD_SENTINELS: Partial<Record<UsageDataField, UsageDataFiel
 const UsageCredentialsSchema = z.object({
     claudeAiOauth: z.object({
         accessToken: z.string().nullable().optional(),
-        refreshToken: z.string().nullable().optional()
+        refreshToken: z.string().nullable().optional(),
+        expiresAt: z.number().nullable().catch(null).optional()
     }).optional()
 });
 const UsageLockErrorSchema = z.enum(['timeout', 'rate-limited', 'api-error', 'parse-error']);
 // `transient` marks an api-error lock whose failure clears up on its own (see
 // UsageData.errorTransient). Locks written without it, including every lock
-// from before it existed, read as lasting failures.
+// from before it existed, read as lasting failures. `accessTokenHash` names
+// the access token of a request the API refused (see writeUsageLock); a lock
+// without one holds every login off.
 const UsageLockSchema = z.object({
     blockedUntil: z.number(),
     error: UsageLockErrorSchema.optional(),
-    transient: z.boolean().optional()
+    transient: z.boolean().optional(),
+    accessTokenHash: z.string().optional()
 });
 
 // The per-model fields (weeklySonnetUsage, weeklyOpusUsage, ...) are declared
@@ -274,8 +284,18 @@ function parseUsageCredentials(rawJson: string): UsageCredentials | null {
 
     return {
         accessToken: oauth.accessToken,
-        refreshToken: oauth.refreshToken ?? undefined
+        refreshToken: oauth.refreshToken ?? undefined,
+        expiresAt: oauth.expiresAt ?? undefined
     };
+}
+
+// Claude Code refreshes its access token only when it makes a request of its
+// own, so one that has expired stays that way until Claude Code is used
+// again, or for good if nothing refreshes it. The usage API answers it with a
+// 429, which would read as a rate limit and hold requests off for up to an
+// hour, and the profile endpoint with a 401, so neither is asked.
+function hasUsageTokenExpired(expiresAt: number | undefined, now: number): boolean {
+    return expiresAt !== undefined && expiresAt <= now * 1000;
 }
 
 function parseCachedUsageData(rawJson: string): UsageData | null {
@@ -415,7 +435,8 @@ export function isStaleUsageFallback(data: UsageData): boolean {
 
 type UsageLockError = z.infer<typeof UsageLockErrorSchema>;
 
-type UsageApiFetchResult = { kind: 'success'; body: string } | { kind: 'rate-limited'; retryAfterSeconds: number } | { kind: 'error'; transient: boolean };
+// statusCode is the API's answer's, for a request the API answered
+type UsageApiFetchResult = { kind: 'success'; body: string } | { kind: 'rate-limited'; retryAfterSeconds: number } | { kind: 'error'; transient: boolean; statusCode?: number };
 
 type MacKeychainSecretResult = { kind: 'found'; secret: string }
     | { kind: 'miss' }
@@ -538,16 +559,27 @@ function isMissingKeychainItem(error: unknown): boolean {
     return (error as { status?: unknown } | null)?.status === MACOS_SECURITY_ITEM_NOT_FOUND;
 }
 
+// The account Claude Code saves its login under, worked out as it does: USER,
+// or the login name without one, and claude-code-user for a name with any
+// other characters than these.
+function getMacKeychainAccount(): string {
+    let account: string;
+    try {
+        const user = process.env.USER ?? '';
+        account = user === '' ? os.userInfo().username : user;
+    } catch {
+        return MACOS_KEYCHAIN_FALLBACK_ACCOUNT;
+    }
+    return MACOS_KEYCHAIN_ACCOUNT_PATTERN.test(account) ? account : MACOS_KEYCHAIN_FALLBACK_ACCOUNT;
+}
+
 // A missing item is a miss. Any other failure (a timeout, a locked keychain, a
 // refused prompt) ends the keychain lookup (see lookUpUsageCredentials).
-function readMacKeychainSecret(service: string, account?: string): MacKeychainSecretResult {
+function findMacKeychainSecret(searchArgs: string[]): MacKeychainSecretResult {
     try {
-        const args = account
-            ? ['find-generic-password', '-s', service, '-a', account, '-w']
-            : ['find-generic-password', '-s', service, '-w'];
         const secret = execFileSync(
             'security',
-            args,
+            ['find-generic-password', ...searchArgs, '-w'],
             { encoding: 'utf8', stdio: ['pipe', 'pipe', 'ignore'], timeout: MACOS_SECURITY_TIMEOUT_MS, windowsHide: true }
         ).trim();
         return { kind: 'found', secret };
@@ -556,31 +588,25 @@ function readMacKeychainSecret(service: string, account?: string): MacKeychainSe
     }
 }
 
-function readUsageCredentialsFromMacKeychainService(service: string, account?: string): MacKeychainCredentialResult {
-    const result = readMacKeychainSecret(service, account);
+// Claude Code reads and writes its login under its own account. A lookup by
+// service alone answers with whichever item for it macOS finds first, which
+// may be one another account left behind (running Claude Code as root once
+// leaves root's login, never refreshed again) or one holding only MCP tokens.
+// That lookup stands in only when nothing is saved under the account, as
+// older setups may keep it.
+function readMacKeychainSecret(service: string): MacKeychainSecretResult {
+    const accountResult = findMacKeychainSecret(['-s', service, '-a', getMacKeychainAccount()]);
+    return accountResult.kind === 'miss' ? findMacKeychainSecret(['-s', service]) : accountResult;
+}
+
+function readUsageCredentialsFromMacKeychainService(service: string): MacKeychainCredentialResult {
+    const result = readMacKeychainSecret(service);
     if (result.kind !== 'found') {
         return result;
     }
 
     const credentials = result.secret ? parseUsageCredentials(result.secret) : null;
     return credentials ? { kind: 'found', credentials } : { kind: 'miss' };
-}
-
-function getOsUsername(): string | null {
-    try {
-        return os.userInfo().username;
-    } catch {
-        return null;
-    }
-}
-
-// The login keychain can hold several items under one service, differing only by
-// account; a service-only lookup returns whichever matches first, which may be an
-// entry lacking `claudeAiOauth`. Claude Code reads/writes with an explicit account
-// (the OS username), so mirror that.
-function readUsageCredentialsFromMacKeychainUserAccount(service: string): MacKeychainCredentialResult {
-    const osUsername = getOsUsername();
-    return osUsername ? readUsageCredentialsFromMacKeychainService(service, osUsername) : { kind: 'miss' };
 }
 
 function readUsageCredentialsFromCredentialsFile(): UsageCredentials | null {
@@ -618,14 +644,7 @@ function readUsageCredentialsFromMacKeychain(): MacKeychainCredentialResult {
     // hold only MCP tokens), so fall through only to the profile's own
     // .credentials.json, Claude Code's fallback store, rather than surface
     // another account's usage.
-    const configDirService = getMacKeychainConfigDirService();
-    const result = readUsageCredentialsFromMacKeychainService(configDirService ?? MACOS_USAGE_CREDENTIALS_SERVICE);
-
-    // The default service can hold several items that differ only by account,
-    // and Claude Code's own is under the OS username. A failure skips the retry.
-    return configDirService === null && result.kind === 'miss'
-        ? readUsageCredentialsFromMacKeychainUserAccount(MACOS_USAGE_CREDENTIALS_SERVICE)
-        : result;
+    return readUsageCredentialsFromMacKeychainService(getMacKeychainConfigDirService() ?? MACOS_USAGE_CREDENTIALS_SERVICE);
 }
 
 // A `security` call that fails other than for a missing item (it timed out,
@@ -719,12 +738,14 @@ const UsageLoginSchema = z.object({
     stamp: UsageCredentialsStampSchema,
     preferredHash: z.string(),
     accessTokenHash: z.string(),
+    expiresAt: z.number().optional(),
     keychainFailed: z.boolean()
 });
 const UsageLoginsSchema = z.array(UsageLoginSchema);
 
 interface KnownUsageLogin {
     identity: UsageCacheIdentity;
+    expiresAt?: number;
     keychainFailed: boolean;
 }
 
@@ -739,7 +760,7 @@ function readUsageLogins(): z.infer<typeof UsageLoginsSchema> {
 function readKnownUsageLogin(source: string, stamp: UsageCredentialsStamp): KnownUsageLogin | null {
     const login = readUsageLogins().find(entry => entry.source === source);
     return login && isSameUsageCredentialsStamp(login.stamp, stamp)
-        ? { identity: { preferredHash: login.preferredHash, accessTokenHash: login.accessTokenHash }, keychainFailed: login.keychainFailed }
+        ? { identity: { preferredHash: login.preferredHash, accessTokenHash: login.accessTokenHash }, expiresAt: login.expiresAt, keychainFailed: login.keychainFailed }
         : null;
 }
 
@@ -755,14 +776,15 @@ function writeUsageLogin(logins: z.infer<typeof UsageLoginsSchema>, login: z.inf
     }
 }
 
-function rememberUsageLogin(source: string, stamp: UsageCredentialsStamp, identity: UsageCacheIdentity): void {
+function rememberUsageLogin(source: string, stamp: UsageCredentialsStamp, credentials: UsageCredentials): void {
+    const identity = getUsageCacheIdentity(credentials);
     const logins = readUsageLogins();
     const known = logins.find(entry => entry.source === source);
-    if (known && !known.keychainFailed && isSameUsageCredentialsStamp(known.stamp, stamp) && known.preferredHash === identity.preferredHash && known.accessTokenHash === identity.accessTokenHash) {
+    if (known && !known.keychainFailed && isSameUsageCredentialsStamp(known.stamp, stamp) && known.preferredHash === identity.preferredHash && known.accessTokenHash === identity.accessTokenHash && known.expiresAt === credentials.expiresAt) {
         return;
     }
 
-    writeUsageLogin(logins, { source, stamp, ...identity, keychainFailed: false });
+    writeUsageLogin(logins, { source, stamp, ...identity, expiresAt: credentials.expiresAt, keychainFailed: false });
 }
 
 function rememberUsageLoginKeychainFailure(source: string, stamp: UsageCredentialsStamp): void {
@@ -831,7 +853,7 @@ function getUsageCredentialsWithBackoff(now: number, source: string, stamp: Usag
         // A lookup that skipped the keychain for its backoff, or failed it,
         // doesn't name the login: the credentials file it fell back to may
         // hold an older login than the keychain item that takes precedence.
-        rememberUsageLogin(source, stamp, getUsageCacheIdentity(credentials));
+        rememberUsageLogin(source, stamp, credentials);
     }
 
     if (!credentials) {
@@ -932,8 +954,19 @@ function hasUsageCacheOutlivedRefresh(now: number): boolean {
     }
 }
 
-function writeUsageLock(blockedUntil: number, error: UsageLockError, transient = false): string {
-    const contents = JSON.stringify(transient ? { blockedUntil, error, transient } : { blockedUntil, error });
+// A lock for the API refusing a request, with a 429 or a lasting failure,
+// names the access token the request was sent with, and holds off only
+// requests with that token. Claude Code's refresh saves a new one, which may
+// well be answered, while the refresh token, and so the cache's fingerprint,
+// can stay the same. A lock for the server, the network or the response
+// failing holds every login off.
+function writeUsageLock(blockedUntil: number, error: UsageLockError, transient = false, accessTokenHash?: string): string {
+    const contents = JSON.stringify({
+        blockedUntil,
+        error,
+        ...(transient ? { transient } : {}),
+        ...(accessTokenHash === undefined ? {} : { accessTokenHash })
+    });
     try {
         ensureCacheDirExists();
         replaceFileSync(getUsageFilePath('lock'), contents);
@@ -946,11 +979,16 @@ function writeUsageLock(blockedUntil: number, error: UsageLockError, transient =
 // Remove the lock only while it still holds the in-flight record this process
 // wrote. A concurrent render may have replaced it with a 429 Retry-After lock
 // in the meantime; deleting that would let the next render fetch inside the
-// server's backoff window.
-function clearOwnUsageLock(ownContents: string): void {
+// server's backoff window. For the same reason, another access token's lock
+// that the in-flight record replaced is put back.
+function clearOwnUsageLock(ownContents: string, otherTokenLock: string | null): void {
     try {
         if (fs.readFileSync(getUsageFilePath('lock'), 'utf8') === ownContents) {
-            fs.rmSync(getUsageFilePath('lock'), { force: true });
+            if (otherTokenLock === null) {
+                fs.rmSync(getUsageFilePath('lock'), { force: true });
+            } else {
+                replaceFileSync(getUsageFilePath('lock'), otherTokenLock);
+            }
         }
     } catch {
         // Ignore lock file errors
@@ -961,10 +999,10 @@ function clearOwnUsageLock(ownContents: string): void {
 // backoff, so later renders report that failure, and whether it clears up on
 // its own, rather than a timeout. As above, a concurrent render's newer lock
 // is left in place.
-function replaceOwnUsageLock(ownContents: string, blockedUntil: number, error: UsageLockError, transient: boolean): void {
+function replaceOwnUsageLock(ownContents: string, blockedUntil: number, error: UsageLockError, transient: boolean, accessTokenHash?: string): void {
     try {
         if (fs.readFileSync(getUsageFilePath('lock'), 'utf8') === ownContents) {
-            writeUsageLock(blockedUntil, error, transient);
+            writeUsageLock(blockedUntil, error, transient, accessTokenHash);
         }
     } catch {
         // Ignore lock file errors
@@ -981,21 +1019,30 @@ function getUsageLockHorizon(error: UsageLockError): number {
     return error === 'rate-limited' ? MAX_LOCK_HORIZON : 2 * LOCK_MAX_AGE;
 }
 
-function readActiveUsageLock(now: number): { blockedUntil: number; error: UsageLockError; transient: boolean } | null {
+// Past deadline, or one implausibly far ahead: treat as no lock and fetch.
+// The fetch rewrites the file with a sane deadline, so a poisoned lock
+// self-heals on the very next render.
+function isUsageLockActive(lock: z.infer<typeof UsageLockSchema>, now: number): boolean {
+    return lock.blockedUntil > now && lock.blockedUntil <= now + getUsageLockHorizon(lock.error ?? 'timeout');
+}
+
+function isOtherTokenUsageLock(lock: z.infer<typeof UsageLockSchema>, accessTokenHash: string): boolean {
+    return lock.accessTokenHash !== undefined && lock.accessTokenHash !== accessTokenHash;
+}
+
+// The lock holding off requests with this access token, if any. Another
+// token's lock doesn't, so a refreshed or switched login fetches at once.
+function readActiveUsageLock(now: number, accessTokenHash: string): { blockedUntil: number; error: UsageLockError; transient: boolean } | null {
     let hasValidJsonLock = false;
 
     try {
         const parsed = parseJsonWithSchema(fs.readFileSync(getUsageFilePath('lock'), 'utf8'), UsageLockSchema);
         if (parsed) {
             hasValidJsonLock = true;
-            const error = parsed.error ?? 'timeout';
-            // Past deadline, or one implausibly far ahead: treat as no lock and
-            // fetch. The fetch rewrites the file with a sane deadline, so a
-            // poisoned lock self-heals on the very next render.
-            if (parsed.blockedUntil > now && parsed.blockedUntil <= now + getUsageLockHorizon(error)) {
+            if (isUsageLockActive(parsed, now) && !isOtherTokenUsageLock(parsed, accessTokenHash)) {
                 return {
                     blockedUntil: parsed.blockedUntil,
-                    error,
+                    error: parsed.error ?? 'timeout',
                     transient: parsed.transient ?? false
                 };
             }
@@ -1025,6 +1072,19 @@ function readActiveUsageLock(now: number): { blockedUntil: number; error: UsageL
     }
 
     return null;
+}
+
+// Another access token's active lock, which this request's in-flight record
+// is about to replace: the profiles used side by side share the lock file,
+// and another one's login may still be rate limited.
+function readOtherTokenUsageLock(now: number, accessTokenHash: string): string | null {
+    try {
+        const contents = fs.readFileSync(getUsageFilePath('lock'), 'utf8');
+        const parsed = parseJsonWithSchema(contents, UsageLockSchema);
+        return parsed && isUsageLockActive(parsed, now) && isOtherTokenUsageLock(parsed, accessTokenHash) ? contents : null;
+    } catch {
+        return null;
+    }
 }
 
 // While the lock holds requests off, the login's cached snapshot stands in,
@@ -1169,6 +1229,9 @@ async function fetchFromUsageApi(token: string, deadlineMs = USAGE_API_TIMEOUT_M
     return new Promise((resolve) => {
         let settled = false;
         let answeredStatus: number | undefined;
+        // A proxy that refuses CONNECT has its answer handed to the request as
+        // the response, so that answer's status isn't the API's
+        let proxyRefused = false;
 
         const finish = (value: UsageApiFetchResult) => {
             if (settled) {
@@ -1214,7 +1277,8 @@ async function fetchFromUsageApi(token: string, deadlineMs = USAGE_API_TIMEOUT_M
                     return;
                 }
 
-                finish({ kind: 'error', transient: isTransientUsageApiStatus(response.statusCode) });
+                const transient = isTransientUsageApiStatus(response.statusCode);
+                finish(proxyRefused ? { kind: 'error', transient } : { kind: 'error', transient, statusCode: response.statusCode });
             });
             // A connection dropped mid-body ends neither the response nor the
             // request, and the idle timeout can't fire on a closed socket
@@ -1222,6 +1286,9 @@ async function fetchFromUsageApi(token: string, deadlineMs = USAGE_API_TIMEOUT_M
             response.on('error', failRequest);
         });
 
+        request.on('proxyConnect', (connect: { statusCode: number }) => {
+            proxyRefused = connect.statusCode !== 200;
+        });
         request.on('error', failRequest);
         request.on('timeout', () => {
             request.destroy();
@@ -1269,9 +1336,10 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
     // While nothing has written a login since the credentials were last read,
     // and no keychain read has failed since, the login they held is still the
     // one in use, and they are read only for a request: a fresh cache for that
-    // login is served as is, and so is its stale fallback while the lock holds
-    // requests off. The stamp is taken first, so a login written during the
-    // read below changes it for the next render.
+    // login is served as is, and so is its stale fallback while a lock holds
+    // its requests off. The stamp is taken first, so a login written during
+    // the read below, such as a token refresh, changes it for the next render,
+    // which reads the new token before any lock is checked.
     const credentialsSource = getUsageCredentialsSource();
     const credentialsStamp = getUsageCredentialsStamp();
     const knownLogin = readKnownUsageLogin(credentialsSource, credentialsStamp);
@@ -1283,7 +1351,11 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
             return cacheUsageData(knownFileData.data, now, knownFileData.fetchedAtMs);
         }
 
-        const knownLoginLock = readActiveUsageLock(now);
+        if (hasUsageTokenExpired(knownLogin.expiresAt, now)) {
+            return setCachedUsageError('login-expired', now);
+        }
+
+        const knownLoginLock = readActiveUsageLock(now, knownLogin.identity.accessTokenHash);
         if (knownLoginLock) {
             return getStaleUsageDuringLock(knownLoginLock, now, knownLogin.identity, requiredFields);
         }
@@ -1311,11 +1383,22 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
         return getStaleUsageOrError('no-credentials', now, cacheIdentity, LOCK_MAX_AGE, requiredFields);
     }
 
-    const activeLock = readActiveUsageLock(now);
+    // No lock is written and no stale cache stands in: Claude Code's refresh
+    // writes the login, so the next render reads the new token and uses it,
+    // while showing the last answer would hide that this login has stopped
+    // working. Checked before the lock, which an expired token's 429s may
+    // have left.
+    if (hasUsageTokenExpired(credentials?.expiresAt, now)) {
+        return setCachedUsageError('login-expired', now);
+    }
+
+    const accessTokenHash = fingerprintUsageToken(token);
+    const activeLock = readActiveUsageLock(now, accessTokenHash);
     if (activeLock) {
         return getStaleUsageDuringLock(activeLock, now, cacheIdentity, requiredFields);
     }
 
+    const otherTokenLock = readOtherTokenUsageLock(now, accessTokenHash);
     const inFlightLock = writeUsageLock(now + LOCK_MAX_AGE, 'timeout');
 
     // Fetch from API using Node's https module
@@ -1323,12 +1406,15 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
         const response = await fetchFromUsageApi(token);
 
         if (response.kind === 'rate-limited') {
-            writeUsageLock(now + response.retryAfterSeconds, 'rate-limited');
+            writeUsageLock(now + response.retryAfterSeconds, 'rate-limited', false, accessTokenHash);
             return getStaleUsageOrError('rate-limited', now, cacheIdentity, response.retryAfterSeconds, requiredFields);
         }
 
         if (response.kind === 'error') {
-            replaceOwnUsageLock(inFlightLock, now + LOCK_MAX_AGE, 'api-error', response.transient);
+            // A lasting failure the API answered with refused this token's
+            // request (see isTransientUsageApiStatus)
+            const refused = response.statusCode !== undefined && !response.transient;
+            replaceOwnUsageLock(inFlightLock, now + LOCK_MAX_AGE, 'api-error', response.transient, refused ? accessTokenHash : undefined);
             return getStaleUsageOrError('api-error', now, cacheIdentity, LOCK_MAX_AGE, requiredFields, response.transient);
         }
 
@@ -1358,7 +1444,7 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
         // reset the payload shows, are cached but still need the short throttle
         // so later renders do not refetch every time.
         if (answersUsageRequest(usageData, options)) {
-            clearOwnUsageLock(inFlightLock);
+            clearOwnUsageLock(inFlightLock, otherTokenLock);
         }
 
         return cacheUsageData(usageData, now, Date.now());
@@ -1588,11 +1674,24 @@ function writeAccountEmailLock(tokenHash: string, blockedUntil: number): void {
     }
 }
 
+// How long a failed lookup holds its fingerprint off. A 401 or 403 refuses
+// the token itself, and asking again with it only meets the same answer: a
+// refresh or a login replaces the token, and with it the fingerprint, which
+// isn't held off. Kept within the horizon isUsageAccountLookupBlocked trusts,
+// or a Retry-After further off would be read back as no backoff at all.
+function getUsageAccountLookupBackoff(response: UsageApiFetchResult): number {
+    if (response.kind === 'rate-limited') {
+        return Math.min(response.retryAfterSeconds, MAX_LOCK_HORIZON);
+    }
+    return response.kind === 'error' && (response.statusCode === 401 || response.statusCode === 403) ? MAX_LOCK_HORIZON : LOCK_MAX_AGE;
+}
+
 /**
  * The account and organization the last usage fetch's credentials belong to,
- * or null without credentials or while the lookup fails. Asks the profile
- * endpoint at most once per token fingerprint per backoff: 30 seconds after a
- * failure, or a 429's Retry-After, up to a day.
+ * or null without credentials, with an expired access token or while the
+ * lookup fails. Asks the profile endpoint at most once per token fingerprint
+ * per backoff: 30 seconds after a failure, a day after a 401 or 403, or a
+ * 429's Retry-After, up to a day.
  */
 export async function lookUpUsageAccount(): Promise<UsageAccount | null> {
     const tokenHash = lastUsageAccountKey;
@@ -1615,7 +1714,7 @@ export async function lookUpUsageAccount(): Promise<UsageAccount | null> {
     // a lookup still to be made reads them, under the same backoffs
     const credentials = lastUsageCredentials
         ?? getUsageCredentialsWithBackoff(now, getUsageCredentialsSource(), getUsageCredentialsStamp());
-    if (!credentials || getUsageCacheIdentity(credentials).preferredHash !== tokenHash) {
+    if (!credentials || getUsageCacheIdentity(credentials).preferredHash !== tokenHash || hasUsageTokenExpired(credentials.expiresAt, now)) {
         return null;
     }
 
@@ -1628,12 +1727,7 @@ export async function lookUpUsageAccount(): Promise<UsageAccount | null> {
         .catch((): UsageApiFetchResult => ({ kind: 'error', transient: false }));
     const profile = response.kind === 'success' ? parseJsonWithSchema(response.body, ProfileAccountIdsSchema) : null;
     if (!profile) {
-        // Kept within the horizon isUsageAccountLookupBlocked trusts, or a
-        // Retry-After further off would be read back as no backoff at all
-        storeUsageAccountEntry({
-            tokenHash,
-            blockedUntil: now + (response.kind === 'rate-limited' ? Math.min(response.retryAfterSeconds, MAX_LOCK_HORIZON) : LOCK_MAX_AGE)
-        });
+        storeUsageAccountEntry({ tokenHash, blockedUntil: now + getUsageAccountLookupBackoff(response) });
         return null;
     }
 
