@@ -14,6 +14,7 @@ import { getVisibleWidth } from '../../utils/ansi';
 import { shouldInsertInput } from '../../utils/input-guards';
 
 import { BlinkingCursor } from './BlinkingCursor';
+import { GlyphPicker } from './glyph-picker';
 import { removeMetadataKeys } from './metadata';
 import { getGraphemes } from './text-cursor';
 
@@ -99,17 +100,30 @@ export function renderSymbolSlotsEditor(props: WidgetEditorProps, slots: SymbolS
 const SymbolSlotsEditor: React.FC<WidgetEditorProps & { slots: SymbolSlot[] }> = ({ widget, slots, onComplete, onCancel }) => {
     const [values, setValues] = useState<string[]>(() => slots.map(slot => getSlotSymbol(widget, slot)));
     const [selectedIndex, setSelectedIndex] = useState(0);
+    const [picking, setPicking] = useState(false);
     const labelWidth = Math.max(...slots.map(slot => getVisibleWidth(slot.label)), 0);
 
+    const setSelectedValue = (value: string) => {
+        setValues(values.map((current, index) => (index === selectedIndex ? value : current)));
+    };
+
+    // ↑↓ wrap around the rows
+    const moveSelection = (step: number) => {
+        setSelectedIndex((selectedIndex + step + slots.length) % slots.length);
+    };
+
+    // The picker takes the keys while it's open
     useInput((input, key) => {
-        if (key.return) {
+        if (key.rightArrow) {
+            setPicking(true);
+        } else if (key.return) {
             onComplete(slots.reduce((item, slot, index) => setSlotSymbol(item, slot, values[index] ?? ''), widget));
         } else if (key.escape) {
             onCancel();
         } else if (key.upArrow && slots.length > 1) {
-            setSelectedIndex(selectedIndex - 1 < 0 ? slots.length - 1 : selectedIndex - 1);
+            moveSelection(-1);
         } else if (key.downArrow && slots.length > 1) {
-            setSelectedIndex(selectedIndex + 1 > slots.length - 1 ? 0 : selectedIndex + 1);
+            moveSelection(1);
         } else if (key.tab && key.shift) {
             // Widgets with several glyphs are mostly blanked whole to save
             // width on the status line, which is one Backspace per row
@@ -117,25 +131,35 @@ const SymbolSlotsEditor: React.FC<WidgetEditorProps & { slots: SymbolSlot[] }> =
             const allBlank = values.every(value => value.length === 0);
             setValues(values.map((_, index) => (allBlank ? slots[index]?.defaultSymbol ?? '' : '')));
         } else if (key.tab) {
-            setValues(values.map((value, index) => (
-                index === selectedIndex ? slots[selectedIndex]?.defaultSymbol ?? '' : value
-            )));
+            setSelectedValue(slots[selectedIndex]?.defaultSymbol ?? '');
         } else if (key.backspace || key.delete) {
-            setValues(values.map((value, index) => (index === selectedIndex ? '' : value)));
+            setSelectedValue('');
         } else if (shouldInsertInput(input, key)) {
             // Take only the first grapheme (handles multi-byte emojis correctly)
-            const grapheme = getGraphemes(input)[0] ?? '';
-            setValues(values.map((value, index) => (index === selectedIndex ? grapheme : value)));
+            setSelectedValue(getGraphemes(input)[0] ?? '');
         }
-    });
+    }, { isActive: !picking });
+
+    if (picking) {
+        return (
+            <GlyphPicker
+                initialGlyph={values[selectedIndex] ?? ''}
+                onPick={(glyph) => {
+                    setSelectedValue(glyph);
+                    setPicking(false);
+                }}
+                onCancel={() => { setPicking(false); }}
+            />
+        );
+    }
 
     return (
         <Box flexDirection='column'>
             <Text bold>Glyphs</Text>
             <Text dimColor>
                 {slots.length > 1
-                    ? '↑↓ row, type to set, Tab default, Backspace none, Shift+Tab toggle all none/default, Enter save, ESC cancel'
-                    : 'Type any character or emoji, Tab default, Backspace none, Enter save, ESC cancel'}
+                    ? '↑↓ row, type to set, → pick from a list, Tab default, Backspace none, Shift+Tab toggle all none/default, Enter save, ESC cancel'
+                    : 'Type any character or emoji, → pick from a list, Tab default, Backspace none, Enter save, ESC cancel'}
             </Text>
             <Box marginTop={1} flexDirection='column'>
                 {slots.map((slot, index) => {
@@ -154,6 +178,8 @@ const SymbolSlotsEditor: React.FC<WidgetEditorProps & { slots: SymbolSlot[] }> =
                                     {isSelected ? '▶ ' : '  '}
                                 </Text>
                             </Box>
+                            {/* One Text: Ink lays out each part of a multi-part emoji (👍🏾, 👩‍💻) as
+                                its own character, so a second Text would overwrite the rest of it */}
                             <Text>
                                 <Text color={isSelected ? 'green' : undefined}>
                                     {`${labelPadding}${slot.label}: `}
