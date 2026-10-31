@@ -39,6 +39,12 @@ import {
 export const EDIT_VALUE_COLORS_ACTION = 'edit-value-colors';
 export const VALUE_COLORS_KEYBIND: CustomKeybind = { key: 'v', label: '(v)alue colors', action: EDIT_VALUE_COLORS_ACTION };
 
+// (v) on a widget whose other modes (a bar, the level glyph) have no value to
+// color: offered while it shows the plain value
+export function withValueColorsKeybind(keybinds: CustomKeybind[], showsValue: boolean): CustomKeybind[] {
+    return showsValue ? [...keybinds, VALUE_COLORS_KEYBIND] : keybinds;
+}
+
 type ValueSetting = 'mode' | BreakPoint | 'gradient' | 'gradientEnd' | 'scope';
 const BREAK_POINTS: ReadonlySet<ValueSetting> = new Set<BreakPoint>(['midFrom', 'highFrom']);
 // Gradient mode's own rows; the band colors and break points are break points mode's
@@ -117,8 +123,8 @@ export function makeValueColorsConfig(options: ValueColorsEditorOptions, setting
         getNotice: item => (isGradient(item) ? getGradientNotice(settings) : null),
         isEnabled: isValueColorsEnabled,
         setEnabled: setValueColorsEnabled,
-        getColor: getBandColor,
-        setColor: setBandColor,
+        getColor: (item, band) => getBandColor(item, band, scale),
+        setColor: (item, band, color) => setBandColor(item, band, color, scale),
         getSettingLabel: (item, setting) => {
             if (setting === 'mode') {
                 return isGradient(item) ? 'Gradient' : 'Break points';
