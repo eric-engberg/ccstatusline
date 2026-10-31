@@ -11,7 +11,7 @@ import type {
     WidgetItem
 } from '../../types/Widget';
 import { getVisibleWidth } from '../../utils/ansi';
-import { shouldInsertInput } from '../../utils/input-guards';
+import { getInsertableText } from '../../utils/input-guards';
 
 import { BlinkingCursor } from './BlinkingCursor';
 import { GlyphPicker } from './glyph-picker';
@@ -114,6 +114,7 @@ const SymbolSlotsEditor: React.FC<WidgetEditorProps & { slots: SymbolSlot[] }> =
 
     // The picker takes the keys while it's open
     useInput((input, key) => {
+        const text = getInsertableText(input, key);
         if (key.rightArrow) {
             setPicking(true);
         } else if (key.return) {
@@ -134,9 +135,9 @@ const SymbolSlotsEditor: React.FC<WidgetEditorProps & { slots: SymbolSlot[] }> =
             setSelectedValue(slots[selectedIndex]?.defaultSymbol ?? '');
         } else if (key.backspace || key.delete) {
             setSelectedValue('');
-        } else if (shouldInsertInput(input, key)) {
+        } else if (text) {
             // Take only the first grapheme (handles multi-byte emojis correctly)
-            setSelectedValue(getGraphemes(input)[0] ?? '');
+            setSelectedValue(getGraphemes(text)[0] ?? '');
         }
     }, { isActive: !picking });
 

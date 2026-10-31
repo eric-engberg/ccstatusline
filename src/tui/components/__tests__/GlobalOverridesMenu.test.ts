@@ -389,6 +389,143 @@ describe('GlobalOverridesMenu', () => {
         }
     });
 
+    // A terminal paste reaches Ink as one input chunk, not key by key
+    it('takes pasted custom gradient stops', async () => {
+        const stdin = createMockStdin();
+        const stdout = createMockStdout();
+        const stderr = createMockStdout();
+        const onUpdate = vi.fn();
+        const onBack = vi.fn();
+        const output = () => stripAnsi(stdout.getOutput());
+
+        const instance = render(
+            React.createElement(GlobalOverridesMenu, {
+                settings: { ...DEFAULT_SETTINGS, colorLevel: 3 },
+                onUpdate,
+                onBack
+            }),
+            {
+                stdin,
+                stdout,
+                stderr,
+                debug: true,
+                exitOnCtrlC: false,
+                patchConsole: false
+            }
+        );
+
+        try {
+            await waitFor(() => {
+                expect(output()).toContain('Minimalist Mode:');
+            });
+            stdin.write('g');
+            await waitFor(() => {
+                expect(output()).toContain('Select Gradient - Override FG Color');
+            });
+            // Up wraps to the Custom entry at the bottom
+            stdin.write('\x1B[A');
+            await waitFor(() => {
+                expect(output()).toContain('▶ Custom (enter two hex stops)');
+            });
+            stdin.write('\r');
+            await waitFor(() => {
+                expect(output()).toContain('Enter START hex color');
+            });
+
+            stdin.write('#FF8800');
+            await waitFor(() => {
+                expect(output()).toMatch(/^#FF8800$/m);
+            });
+            stdin.write('\r');
+            await waitFor(() => {
+                expect(output()).toContain('Enter END hex color');
+            });
+            stdin.write('0088ff');
+            await waitFor(() => {
+                expect(output()).toMatch(/^#0088FF$/m);
+            });
+            stdin.write('\r');
+            await waitFor(() => {
+                expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining({ overrideForegroundColor: 'gradient:FF8800-0088FF' }));
+            });
+        } finally {
+            instance.unmount();
+            instance.cleanup();
+            stdin.destroy();
+            stdout.destroy();
+            stderr.destroy();
+        }
+    });
+
+    // A value copied with its line ending arrives in the same input chunk
+    it.each([
+        {
+            field: 'padding',
+            shortcut: 'p',
+            paste: ' \n',
+            shown: 'Enter default padding (applied per the Padding Side setting): " "',
+            saved: { defaultPadding: ' ' }
+        },
+        {
+            field: 'separator',
+            shortcut: 's',
+            paste: ' | \r',
+            shown: 'Enter default separator (placed between widgets): " | "',
+            saved: { defaultSeparator: ' | ' }
+        }
+    ])('takes a pasted default $field', async ({ shortcut, paste, shown, saved }) => {
+        const stdin = createMockStdin();
+        const stdout = createMockStdout();
+        const stderr = createMockStdout();
+        const onUpdate = vi.fn();
+        const onBack = vi.fn();
+        const output = () => stripAnsi(stdout.getOutput());
+
+        const instance = render(
+            React.createElement(GlobalOverridesMenu, {
+                // No manual separators, so a new default separator saves without a confirmation
+                settings: { ...DEFAULT_SETTINGS, lines: [[]] },
+                onUpdate,
+                onBack
+            }),
+            {
+                stdin,
+                stdout,
+                stderr,
+                debug: true,
+                exitOnCtrlC: false,
+                patchConsole: false
+            }
+        );
+
+        try {
+            await waitFor(() => {
+                expect(output()).toContain('Minimalist Mode:');
+            });
+            stdin.write(shortcut);
+            await waitFor(() => {
+                expect(output()).toContain('Press Enter to save, ESC to cancel');
+            });
+
+            stdin.write(paste);
+            await waitFor(() => {
+                expect(output()).toContain(shown);
+            });
+            // The pasted line break doesn't save the value; Enter does
+            expect(onUpdate).not.toHaveBeenCalled();
+            stdin.write('\r');
+            await waitFor(() => {
+                expect(onUpdate).toHaveBeenCalledWith(expect.objectContaining(saved));
+            });
+        } finally {
+            instance.unmount();
+            instance.cleanup();
+            stdin.destroy();
+            stdout.destroy();
+            stderr.destroy();
+        }
+    });
+
     it('clears the foreground override when (x) is pressed', async () => {
         const stdin = createMockStdin();
         const stdout = createMockStdout();
