@@ -99,6 +99,27 @@ describe('color-menu mutations', () => {
         ]);
     });
 
+    // A plain line under Powerline doesn't show its widgets' backgrounds, so its
+    // reset and clear leave them for when the line is Powerline again
+    it('resetWidgetStyling and clearAllWidgetStyling can keep backgrounds', () => {
+        const widgets: WidgetItem[] = [
+            { id: '1', type: 'tokens-input', color: 'red', backgroundColor: 'bgBlue', bold: true, dim: true },
+            { id: '2', type: 'tokens-output', color: 'white', backgroundColor: 'bgMagenta' },
+            { id: '3', type: 'tokens-cached', color: 'green' }
+        ];
+
+        expect(resetWidgetStyling(widgets, '1', true)).toEqual([
+            { id: '1', type: 'tokens-input', backgroundColor: 'bgBlue' },
+            widgets[1],
+            widgets[2]
+        ]);
+        expect(clearAllWidgetStyling(widgets, true)).toEqual([
+            { id: '1', type: 'tokens-input', backgroundColor: 'bgBlue' },
+            { id: '2', type: 'tokens-output', backgroundColor: 'bgMagenta' },
+            { id: '3', type: 'tokens-cached' }
+        ]);
+    });
+
     it('cycles background colors and maps empty background to undefined', () => {
         const widgets: WidgetItem[] = [
             { id: '1', type: 'tokens-input', backgroundColor: 'bg:red' }
