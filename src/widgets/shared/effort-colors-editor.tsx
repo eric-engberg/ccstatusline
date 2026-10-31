@@ -53,7 +53,7 @@ const NAMED_COLORS = getAvailableColorsForUI().map(color => color.value).filter(
 function cycleNamedColor(current: string, direction: 1 | -1): string {
     const index = NAMED_COLORS.indexOf(current);
     if (index === -1) {
-        return NAMED_COLORS.at(direction === 1 ? 0 : -1) ?? current;
+        return NAMED_COLORS[direction === 1 ? 0 : NAMED_COLORS.length - 1] ?? current;
     }
     return NAMED_COLORS[(index + direction + NAMED_COLORS.length) % NAMED_COLORS.length] ?? current;
 }
