@@ -109,6 +109,15 @@ describe('value color settings', () => {
         expect(isValueColorsEnabled(base)).toBe(false);
     });
 
+    // A bar gradient colors each cell by where it sits; value colors give the
+    // whole bar one color, so they replace it
+    it('clears a bar gradient when value colors come on, and leaves it when they go off', () => {
+        const withGradient: WidgetItem = { ...base, metadata: { gradient: 'thermal' } };
+
+        expect(setValueColorsEnabled(withGradient, true).metadata).toEqual({ valueColors: 'true' });
+        expect(setValueColorsEnabled({ ...base, metadata: { gradient: 'thermal', valueColors: 'true' } }, false).metadata).toEqual({ gradient: 'thermal' });
+    });
+
     it('stores only what differs from the defaults', () => {
         expect(setValueColorsEnabled(base, true).metadata).toEqual({ valueColors: 'true' });
         expect(setValueColorsEnabled(setValueColorsEnabled(base, true), false).metadata).toBeUndefined();
