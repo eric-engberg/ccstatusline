@@ -31,6 +31,7 @@ import {
     getVisibleText,
     getVisibleWidth,
     restoreStyleAfterResets,
+    stripForegroundCodes,
     stripSgrCodes,
     truncateStyledText
 } from './ansi';
@@ -277,8 +278,9 @@ function renderPowerlineStatusLine(
             // If override FG color is set and this widget carries its own colors,
             // we need to strip the ANSI codes from the widget text
             if (hasForegroundOverride(settings) && embedsForegroundCodes(widget)) {
-                // Strip ANSI color codes when override is active
-                widgetText = stripSgrCodes(widgetText);
+                // Strip ANSI color codes when override is active; text that
+                // colors only some runs loses just their foreground
+                widgetText = widgetPreservesColors(widget) ? stripSgrCodes(widgetText) : stripForegroundCodes(widgetText);
             }
 
             // Check if padding should be omitted due to no-padding merge
@@ -1350,9 +1352,10 @@ export function renderStatusLine(
                     });
                 } else {
                     // Normal widget rendering with colors, around any runs the
-                    // widget colors itself unless a global override owns the foreground
+                    // widget colors itself unless a global override owns the
+                    // foreground, which then takes only their foreground away
                     const colorsOwnRuns = widgetColorsOnlyItsRuns(widget);
-                    const text = colorsOwnRuns && hasForegroundOverride(settings) ? stripSgrCodes(widgetText) : widgetText;
+                    const text = colorsOwnRuns && hasForegroundOverride(settings) ? stripForegroundCodes(widgetText) : widgetText;
                     elements.push({
                         content: applyColorsWithOverride(text, widget.color ?? defaultColor, widget.backgroundColor, widget.bold, widget.dim, colorsOwnRuns),
                         type: widget.type,

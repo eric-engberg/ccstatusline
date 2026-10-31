@@ -19,15 +19,17 @@ import {
     resolveNumberFormat
 } from '../utils/number-format';
 import { formatTokens } from '../utils/renderer';
-import { makeUsageProgressBar } from '../utils/usage';
 
+import { drawWidgetBar } from './shared/bar-draw';
 import {
+    getBarEmptyCellsKeybinds,
     getBarLayoutModifiers,
     getBarNumbersKeybinds,
     getBarStyle,
     setBarStyle,
     showsBarCounts,
-    showsBarPercent
+    showsBarPercent,
+    stepBarStyle
 } from './shared/bar-layout';
 import {
     getBarWidthKeybinds,
@@ -38,10 +40,8 @@ import {
     cycleGradientPreset,
     getGradientKeybinds,
     getGradientModifier,
-    paintWidgetBar,
-    paintsBarGradient
+    paintsBarCells
 } from './shared/gradient-bar';
-import { makeSliderBar } from './shared/usage-display';
 import {
     LIMIT_SCALE,
     formatColoredValue,
@@ -85,7 +85,8 @@ export class ContextBarWidget implements Widget {
         };
     }
 
-    // (p) switches between a block bar and a slider, which keep their size
+    // (p) steps through a block bar, a slider and the cell bars in each shape,
+    // then back to the block bar, all at the same size
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
         if (action === CYCLE_GRADIENT_ACTION) {
             return cycleGradientPreset(item);
@@ -94,7 +95,7 @@ export class ContextBarWidget implements Widget {
             return null;
         }
         const barItem = withBarDisplay(item);
-        return setBarStyle(barItem, getBarStyle(barItem) === 'block' ? 'slider' : 'block');
+        return stepBarStyle(barItem) ?? setBarStyle(barItem, 'block');
     }
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
@@ -125,21 +126,20 @@ export class ContextBarWidget implements Widget {
         return this.formatBar(item, clampedPercent, counts, formatPercent(clampedPercent, percentFormat, 0), settings, context);
     }
 
-    // "[████░░░░] 50k/200k (25%)", "▓▓▓▓░░░░ 25%" and so on: the bar in its style
+    // "[████░░░░] 50k/200k (25%)", "▓▓▓▓░░░░ 25%", "▮▮▮▮▮▮▮▮" and so on: the bar in its style
     // and size, then the numbers that are on. Value colors give the bar and its
     // numbers the color of how much of the context is used.
     private formatBar(item: WidgetItem, percent: number, counts: string, percentText: string, settings: Settings, context: RenderContext): string {
         const barItem = withBarDisplay(item);
         const cells = context.barCells ?? getFixedBarCells(barItem);
-        const bar = getBarStyle(barItem) === 'slider' ? makeSliderBar(percent, cells) : makeUsageProgressBar(percent, cells);
+        const bar = drawWidgetBar(barItem, percent, cells, settings);
         const showsCounts = showsBarCounts(barItem);
         const showsPercent = showsBarPercent(barItem);
         let numbers = showsCounts ? counts : percentText;
         if (showsCounts && showsPercent) {
             numbers = `${counts} (${percentText})`;
         }
-        const painted = paintWidgetBar(bar, item, settings);
-        const display = showsCounts || showsPercent ? `${painted} ${numbers}` : painted;
+        const display = showsCounts || showsPercent ? `${bar} ${numbers}` : bar;
         return formatColoredValue(item, this.getLabelPrefix(), display, percent, LIMIT_SCALE, getValueFormatOptions(settings));
     }
 
@@ -149,6 +149,7 @@ export class ContextBarWidget implements Widget {
             ...getGradientKeybinds(true),
             ...getBarWidthKeybinds(true),
             ...getBarNumbersKeybinds(item, true, true),
+            ...getBarEmptyCellsKeybinds(item),
             VALUE_COLORS_KEYBIND
         ];
     }
@@ -165,10 +166,10 @@ export class ContextBarWidget implements Widget {
     }
 
     // Value colors paint only the bar and its numbers (or the whole text), and
-    // a gradient preset only the bar, so the renderer colors the rest with the
-    // theme or widget color
+    // a gradient preset or gray empty cells only the bar, so the renderer
+    // colors the rest with the theme or widget color
     colorsOnlyItsRuns(item: WidgetItem): boolean {
-        return isValueColorsEnabled(item) || paintsBarGradient(item, true);
+        return isValueColorsEnabled(item) || paintsBarCells(item, true);
     }
 
     supportsRawValue(): boolean { return true; }
