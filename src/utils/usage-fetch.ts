@@ -19,6 +19,7 @@ import {
     createProxyAgent,
     type ClosableProxyAgent
 } from './proxy-agent';
+import { replaceFileSync } from './replace-file';
 import type {
     UsageData,
     UsageDataField,
@@ -664,7 +665,7 @@ function getUsageCredentialsWithBackoff(now: number): UsageCredentials | null {
     if (!credentials) {
         try {
             ensureCacheDirExists();
-            fs.writeFileSync(getUsageFilePath('credentials.lock'), JSON.stringify({ blockedUntil: now + LOCK_MAX_AGE, source }));
+            replaceFileSync(getUsageFilePath('credentials.lock'), JSON.stringify({ blockedUntil: now + LOCK_MAX_AGE, source }));
         } catch {
             // Ignore lock file errors
         }
@@ -730,7 +731,7 @@ function writeUsageLock(blockedUntil: number, error: UsageLockError, transient =
     const contents = JSON.stringify(transient ? { blockedUntil, error, transient } : { blockedUntil, error });
     try {
         ensureCacheDirExists();
-        fs.writeFileSync(getUsageFilePath('lock'), contents);
+        replaceFileSync(getUsageFilePath('lock'), contents);
     } catch {
         // Ignore lock file errors
     }
@@ -1125,7 +1126,7 @@ export async function fetchUsageData(options: FetchUsageDataOptions = {}): Promi
         // Save to cache
         try {
             ensureCacheDirExists();
-            fs.writeFileSync(getUsageFilePath('json'), JSON.stringify({ ...usageData, tokenHash: cacheIdentity?.preferredHash }));
+            replaceFileSync(getUsageFilePath('json'), JSON.stringify({ ...usageData, tokenHash: cacheIdentity?.preferredHash }));
         } catch {
             // Ignore cache write errors
         }
@@ -1358,7 +1359,7 @@ function writeAccountEmailLock(tokenHash: string, blockedUntil: number): void {
     try {
         ensureCacheDirExists();
         const deadline = Math.max(blockedUntil, readAccountEmailBackoff(tokenHash, Math.floor(Date.now() / 1000)));
-        fs.writeFileSync(getAccountEmailPath(tokenHash, 'lock'), JSON.stringify({ blockedUntil: deadline, tokenHash }));
+        replaceFileSync(getAccountEmailPath(tokenHash, 'lock'), JSON.stringify({ blockedUntil: deadline, tokenHash }));
     } catch {
         // Ignore lock file errors
     }
