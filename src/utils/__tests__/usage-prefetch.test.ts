@@ -786,6 +786,7 @@ describe('usage prefetch', () => {
             [{ requiredFields: ['extraUsageEnabled', 'extraUsageLimit', 'extraUsageUsed'] }]
         ]);
     });
+
     it('preserves API errors when extra usage fields are missing', async () => {
         mockFetchUsageData.mockResolvedValue({ error: 'no-credentials' });
 
