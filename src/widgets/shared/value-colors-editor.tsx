@@ -18,6 +18,7 @@ import {
     getBandColor,
     getBreakPoints,
     getGradientEnd,
+    getScaleUnit,
     getValueColorMode,
     getValueColorScope,
     getValueGradient,
@@ -35,6 +36,10 @@ import {
     type ValueBand,
     type ValueColorScale
 } from './value-coloring';
+import {
+    floorToUnit,
+    roundToUnit
+} from './value-units';
 
 export const EDIT_VALUE_COLORS_ACTION = 'edit-value-colors';
 export const VALUE_COLORS_KEYBIND: CustomKeybind = { key: 'v', label: '(v)alue colors', action: EDIT_VALUE_COLORS_ACTION };
@@ -59,7 +64,7 @@ function isBreakPoint(setting: ValueSetting): setting is BreakPoint {
 export interface ValueColorsEditorOptions {
     title: string;
     scale: ValueColorScale;
-    /** What the sample's percents are of, e.g. "of today's budget". */
+    /** What the sample's values are of, e.g. "of today's budget". */
     sampleNote: string;
     /** The widget's color when it has none of its own. */
     defaultColor: string;
@@ -74,17 +79,20 @@ export interface ValueColorsEditorOptions {
     showsRemaining?: boolean;
 }
 
-// Values on both sides of each break point, or along the gradient and past its end
-function getSamplePercents(item: WidgetItem, options: ValueColorsEditorOptions): number[] {
-    let percents: number[];
+// Values on both sides of each break point, or along the gradient and past its
+// end. Half the mid break point rounds down, so a count's mid of 1 still has a
+// sample (0) below it.
+function getSampleValues(item: WidgetItem, options: ValueColorsEditorOptions): number[] {
+    const unit = getScaleUnit(options.scale);
+    let values: number[];
     if (getValueColorMode(item) === 'gradient') {
-        const end = getGradientEnd(item);
-        percents = [0.25, 0.5, 0.75, 1, 1.25].map(fraction => Math.round(end * fraction));
+        const end = getGradientEnd(item, options.scale);
+        values = [0.25, 0.5, 0.75, 1, 1.25].map(fraction => roundToUnit(unit, end * fraction));
     } else {
         const { midFrom, highFrom } = getBreakPoints(item, options.scale);
-        percents = [Math.round(midFrom / 2), midFrom, highFrom, highFrom + (highFrom - midFrom)];
+        values = [floorToUnit(unit, midFrom / 2), midFrom, highFrom, roundToUnit(unit, highFrom + (highFrom - midFrom))];
     }
-    return [...new Set(percents.map(percent => Math.min(options.maxPercent ?? Infinity, percent)))];
+    return [...new Set(values.map(value => Math.min(options.maxPercent ?? Infinity, value)))];
 }
 
 // What a gradient looks like at the color level set in Terminal Options
@@ -104,6 +112,7 @@ function getGradientNotice(settings: Settings | undefined): string | null {
 // Without settings (outside the line editor) there's no color level to warn about
 export function makeValueColorsConfig(options: ValueColorsEditorOptions, settings?: Settings): ColorListEditorConfig<ValueBand, ValueSetting> {
     const { scale } = options;
+    const unit = getScaleUnit(scale);
     const isGradient = (item: WidgetItem) => getValueColorMode(item) === 'gradient';
 
     return {
@@ -136,9 +145,9 @@ export function makeValueColorsConfig(options: ValueColorsEditorOptions, setting
                 return getValueGradient(item);
             }
             if (setting === 'gradientEnd') {
-                return `${getGradientEnd(item)}%`;
+                return unit.format(getGradientEnd(item, scale));
             }
-            return `${getBreakPoints(item, scale)[setting]}%`;
+            return unit.format(getBreakPoints(item, scale)[setting]);
         },
         cycleSetting: (item, setting, direction) => {
             if (setting === 'mode') {
@@ -151,16 +160,16 @@ export function makeValueColorsConfig(options: ValueColorsEditorOptions, setting
                 return cycleValueGradient(item, direction);
             }
             if (setting === 'gradientEnd') {
-                return stepGradientEnd(item, direction);
+                return stepGradientEnd(item, scale, direction);
             }
             return stepBreakPoint(item, scale, setting, direction);
         },
         typedSettings: {
             keys: [...BREAK_POINTS, 'gradientEnd'],
-            hint: 'percent, 1-999',
+            hint: unit.hint,
             set: (item, setting, text) => {
                 if (setting === 'gradientEnd') {
-                    return typeGradientEnd(item, text);
+                    return typeGradientEnd(item, scale, text);
                 }
                 return isBreakPoint(setting) ? typeBreakPoint(item, scale, setting, text) : item;
             }
@@ -168,16 +177,16 @@ export function makeValueColorsConfig(options: ValueColorsEditorOptions, setting
         resetColors: resetValueColors,
         renderSample: (item, _band, colors) => {
             // With the whole widget colored, each value is shown with its label
-            const withLabel = getValueColorScope(item) === 'widget' && options.label !== undefined && !item.rawValue;
-            const values = getSamplePercents(item, options).map((percent) => {
-                const shown = options.showsRemaining ? 100 - percent : percent;
-                return formatColoredValue({ ...item, rawValue: !withLabel }, options.label ?? '', `${shown}%`, percent, scale, colors);
+            const withLabel = getValueColorScope(item) === 'widget' && Boolean(options.label) && !item.rawValue;
+            const values = getSampleValues(item, options).map((value) => {
+                const shown = options.showsRemaining ? 100 - value : value;
+                return formatColoredValue({ ...item, rawValue: !withLabel }, options.label ?? '', unit.format(shown), value, scale, colors);
             });
             return values.join(withLabel ? '  ' : ' ');
         },
         sampleNote: options.sampleNote,
         defaultColor: options.defaultColor,
-        extraHelp: 'Type a number on a percent row to set it exactly'
+        extraHelp: unit.typeHelp
     };
 }
 
