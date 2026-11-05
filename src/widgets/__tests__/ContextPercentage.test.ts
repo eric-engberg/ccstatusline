@@ -139,14 +139,16 @@ describe('ContextPercentageWidget', () => {
         const base: WidgetItem = { id: 'ctx', type: 'context-percentage' };
 
         const slider = widget.handleEditorAction('toggle-slider', base);
-        const text = widget.handleEditorAction('toggle-slider', slider ?? base);
+        const line = widget.handleEditorAction('toggle-slider', slider ?? base);
+        const text = widget.handleEditorAction('toggle-slider', line ?? base);
         const again = widget.handleEditorAction('toggle-slider', text ?? base);
 
         expect(slider?.metadata).toEqual({ display: 'slider' });
+        expect(line?.metadata).toEqual({ display: 'line', barWidth: 'short' });
         expect(text?.metadata).toEqual({ barWidth: 'short' });
         expect(again?.metadata).toEqual({ display: 'slider' });
         expect(widget.handleEditorAction('toggle-slider', { ...base, metadata: { display: 'slider-only' } })?.metadata)
-            .toEqual({ barWidth: 'short', barNumbers: 'none' });
+            .toEqual({ display: 'line', barWidth: 'short', barNumbers: 'none' });
     });
 
     it('renders slider with percentage in slider mode', () => {
