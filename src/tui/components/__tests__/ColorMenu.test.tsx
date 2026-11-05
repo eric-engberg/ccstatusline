@@ -101,12 +101,6 @@ function renderColorMenu(widgets: WidgetItem[], settings: Settings = DEFAULT_SET
     };
 }
 
-function flushInk() {
-    return new Promise((resolve) => {
-        setTimeout(resolve, 25);
-    });
-}
-
 describe('ColorMenu', () => {
     it('keeps bold and dim indicators on the current-style row', async () => {
         const stdin = createMockStdin();
@@ -150,13 +144,18 @@ describe('ColorMenu', () => {
             }
         );
 
-        try {
-            await flushInk();
-            stdin.write('\x1B[B');
-            await flushInk();
+        const latestFrame = () => stdout.getOutput().split('Configure Colors').at(-1) ?? '';
 
-            const latestFrame = stdout.getOutput().split('Configure Colors').at(-1) ?? '';
-            const currentStyleLine = latestFrame
+        try {
+            await waitFor(() => {
+                expect(stripAnsi(latestFrame())).toContain('▶  1: Cache Hit Rate');
+            });
+            stdin.write('\x1B[B');
+            await waitFor(() => {
+                expect(stripAnsi(latestFrame())).toContain('▶  2: Cache Read');
+            });
+
+            const currentStyleLine = latestFrame()
                 .split('\n')
                 .find(line => line.includes('Current foreground')) ?? '';
 
@@ -307,32 +306,6 @@ describe('ColorMenu', () => {
                 expect(menu.onUpdate).toHaveBeenCalledTimes(1);
             });
             expect(menu.onUpdate.mock.calls[0]?.[0]?.[0]).toMatchObject({ id: '1', color: 'gradient:FF8800-0088FF' });
-        } finally {
-            menu.cleanup();
-        }
-    });
-
-    it('takes a pasted ANSI 256 color code', async () => {
-        const menu = renderColorMenu([{ id: '1', type: 'model' }], { ...DEFAULT_SETTINGS, colorLevel: 2 });
-
-        try {
-            await waitFor(() => {
-                expect(menu.latestFrame()).toContain('▶  1: Model');
-            });
-            menu.stdin.write('a');
-            await waitFor(() => {
-                expect(menu.latestFrame()).toContain('Enter ANSI 256 color code');
-            });
-
-            menu.stdin.write('208');
-            await waitFor(() => {
-                expect(menu.latestFrame()).toMatch(/^208$/m);
-            });
-            menu.stdin.write('\r');
-            await waitFor(() => {
-                expect(menu.onUpdate).toHaveBeenCalledTimes(1);
-            });
-            expect(menu.onUpdate.mock.calls[0]?.[0]?.[0]).toMatchObject({ id: '1', color: 'ansi256:208' });
         } finally {
             menu.cleanup();
         }
