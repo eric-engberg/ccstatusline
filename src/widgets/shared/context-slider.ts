@@ -8,6 +8,7 @@ import { formatPercent } from '../../utils/number-format';
 import {
     getBarLayoutModifiers,
     getBarNumbersKeybinds,
+    getBarStyle,
     keepBarLayout,
     setBarStyle,
     showsBarPercent
@@ -22,24 +23,28 @@ import {
     getGradientKeybinds,
     getGradientModifier
 } from './gradient-bar';
+import { makeLineProgressBar } from './progress-bar';
 import { makeSliderBar } from './usage-display';
 
-export type ContextSliderMode = 'none' | 'slider' | 'slider-only';
+export type ContextSliderMode = 'none' | 'slider' | 'slider-only' | 'line';
 
 const SLIDER_TOGGLE_KEYBIND: CustomKeybind = { key: 'p', label: '(p) bar style', action: 'toggle-slider' };
 
 export function getContextSliderMode(item: WidgetItem): ContextSliderMode {
     const mode = item.metadata?.display;
-    if (mode === 'slider' || mode === 'slider-only') {
+    if (mode === 'slider' || mode === 'slider-only' || mode === 'line') {
         return mode;
     }
     return 'none';
 }
 
-// (p) switches between the percentage and a slider, which keeps the size it had
+// (p) steps from the percentage to a slider, then a line, each keeping the bar's size
 export function cycleContextSliderMode(item: WidgetItem): WidgetItem {
     if (getContextSliderMode(item) === 'none') {
         return setBarStyle(item, 'slider', 'short');
+    }
+    if (getBarStyle(item) !== 'line') {
+        return setBarStyle(item, 'line');
     }
 
     const nextMetadata = { ...keepBarLayout(item).metadata };
@@ -54,8 +59,9 @@ export function renderContextSlider(item: WidgetItem, percent: number, format: N
     if (getContextSliderMode(item) === 'none') {
         return null;
     }
-    const slider = makeSliderBar(percent, cells ?? getFixedBarCells(item));
-    return showsBarPercent(item) ? `${slider} ${formatPercent(percent, format)}` : slider;
+    const barCells = cells ?? getFixedBarCells(item);
+    const bar = getBarStyle(item) === 'line' ? makeLineProgressBar(percent, barCells) : makeSliderBar(percent, barCells);
+    return showsBarPercent(item) ? `${bar} ${formatPercent(percent, format)}` : bar;
 }
 
 export function getContextSliderModifierText(item: WidgetItem): string | undefined {
