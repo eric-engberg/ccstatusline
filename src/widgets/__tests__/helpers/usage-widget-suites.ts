@@ -229,11 +229,13 @@ export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike>(conf
         const second = widget.handleEditorAction('toggle-progress', first ?? config.baseItem);
         const third = widget.handleEditorAction('toggle-progress', second ?? config.baseItem);
         const fourth = widget.handleEditorAction('toggle-progress', third ?? config.baseItem);
+        const fifth = widget.handleEditorAction('toggle-progress', fourth ?? config.baseItem);
 
         expect(first?.metadata).toEqual({ display: 'progress' });
         expect(second?.metadata).toEqual({ display: 'slider', barWidth: 'long' });
-        expect(third?.metadata).toEqual({ display: 'glyph', barWidth: 'long' });
-        expect(fourth?.metadata).toEqual({ display: 'time', barWidth: 'long' });
+        expect(third?.metadata).toEqual({ display: 'line', barWidth: 'long' });
+        expect(fourth?.metadata).toEqual({ display: 'glyph', barWidth: 'long' });
+        expect(fifth?.metadata).toEqual({ display: 'time', barWidth: 'long' });
     });
 
     // What's left would flip the levels, so the glyph always measures what's used
@@ -322,7 +324,7 @@ export function runUsageTimerEditorSuite<TWidget extends UsageWidgetLike & { get
 
     it('clears invert metadata when cycling back to time mode', () => {
         const widget = config.createWidget();
-        const lastBarMode = config.supportsSliderMode ? 'slider-only' : 'progress-short';
+        const lastBarMode = 'line';
         const updated = widget.handleEditorAction('toggle-progress', {
             ...config.baseItem,
             metadata: {
@@ -346,12 +348,16 @@ export function runUsageTimerEditorSuite<TWidget extends UsageWidgetLike & { get
 
         if (config.supportsSliderMode) {
             const third = widget.handleEditorAction('toggle-progress', second ?? config.baseItem);
+            const fourth = widget.handleEditorAction('toggle-progress', third ?? config.baseItem);
 
             expect(second?.metadata?.display).toBe('slider');
             expect(second?.metadata?.barWidth).toBe('long');
-            expect(third?.metadata?.display).toBe('time');
+            expect(third?.metadata?.display).toBe('line');
+            expect(fourth?.metadata?.display).toBe('time');
         } else {
-            expect(second?.metadata?.display).toBe('time');
+            const third = widget.handleEditorAction('toggle-progress', second ?? config.baseItem);
+            expect(second?.metadata?.display).toBe('line');
+            expect(third?.metadata?.display).toBe('time');
         }
     });
 

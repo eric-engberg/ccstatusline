@@ -140,16 +140,18 @@ describe('ContextPercentageWidget', () => {
         const base: WidgetItem = { id: 'ctx', type: 'context-percentage' };
 
         const slider = widget.handleEditorAction('toggle-slider', base);
-        const glyph = widget.handleEditorAction('toggle-slider', slider ?? base);
+        const line = widget.handleEditorAction('toggle-slider', slider ?? base);
+        const glyph = widget.handleEditorAction('toggle-slider', line ?? base);
         const text = widget.handleEditorAction('toggle-slider', glyph ?? base);
         const again = widget.handleEditorAction('toggle-slider', text ?? base);
 
         expect(slider?.metadata).toEqual({ display: 'slider' });
+        expect(line?.metadata).toEqual({ display: 'line', barWidth: 'short' });
         expect(glyph?.metadata).toEqual({ display: 'glyph', barWidth: 'short' });
         expect(text?.metadata).toEqual({ barWidth: 'short' });
         expect(again?.metadata).toEqual({ display: 'slider' });
         expect(widget.handleEditorAction('toggle-slider', { ...base, metadata: { display: 'slider-only' } })?.metadata)
-            .toEqual({ display: 'glyph', barWidth: 'short', barNumbers: 'none' });
+            .toEqual({ display: 'line', barWidth: 'short', barNumbers: 'none' });
     });
 
     describe('level glyph', () => {

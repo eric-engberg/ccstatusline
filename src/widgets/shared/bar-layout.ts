@@ -13,13 +13,13 @@ import {
 } from './bar-width';
 import { removeMetadataKeys } from './metadata';
 
-// A widget's bar has a style (block "[███░░]" or slider "▓▓▓░░"), a size (see
-// bar-width.ts) and the numbers after it, some or all of which can be turned
-// off. They are stored in the display modes saved configs already use: block
-// bars as 'progress' (long) or 'progress-short', sliders as 'slider', with
-// barWidth only for a size the display mode doesn't already mean. The older
-// 'slider-only' mode reads as a slider with its numbers off.
-export type BarStyle = 'block' | 'slider';
+// A widget's bar has a style (block "[███░░]", line "━━━──" or slider "▓▓▓░░"),
+// a size (see bar-width.ts) and the numbers after it, some or all of which can
+// be turned off. They are stored in the display modes saved configs already use:
+// block bars as 'progress' (long) or 'progress-short', lines as 'line', sliders
+// as 'slider', with barWidth only for a size the display mode doesn't already
+// mean. The older 'slider-only' mode reads as a slider with its numbers off.
+export type BarStyle = 'block' | 'line' | 'slider';
 
 // Which numbers follow the bar: a percent, and on the Context Bar token counts
 export type BarNumbers = 'all' | 'percent' | 'counts' | 'none';
@@ -43,6 +43,9 @@ export function getBarStyle(item: WidgetItem): BarStyle | null {
     const display = item.metadata?.display;
     if (display === 'progress' || display === 'progress-short') {
         return 'block';
+    }
+    if (display === 'line') {
+        return 'line';
     }
     return display === 'slider' || display === 'slider-only' ? 'slider' : null;
 }
@@ -83,7 +86,7 @@ function getBlockDisplay(item: WidgetItem, size: BarSize): string {
 }
 
 function writeBarLayout(item: WidgetItem, style: BarStyle, size: BarSize, numbers: BarNumbers): WidgetItem {
-    const display = style === 'block' ? getBlockDisplay(item, size) : 'slider';
+    const display = style === 'block' ? getBlockDisplay(item, size) : style;
     const barWidth = getBarSizeMetadata(size, getImpliedBarSize({ ...item, metadata: { display } }));
     const cleared = removeMetadataKeys(item, ['barWidth', BAR_NUMBERS_KEY, BAR_ONLY_KEY]);
     return {
