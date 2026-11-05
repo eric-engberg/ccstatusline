@@ -17,9 +17,13 @@ import {
     removeMetadataKeys,
     toggleMetadataFlag
 } from './metadata';
-import { makeTimerProgressBar } from './progress-bar';
+import type { TimerProgressBarOptions } from './progress-bar';
+import {
+    makeLineProgressBar,
+    makeTimerProgressBar
+} from './progress-bar';
 
-export type UsageDisplayMode = 'time' | 'progress' | 'progress-short' | 'slider' | 'slider-only';
+export type UsageDisplayMode = 'time' | 'progress' | 'progress-short' | 'slider' | 'slider-only' | 'line';
 
 // Shared by the usage percentage widgets and the reset timers, which render the
 // same error placeholders
@@ -59,14 +63,14 @@ const LOCALE_KEYBIND: CustomKeybind = { key: 'l', label: '(l)ocale', action: 'ed
 
 export function getUsageDisplayMode(item: WidgetItem): UsageDisplayMode {
     const mode = item.metadata?.display;
-    if (mode === 'progress' || mode === 'progress-short' || mode === 'slider' || mode === 'slider-only') {
+    if (mode === 'progress' || mode === 'progress-short' || mode === 'slider' || mode === 'slider-only' || mode === 'line') {
         return mode;
     }
     return 'time';
 }
 
 export function isUsageProgressMode(mode: UsageDisplayMode): boolean {
-    return mode === 'progress' || mode === 'progress-short';
+    return mode === 'progress' || mode === 'progress-short' || mode === 'line';
 }
 
 export function isUsageSliderMode(mode: UsageDisplayMode): boolean {
@@ -75,8 +79,9 @@ export function isUsageSliderMode(mode: UsageDisplayMode): boolean {
 
 interface SliderBarOptions { cursorPercent?: number }
 
-// The bar modes' text: "[████░░░░] 50.0%", "▓▓▓▓░░░░ 50.0%" or "▓▓▓▓░░░░". Null in
-// the other modes, without calling getCursor, which can be costly to resolve.
+// The bar modes' text: "[████░░░░] 50.0%", "━━━━──── 50.0%", "▓▓▓▓░░░░ 50.0%" or
+// "▓▓▓▓░░░░". Null in the other modes, without calling getCursor, which can be costly
+// to resolve.
 export function formatUsageBar(
     item: WidgetItem,
     percent: number,
@@ -85,8 +90,7 @@ export function formatUsageBar(
 ): string | null {
     const mode = getUsageDisplayMode(item);
     if (isUsageProgressMode(mode)) {
-        const progressBar = makeTimerProgressBar(percent, getUsageProgressBarWidth(mode), getCursor());
-        return `[${progressBar}] ${formatPercent(percent, format)}`;
+        return `${renderUsageProgressBar(percent, mode, getCursor())} ${formatPercent(percent, format)}`;
     }
     if (isUsageSliderMode(mode)) {
         const slider = makeSliderBar(percent, undefined, getCursor());
@@ -118,6 +122,14 @@ export function makeSliderBar(percent: number, width: number = SLIDER_WIDTH, opt
 
 export function getUsageProgressBarWidth(mode: UsageDisplayMode): number {
     return mode === 'progress' ? 32 : 16;
+}
+
+// Block modes keep their brackets; the thin line uses the same medium width.
+export function renderUsageProgressBar(percent: number, mode: UsageDisplayMode, options?: TimerProgressBarOptions): string {
+    const width = getUsageProgressBarWidth(mode);
+    return mode === 'line'
+        ? makeLineProgressBar(percent, width, options)
+        : `[${makeTimerProgressBar(percent, width, options)}]`;
 }
 
 export function isUsageInverted(item: WidgetItem): boolean {
@@ -248,6 +260,8 @@ export function getUsageDisplayModifierText(
         modifiers.push('short bar');
     } else if (mode === 'slider-only') {
         modifiers.push('short bar only');
+    } else if (mode === 'line') {
+        modifiers.push('line bar');
     }
 
     if (options.showUsageDirection) {
@@ -297,13 +311,17 @@ export function cycleUsageDisplayMode(item: WidgetItem, disabledInProgressKeys: 
                     ? 'slider'
                     : currentMode === 'slider'
                         ? 'slider-only'
-                        : 'time';
+                        : currentMode === 'slider-only'
+                            ? 'line'
+                            : 'time';
     } else {
         nextMode = currentMode === 'time'
             ? 'progress'
             : currentMode === 'progress'
                 ? 'progress-short'
-                : 'time';
+                : currentMode === 'progress-short'
+                    ? 'line'
+                    : 'time';
     }
 
     const keysToRemove = nextMode === 'time' ? (preserveInvertInTime ? ['cursor'] : ['invert', 'cursor']) : disabledInProgressKeys;

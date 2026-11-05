@@ -86,6 +86,8 @@ function getWeeklyResetModifierText(item: WidgetItem): string | undefined {
         modifiers.push('short bar');
     } else if (displayMode === 'slider-only') {
         modifiers.push('short bar only');
+    } else if (displayMode === 'line') {
+        modifiers.push('line bar');
     }
 
     if (isUsageInverted(item)) {
