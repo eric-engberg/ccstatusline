@@ -15,6 +15,7 @@ describe('formatUsageBar', () => {
         expect(formatUsageBar(item('progress-short'), 50, {})).toBe(`[${'█'.repeat(8)}${'░'.repeat(8)}] 50.0%`);
         expect(formatUsageBar(item('slider'), 50, {})).toBe(`${'▓'.repeat(5)}${'░'.repeat(5)} 50.0%`);
         expect(formatUsageBar(item('slider-only'), 50, {})).toBe(`${'▓'.repeat(5)}${'░'.repeat(5)}`);
+        expect(formatUsageBar(item('line'), 50, {})).toBe(`${'━'.repeat(8)}${'─'.repeat(8)} 50.0%`);
     });
 
     it('returns null outside the bar modes, without asking for the cursor', () => {
