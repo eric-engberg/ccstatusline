@@ -84,7 +84,7 @@ The exact live compaction threshold is not included in the status payload. This 
 
 ### Environment, Layout & Custom
 
-- **Current Working Dir** / **Terminal Width** / **Memory Usage** - Show the current working directory, detected terminal width, and system memory usage. Current Working Dir can prepend an optional custom glyph, including when raw-value mode replaces the `cwd:` label. When combining home abbreviation with a segment limit, `~` is preserved without counting toward that limit. Press `l` in its editor to cycle clickable links (`off` → file manager → VS Code → Cursor). The displayed path still honors home abbreviation, segment limits, and fish-style shortening, while the link always targets the original absolute directory. File-manager links use `file://` URLs on POSIX and Windows, including UNC shares; local terminals need OSC 8 hyperlink support.
+- **Current Working Dir** / **Terminal Width** / **Memory Usage** - Show the current working directory, detected terminal width, and system memory usage. Current Working Dir can prepend an optional custom glyph, including when raw-value mode replaces the `cwd:` label. When combining home abbreviation with a segment limit, `~` is preserved without counting toward that limit. Press `l` in its editor to cycle clickable links (`off` → file manager → VS Code → Cursor → Zed). The displayed path still honors home abbreviation, segment limits, and fish-style shortening, while the link always targets the original absolute directory. File-manager links use `file://` URLs on POSIX and Windows, including UNC shares; local terminals need OSC 8 hyperlink support.
 - **Custom Text** / **Custom Symbol** / **Custom Command** / **Link** - Add user-defined text, a single symbol or emoji, custom command output, or a clickable OSC 8 hyperlink.
 - **Separator** / **Flex Separator** - Add a manual divider or a width-filling flexible spacer. Manual separators stay saved but are hidden in Powerline mode, reappearing when it is disabled; flex separators still work there as layout spacers.
 
@@ -246,6 +246,8 @@ If the selected mode adds Custom Command shell commands that are not already in 
 
 If `settings.json` is unreadable or invalid, ccstatusline leaves the file unchanged, renders with built-in defaults for that run, and prepends an invalid-config warning badge to the status line. The TUI shows the same warning and asks for confirmation before either **Save & Exit** or `Ctrl+S` replaces the invalid file. Fix the JSON to preserve its contents, or confirm the save to replace it with the configuration currently shown in the TUI.
 
+When a `settings.json` from an older ccstatusline is upgraded to the current format, the original is first copied beside it as `settings.json.v<N>.bak`, where `<N>` is the format version it was upgraded from (for example `settings.json.v1.bak`), with the original's permissions. If that copy cannot be written, the file is left unchanged: the run uses the upgraded settings without saving them, and the next run tries the copy again, so the upgrade is saved once the folder is writable. Until then the TUI says so, and saving from it writes the copy first; if the copy still cannot be written, the save fails and the file stays as it was. An update message that comes with the upgrade waits until the upgrade is saved. A file without a `"version"` key is read as the original v1 format unless it also sets an option added after v1, such as `powerline`, `minimalistMode` or `gitCacheTtlSeconds`. Such a file loads as the current format and is not rewritten to add the version; if it is invalid, it gets the invalid-config warning and is left unchanged. Import Config reads these files the same way, so a merge applies every setting the file holds.
+
 Installation also stops if Claude Code's own `settings.json` cannot be read or parsed, leaving that file unchanged and showing the error. Correct the file before trying the installation again.
 
 On systems with POSIX file permissions, saving an existing ccstatusline settings file preserves restrictive permissions such as `0600`, including when saving through a symlink. Claude Code settings backups (`.bak` and `.orig`) are created with the source file's permissions, subject to the process umask.
@@ -318,26 +320,28 @@ Text editors use a blinking bar cursor so trailing spaces remain visible. Label 
 
 The keybind footer in the TUI only shows shortcuts that apply to the currently selected widget. Plain-letter shortcuts ignore Ctrl and Alt/Option modifiers, so combinations such as `Ctrl+S` do not also trigger the letter action.
 
+All bar widgets offer a 16-cell **line bar** mode using `━` for filled cells and `─` for empty cells, with no brackets and the widget's numeric values alongside it. It is the last mode before the `p` cycle returns to its starting mode. Fill inversion and time cursors remain available on widgets that support them. Existing modes retain their appearance.
+
 Widget-specific shortcuts:
 - **Remote Control Status**: `e` edits the label in `label-check` and `label-mark` formats when raw value is off. The override is shared by these two formats; Tab in the label editor restores `remote `.
 - **Glyph widgets** (Git Branch, Git Worktree, Git Worktree Mode, Git Staged, Git Unstaged, Git Untracked, Git Conflicts, Git Ahead/Behind, Git Status, Git Changes, Git Insertions, Git Deletions, Git Clean Status, Git Is Fork, JJ Revision, JJ Bookmarks, JJ Workspace, JJ Changes, JJ Insertions, JJ Deletions, Remote Control Status with Nerd Font icons): `g` set custom glyphs for the widget's symbols; Backspace in the editor renders without one, Shift+Tab toggles every symbol between none and default, and multi-symbol widgets (Ahead/Behind, Status, Conflicts, Changes, Clean Status, Remote Control Status on/off) edit each part in one list
 - **Git Branch**: `l` toggle clickable branch links (GitHub, GitLab, self-hosted), `f` toggle fish-style abbreviation, `w` set a maximum visible width (blank removes the limit)
 - **Git Worktree**: `f` toggle fish-style abbreviation
-- **Git Root Dir**: `l` cycle IDE links (`off` → `VS Code` → `Cursor`), `w` set a maximum visible width (blank removes the limit)
+- **Git Root Dir**: `l` cycle IDE links (`off` → `VS Code` → `Cursor` → `Zed`), `w` set a maximum visible width (blank removes the limit)
 - **Git PR**: `s` toggle review status, `t` toggle title (renders "MR" for GitLab origins)
 - **Git remote widgets** (`Git Origin*` / `Git Upstream*`): `l` toggle clickable repo links
 - **Git Origin Owner/Repo**: `o` show only the owner when the repo is a fork
 - **Git Conflicts**: `z` toggles how a visible conflict-free tree renders (`⚠0` or the clean glyph); `g` edits the conflict and clean glyphs
-- **Context % widgets**: `u` toggle used vs remaining display, `p` cycle percentage/short bar/short bar only, `g` cycle a bar gradient in bar modes (see Bar gradients)
+- **Context % widgets**: `u` toggle used vs remaining display, `p` cycle percentage/short bar/short bar only/line bar, `g` cycle a bar gradient in bar modes (see Bar gradients)
 - **Session Cost Rate**: `t` switch between active time (how long Claude spent working, the default) and clock time (the whole session)
-- **Block Usage / Weekly Usage / Weekly Sonnet Usage / Weekly Opus Usage / Weekly Fable Usage / Spend Limit Usage / Extra Usage Utilization**: `p` cycle percentage/full bar/medium bar/short bar/short bar only and `u` switch between used and remaining percentage in every display mode. The editor row labels the current direction as `used` or `remaining`, while the `u` helper names the direction it will switch to. Block and weekly usage widgets use `t` to toggle the time cursor in bar modes. In bar modes, `g` cycles a bar gradient (see Bar gradients).
+- **Block Usage / Weekly Usage / Weekly Sonnet Usage / Weekly Opus Usage / Weekly Fable Usage / Spend Limit Usage / Extra Usage Utilization**: `p` cycle percentage/full bar/medium bar/short bar/short bar only/line bar and `u` switch between used and remaining percentage in every display mode. The editor row labels the current direction as `used` or `remaining`, while the `u` helper names the direction it will switch to. Block and weekly usage widgets use `t` to toggle the time cursor in bar modes. In bar modes, `g` cycles a bar gradient (see Bar gradients).
 - **Extra Usage Daily Budget**: `w` toggle counting weekdays only (Saturday and Sunday, UTC, are skipped; today always counts)
 - **Block Forecast**: `u` switch between projected used and remaining percentage
 - **Block Limit Timer / Weekly Limit Timer / Weekly Fable Limit Timer**: `s` toggle compact time
-- **Block Timer**: `p` cycle time/full bar/short bar, `s` toggle compact time, `v` invert fill in progress mode, `g` cycle a bar gradient in bar modes (see Bar gradients)
-- **Block Reset Timer**: `p` cycle time/full bar/short bar, `s` toggle compact time/date, `t` toggle exact reset date/time, `f` toggle 12/24-hour display in date mode, `z` edit timezone in date mode, `l` edit locale in date mode, `v` invert fill in progress mode, `g` cycle a bar gradient in bar modes (see Bar gradients)
-- **Weekly Reset Timer**: `p` cycle time/full bar/short bar, `s` toggle compact time/date, `t` toggle exact reset date/time, `o` toggle hours-only in time mode, `f` toggle 12/24-hour display in date mode, `z` edit timezone in date mode, `l` edit locale in date mode, `v` invert fill in progress mode, `g` cycle a bar gradient in bar modes (see Bar gradients)
-- **Context Bar**: `p` cycle medium/full/short/short-only progress bar, `g` cycle a bar gradient (see Bar gradients)
+- **Block Timer**: `p` cycle time/full bar/medium bar/short bar/short bar only/line bar, `s` toggle compact time, `v` invert fill in progress mode, `g` cycle a bar gradient in bar modes (see Bar gradients)
+- **Block Reset Timer**: `p` cycle time/full bar/medium bar/short bar/short bar only/line bar, `s` toggle compact time/date, `t` toggle exact reset date/time, `f` toggle 12/24-hour display in date mode, `z` edit timezone in date mode, `l` edit locale in date mode, `v` invert fill in progress mode, `g` cycle a bar gradient in bar modes (see Bar gradients)
+- **Weekly Reset Timer**: `p` cycle time/full bar/medium bar/short bar/short bar only/line bar, `s` toggle compact time/date, `t` toggle exact reset date/time, `o` toggle hours-only in time mode, `f` toggle 12/24-hour display in date mode, `z` edit timezone in date mode, `l` edit locale in date mode, `v` invert fill in progress mode, `g` cycle a bar gradient in bar modes (see Bar gradients)
+- **Context Bar**: `p` cycle medium/full/short/short-only/line progress bar, `g` cycle a bar gradient (see Bar gradients)
 - **Bar gradients** (Context Bar, Context %, the Usage widgets, Extra Usage Utilization and the timers, in their bar modes): `g` cycles a gradient for the filled cells, colored by position from calm to urgent: off/traffic (green to red)/thermal (blue to red)/viridis/cividis/blue-orange/mono. Viridis, cividis, blue-orange and mono stay readable with red-green color blindness. When a bar fills with what is left (inverted or remaining), the gradient runs from the urgent end, so the color where the fill ends still shows how urgent things are. Gradients need the Truecolor color level (Terminal Options → Color Level), so `g` is offered only there; a gradient saved earlier renders plain at lower levels, and the line editor notes that it needs truecolor
 - **Compaction Counter**: `v` cycle value (count/auto/manual/unknown/reclaimed), `f` cycle format, `n` toggle Nerd Font icon in icon mode, `s` toggle trigger split (auto/manual/unknown), `t` toggle tokens reclaimed
 - **Cache widgets** (Cache Hit Rate, Cache Read, Cache Write): `t` toggle turn/session scope
@@ -346,7 +350,7 @@ Widget-specific shortcuts:
 - **Claude Status**: `h` toggle the 48-hour incident-history strip, `l` toggle the link to the status page
 - **Voice Status**: `f` cycle format, `n` toggle Nerd Font microphone icons
 - **Fast Mode**: `f` cycle format, `n` toggle Nerd Font lightning icons
-- **Current Working Dir**: `l` cycle links (`off` → file manager → VS Code → Cursor; off by default), `h` home abbreviation, `s` segment editor, `f` fish-style path, `g` optional leading glyph (off by default; pair with raw value to replace the `cwd:` label with the glyph)
+- **Current Working Dir**: `l` cycle links (`off` → file manager → VS Code → Cursor → Zed; off by default), `h` home abbreviation, `s` segment editor, `f` fish-style path, `g` optional leading glyph (off by default; pair with raw value to replace the `cwd:` label with the glyph)
 - **Skills**: `v` cycle view mode, `l` edit list limit in list mode
 - **Input Speed / Output Speed / Total Speed**: `w` edit the rolling window in seconds
 - **Custom Text / Custom Symbol**: `e` edit text or symbol
@@ -440,7 +444,7 @@ With caching enabled, both output and failure markers are reused until the TTL e
 
 > ⚠️ **Important:** Commands should complete quickly to avoid delays. Long-running commands are terminated at the configured timeout, and inherited output pipes cannot keep capture waiting indefinitely after that deadline. On Linux/macOS, timeout termination targets the command's process group; on Windows, it targets the shell process. If you're not seeing output from your custom command, try increasing the timeout value (press 't' in the editor).
 
-Rendered widget output filters terminal controls such as clipboard writes, title changes, cursor movement, and screen clearing. With **preserve colors** enabled, ANSI styling and OSC 8 hyperlinks remain supported, including their 8-bit control forms; the widget's background, bold and dim are restored after each reset in the command's output, in both plain and Powerline mode.
+Rendered widget output filters terminal controls such as clipboard writes, title changes, cursor movement, and screen clearing. Tabs print as single spaces. With **preserve colors** enabled, ANSI styling and OSC 8 hyperlinks remain supported, including their 8-bit control forms; the widget's background, bold and dim are restored after each reset in the command's output, in both plain and Powerline mode.
 
 Output capture is limited to 1 MiB; exceeding it displays `[Error]`. Successful output is limited to 16,384 characters before color handling and optional max-width truncation.
 

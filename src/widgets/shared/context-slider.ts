@@ -11,15 +11,16 @@ import {
     getGradientKeybinds,
     getGradientModifier
 } from './gradient-bar';
+import { makeLineProgressBar } from './progress-bar';
 import { makeSliderBar } from './usage-display';
 
-export type ContextSliderMode = 'none' | 'slider' | 'slider-only';
+export type ContextSliderMode = 'none' | 'slider' | 'slider-only' | 'line';
 
 const SLIDER_TOGGLE_KEYBIND: CustomKeybind = { key: 'p', label: '(p)rogress toggle', action: 'toggle-slider' };
 
 export function getContextSliderMode(item: WidgetItem): ContextSliderMode {
     const mode = item.metadata?.display;
-    if (mode === 'slider' || mode === 'slider-only') {
+    if (mode === 'slider' || mode === 'slider-only' || mode === 'line') {
         return mode;
     }
     return 'none';
@@ -31,7 +32,9 @@ export function cycleContextSliderMode(item: WidgetItem): WidgetItem {
         ? 'slider'
         : currentMode === 'slider'
             ? 'slider-only'
-            : 'none';
+            : currentMode === 'slider-only'
+                ? 'line'
+                : 'none';
 
     if (nextMode === 'none') {
         const nextMetadata = { ...(item.metadata ?? {}) };
@@ -55,6 +58,9 @@ export function renderContextSlider(mode: ContextSliderMode, percent: number, fo
     if (mode === 'none') {
         return null;
     }
+    if (mode === 'line') {
+        return `${makeLineProgressBar(percent)} ${formatPercent(percent, format)}`;
+    }
     const slider = makeSliderBar(percent);
     if (mode === 'slider') {
         return `${slider} ${formatPercent(percent, format)}`;
@@ -68,7 +74,7 @@ export function getContextSliderModifierText(item: WidgetItem): string | undefin
         return undefined;
     }
     const gradientModifier = getGradientModifier(item);
-    const barModifier = mode === 'slider' ? 'short bar' : 'short bar only';
+    const barModifier = mode === 'slider' ? 'short bar' : mode === 'slider-only' ? 'short bar only' : 'line bar';
     return gradientModifier ? `(${barModifier}, ${gradientModifier})` : `(${barModifier})`;
 }
 
