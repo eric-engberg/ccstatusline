@@ -8,6 +8,7 @@ import { formatPercent } from '../../utils/number-format';
 import {
     getBarLayoutModifiers,
     getBarNumbersKeybinds,
+    getBarStyle,
     keepBarLayout,
     setBarStyle,
     showsBarPercent
@@ -27,24 +28,29 @@ import {
     getLevelGlyphKeybinds,
     isLevelGlyphMode
 } from './level-glyph';
+import { makeLineProgressBar } from './progress-bar';
 import { makeSliderBar } from './usage-display';
 
-export type ContextSliderMode = 'none' | 'slider' | 'slider-only';
+export type ContextSliderMode = 'none' | 'slider' | 'slider-only' | 'line';
 
 const SLIDER_TOGGLE_KEYBIND: CustomKeybind = { key: 'p', label: '(p) bar style', action: 'toggle-slider' };
 
 export function getContextSliderMode(item: WidgetItem): ContextSliderMode {
     const mode = item.metadata?.display;
-    if (mode === 'slider' || mode === 'slider-only') {
+    if (mode === 'slider' || mode === 'slider-only' || mode === 'line') {
         return mode;
     }
     return 'none';
 }
 
-// (p) cycles the percentage, a slider and the level glyph. The slider keeps
-// the size it had through the other two.
+// (p) cycles the percentage, a slider, a line and the level glyph. The bar
+// keeps the size it had through the others.
 export function cycleContextSliderMode(item: WidgetItem): WidgetItem {
-    if (getContextSliderMode(item) !== 'none') {
+    const mode = getContextSliderMode(item);
+    if (mode !== 'none' && getBarStyle(item) !== 'line') {
+        return setBarStyle(item, 'line');
+    }
+    if (mode !== 'none') {
         const kept = keepBarLayout(item);
         return { ...kept, metadata: { ...kept.metadata, display: LEVEL_GLYPH_DISPLAY } };
     }
@@ -64,8 +70,9 @@ export function renderContextSlider(item: WidgetItem, percent: number, format: N
     if (getContextSliderMode(item) === 'none') {
         return null;
     }
-    const slider = makeSliderBar(percent, cells ?? getFixedBarCells(item));
-    return showsBarPercent(item) ? `${slider} ${formatPercent(percent, format)}` : slider;
+    const barCells = cells ?? getFixedBarCells(item);
+    const bar = getBarStyle(item) === 'line' ? makeLineProgressBar(percent, barCells) : makeSliderBar(percent, barCells);
+    return showsBarPercent(item) ? `${bar} ${formatPercent(percent, format)}` : bar;
 }
 
 export function getContextSliderModifierText(item: WidgetItem): string | undefined {

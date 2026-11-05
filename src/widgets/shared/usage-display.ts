@@ -40,9 +40,12 @@ import {
     removeMetadataKeys,
     toggleMetadataFlag
 } from './metadata';
-import { makeTimerProgressBar } from './progress-bar';
+import {
+    makeLineProgressBar,
+    makeTimerProgressBar
+} from './progress-bar';
 
-export type UsageDisplayMode = 'time' | 'progress' | 'progress-short' | 'slider' | 'slider-only';
+export type UsageDisplayMode = 'time' | 'progress' | 'progress-short' | 'slider' | 'slider-only' | 'line';
 
 // Shared by the usage percentage widgets and the reset timers, which render the
 // same error placeholders
@@ -82,14 +85,14 @@ const LOCALE_KEYBIND: CustomKeybind = { key: 'l', label: '(l)ocale', action: 'ed
 
 export function getUsageDisplayMode(item: WidgetItem): UsageDisplayMode {
     const mode = item.metadata?.display;
-    if (mode === 'progress' || mode === 'progress-short' || mode === 'slider' || mode === 'slider-only') {
+    if (mode === 'progress' || mode === 'progress-short' || mode === 'slider' || mode === 'slider-only' || mode === 'line') {
         return mode;
     }
     return 'time';
 }
 
 export function isUsageProgressMode(mode: UsageDisplayMode): boolean {
-    return mode === 'progress' || mode === 'progress-short';
+    return mode === 'progress' || mode === 'progress-short' || mode === 'line';
 }
 
 export function isUsageSliderMode(mode: UsageDisplayMode): boolean {
@@ -98,8 +101,8 @@ export function isUsageSliderMode(mode: UsageDisplayMode): boolean {
 
 interface SliderBarOptions { cursorPercent?: number }
 
-// The bar modes' text, e.g. "[████░░░░] 50.0%" or "▓▓▓▓░░░░", with the
-// widget's gradient, if any. Null in the text mode, without calling getCursor,
+// The bar modes' text, e.g. "[████░░░░] 50.0%", "━━━━────" or "▓▓▓▓░░░░", with
+// the widget's gradient, if any. Null in the text mode, without calling getCursor,
 // which can be costly to resolve.
 export function formatUsageBar(
     item: WidgetItem,
@@ -114,9 +117,12 @@ export function formatUsageBar(
         return null;
     }
     const cells = context.barCells ?? getFixedBarCells(item);
-    const bar = style === 'block'
-        ? `[${makeTimerProgressBar(percent, cells, getCursor())}]`
-        : makeSliderBar(percent, cells, getCursor());
+    let bar: string;
+    if (style === 'block') {
+        bar = `[${makeTimerProgressBar(percent, cells, getCursor())}]`;
+    } else {
+        bar = style === 'line' ? makeLineProgressBar(percent, cells, getCursor()) : makeSliderBar(percent, cells, getCursor());
+    }
     const text = showsBarPercent(item) ? `${bar} ${formatPercent(percent, format)}` : bar;
     return paintWidgetBar(text, item, settings, isUsageInverted(item));
 }
@@ -322,8 +328,8 @@ export function showsUsageBar(item: WidgetItem): boolean {
 }
 
 // (p) cycles the style, not the size, which is (b)'s: text, then a block bar
-// (long, the first time), then a slider, then text again
-// The percent widgets add the level glyph after the slider (includeGlyph). The
+// (long, the first time), then a slider, then a line, then text again
+// The percent widgets add the level glyph after the line (includeGlyph). The
 // others take a glyph carried over by a type change as the text it renders as.
 export function cycleUsageDisplayMode(item: WidgetItem, disabledInProgressKeys: string[] = [], includeSlider = false, preserveInvertInTime = false, includeGlyph = false): WidgetItem {
     const style = getBarStyle(item);
@@ -332,6 +338,9 @@ export function cycleUsageDisplayMode(item: WidgetItem, disabledInProgressKeys: 
     }
     if (style === 'block' && includeSlider) {
         return setBarStyle(item, 'slider');
+    }
+    if (style !== null && style !== 'line') {
+        return setBarStyle(item, 'line');
     }
 
     // Leaving the bar, its size and numbers setting are kept for when it comes back
