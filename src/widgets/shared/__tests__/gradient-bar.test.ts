@@ -84,6 +84,13 @@ describe('paintGradientBar', () => {
         expect(painted.startsWith(`${ESC}[38;2;0;200;80m▓`)).toBe(true);
         expect(painted.endsWith(`${ESC}[38;2;60;60;60m░░${DEFAULT_FG}`)).toBe(true);
     });
+
+    it('colors the line bar\'s cells too', () => {
+        const painted = paintGradientBar('━━──');
+        expect(stripAnsi(painted)).toBe('━━──');
+        expect(painted.startsWith(`${ESC}[38;2;0;200;80m━`)).toBe(true);
+        expect(painted.endsWith(`${ESC}[38;2;60;60;60m──${DEFAULT_FG}`)).toBe(true);
+    });
 });
 
 describe('the line editor\'s truecolor rule', () => {

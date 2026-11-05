@@ -27,7 +27,8 @@ import {
     getBarStyle,
     setBarStyle,
     showsBarCounts,
-    showsBarPercent
+    showsBarPercent,
+    type BarStyle
 } from './shared/bar-layout';
 import {
     getBarWidthKeybinds,
@@ -41,6 +42,7 @@ import {
     paintWidgetBar,
     paintsBarGradient
 } from './shared/gradient-bar';
+import { makeLineProgressBar } from './shared/progress-bar';
 import { makeSliderBar } from './shared/usage-display';
 import {
     LIMIT_SCALE,
@@ -85,7 +87,7 @@ export class ContextBarWidget implements Widget {
         };
     }
 
-    // (p) switches between a block bar and a slider, which keep their size
+    // (p) steps through a block bar, a slider and a line, which keep their size
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
         if (action === CYCLE_GRADIENT_ACTION) {
             return cycleGradientPreset(item);
@@ -94,7 +96,14 @@ export class ContextBarWidget implements Widget {
             return null;
         }
         const barItem = withBarDisplay(item);
-        return setBarStyle(barItem, getBarStyle(barItem) === 'block' ? 'slider' : 'block');
+        const style = getBarStyle(barItem);
+        let next: BarStyle = 'block';
+        if (style === 'block') {
+            next = 'slider';
+        } else if (style === 'slider') {
+            next = 'line';
+        }
+        return setBarStyle(barItem, next);
     }
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
@@ -131,7 +140,13 @@ export class ContextBarWidget implements Widget {
     private formatBar(item: WidgetItem, percent: number, counts: string, percentText: string, settings: Settings, context: RenderContext): string {
         const barItem = withBarDisplay(item);
         const cells = context.barCells ?? getFixedBarCells(barItem);
-        const bar = getBarStyle(barItem) === 'slider' ? makeSliderBar(percent, cells) : makeUsageProgressBar(percent, cells);
+        const style = getBarStyle(barItem);
+        let bar: string;
+        if (style === 'slider') {
+            bar = makeSliderBar(percent, cells);
+        } else {
+            bar = style === 'line' ? makeLineProgressBar(percent, cells) : makeUsageProgressBar(percent, cells);
+        }
         const showsCounts = showsBarCounts(barItem);
         const showsPercent = showsBarPercent(barItem);
         let numbers = showsCounts ? counts : percentText;

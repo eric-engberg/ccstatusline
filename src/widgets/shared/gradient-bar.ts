@@ -52,8 +52,9 @@ export function isBarGradientPreset(value: string | undefined): value is BarGrad
 }
 
 const EMPTY_CELL_CODE = '\x1b[38;2;60;60;60m';
-const FILLED_CELLS = new Set(['█', '▓']);
-const EMPTY_CELLS = new Set(['░']);
+// The block bars' cells, and the line bar's
+const FILLED_CELLS = new Set(['█', '▓', '━']);
+const EMPTY_CELLS = new Set(['░', '─']);
 // The usage widgets' time cursor takes a cell's place but keeps the widget color
 const CURSOR_CELLS = new Set(['│']);
 const DEFAULT_FOREGROUND = '\x1b[39m';
