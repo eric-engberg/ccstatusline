@@ -59,30 +59,28 @@ export function cycleWidgetDim(widgets: WidgetItem[], widgetId: string): WidgetI
     });
 }
 
-export function resetWidgetStyling(widgets: WidgetItem[], widgetId: string): WidgetItem[] {
-    return updateWidgetById(widgets, widgetId, (widget) => {
-        const {
-            color,
-            backgroundColor,
-            bold,
-            dim,
-            ...restWidget
-        } = widget;
+// A widget without its colors, bold and dim. keepBackground keeps its
+// background, which a plain line under Powerline neither shows nor edits.
+function withoutStyling(widget: WidgetItem, keepBackground: boolean): WidgetItem {
+    const {
+        color,
+        bold,
+        dim,
+        ...restWidget
+    } = widget;
+    if (keepBackground) {
         return restWidget;
-    });
+    }
+    const { backgroundColor, ...unstyledWidget } = restWidget;
+    return unstyledWidget;
 }
 
-export function clearAllWidgetStyling(widgets: WidgetItem[]): WidgetItem[] {
-    return widgets.map((widget) => {
-        const {
-            color,
-            backgroundColor,
-            bold,
-            dim,
-            ...restWidget
-        } = widget;
-        return restWidget;
-    });
+export function resetWidgetStyling(widgets: WidgetItem[], widgetId: string, keepBackground = false): WidgetItem[] {
+    return updateWidgetById(widgets, widgetId, widget => withoutStyling(widget, keepBackground));
+}
+
+export function clearAllWidgetStyling(widgets: WidgetItem[], keepBackground = false): WidgetItem[] {
+    return widgets.map(widget => withoutStyling(widget, keepBackground));
 }
 
 function getDefaultForegroundColor(widget: WidgetItem): string {
