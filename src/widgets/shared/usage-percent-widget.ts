@@ -48,7 +48,6 @@ import {
     getUsagePercentCustomKeybinds,
     isUsageCursorEnabled,
     isUsageInverted,
-    showsPlainUsageValue,
     showsUsageBar,
     toggleUsageCursor,
     toggleUsageInverted
@@ -171,12 +170,10 @@ function renderUsageDisplay(
     if (isLevelGlyphMode(item)) {
         return formatRawOrLabeledValue(item, label, getLevelGlyph(item, usedPercent));
     }
+    // Value colors give a bar, and the percent after it, its level's color
     const bar = formatUsageBar(item, percent, format, settings, context, getCursorOptions);
-    if (bar !== null) {
-        return formatRawOrLabeledValue(item, label, bar);
-    }
     const formatOptions = getValueFormatOptions(settings);
-    return formatColoredValue(item, label, formatPercent(percent, format), usedPercent, LIMIT_SCALE, formatOptions);
+    return formatColoredValue(item, label, bar ?? formatPercent(percent, format), usedPercent, LIMIT_SCALE, formatOptions);
 }
 
 export function getUsagePercentWidgetDisplayName(kind: UsagePercentWidgetKind): string {
@@ -198,7 +195,7 @@ export function getUsagePercentWidgetEditorDisplay(kind: UsagePercentWidgetKind,
             includeGlyph: true,
             showUsageDirection: true,
             includeCursor: true,
-            extraModifiers: [showsPlainUsageValue(item) ? getValueColorsModifier(item) : null].filter((modifier): modifier is string => modifier !== null)
+            extraModifiers: [getValueColorsModifier(item)].filter((modifier): modifier is string => modifier !== null)
         })
     };
 }
@@ -301,7 +298,7 @@ export class UsagePercentWidget implements Widget {
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
-        return withValueColorsKeybind(getUsagePercentCustomKeybinds(item, hasUsageWindow(this.kind)), item === undefined || showsPlainUsageValue(item));
+        return withValueColorsKeybind(getUsagePercentCustomKeybinds(item, hasUsageWindow(this.kind)), item === undefined || !isLevelGlyphMode(item));
     }
 
     // The level glyph mode's glyph and break point editors, or value colors,
@@ -319,11 +316,11 @@ export class UsagePercentWidget implements Widget {
         });
     }
 
-    // Value colors paint only the value (or the whole text), and a gradient
+    // Value colors paint only the value or bar (or the whole text), and a gradient
     // preset only the bar, so the renderer colors the rest with the theme
     // or widget color
     colorsOnlyItsRuns(item: WidgetItem): boolean {
-        return (isValueColorsEnabled(item) && showsPlainUsageValue(item)) || paintsBarGradient(item, showsUsageBar(item));
+        return (isValueColorsEnabled(item) && !isLevelGlyphMode(item)) || paintsBarGradient(item, showsUsageBar(item));
     }
 
     supportsRawValue(): boolean { return true; }

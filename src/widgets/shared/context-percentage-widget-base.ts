@@ -48,11 +48,6 @@ import {
     withValueColorsKeybind
 } from './value-colors-editor';
 
-// The plain percent: neither the slider nor the level glyph, so value colors apply
-function showsPlainPercent(item: WidgetItem): boolean {
-    return getContextSliderMode(item) === 'none' && !isLevelGlyphMode(item);
-}
-
 // Context % and Context % (usable) differ only in their name, color, label, preview
 // sample and how they measure the used share of the context window
 export abstract class ContextPercentageWidgetBase implements Widget {
@@ -80,7 +75,7 @@ export abstract class ContextPercentageWidgetBase implements Widget {
         const modifiers = [
             isLevelGlyphMode(item) ? undefined : getContextInverseModifierText(item),
             getContextSliderModifierText(item),
-            showsPlainPercent(item) ? getValueColorsModifier(item) ?? undefined : undefined
+            isLevelGlyphMode(item) ? undefined : getValueColorsModifier(item) ?? undefined
         ].filter((m): m is string => m !== undefined);
 
         return {
@@ -107,12 +102,11 @@ export abstract class ContextPercentageWidgetBase implements Widget {
         const displayPercentage = isInverse ? 100 - usedPercentage : usedPercentage;
         const format = resolveNumberFormat('percent', item, settings);
         const slider = renderContextSlider(item, displayPercentage, format, context.barCells);
-        if (slider !== null) {
-            return formatRawOrLabeledValue(item, this.getLabelPrefix(item), paintWidgetBar(slider, item, settings, isInverse));
-        }
-        // Value colors follow the used percent, even while the widget shows what's left
+        const shown = slider === null ? formatPercent(displayPercentage, format) : paintWidgetBar(slider, item, settings, isInverse);
+        // Value colors follow the used percent, even while the widget shows
+        // what's left, and give a slider, and the percent after it, its level's color
         const formatOptions = getValueFormatOptions(settings);
-        return formatColoredValue(item, this.getLabelPrefix(item), formatPercent(displayPercentage, format), usedPercentage, LIMIT_SCALE, formatOptions);
+        return formatColoredValue(item, this.getLabelPrefix(item), shown, usedPercentage, LIMIT_SCALE, formatOptions);
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
@@ -122,7 +116,7 @@ export abstract class ContextPercentageWidgetBase implements Widget {
         return withValueColorsKeybind([
             { key: 'u', label: '(u)sed/remaining', action: 'toggle-inverse' },
             ...getContextSliderKeybinds(item)
-        ], item === undefined || showsPlainPercent(item));
+        ], item === undefined || !isLevelGlyphMode(item));
     }
 
     // The level glyph mode's glyph and break point editors, or value colors,
@@ -140,11 +134,11 @@ export abstract class ContextPercentageWidgetBase implements Widget {
         });
     }
 
-    // Value colors paint only the value (or the whole text), and a gradient
+    // Value colors paint only the value or slider (or the whole text), and a gradient
     // preset only the slider, so the renderer colors the rest with the theme
     // or widget color
     colorsOnlyItsRuns(item: WidgetItem): boolean {
-        return (isValueColorsEnabled(item) && showsPlainPercent(item)) || paintsBarGradient(item, getContextSliderMode(item) !== 'none');
+        return (isValueColorsEnabled(item) && !isLevelGlyphMode(item)) || paintsBarGradient(item, getContextSliderMode(item) !== 'none');
     }
 
     supportsRawValue(): boolean { return true; }
