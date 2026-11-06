@@ -225,6 +225,8 @@ describe('EffortColorsEditor', () => {
             await editor.ready();
             await editor.press(DOWN, DOWN, DOWN, 'x', '#ff8800\r');
             expect(editor.takeOutput()).toContain('(#RRGGBB or 0-255): #ff8800');
+            // The pasted line break doesn't set the color; Enter does
+            expect(editor.onComplete).not.toHaveBeenCalled();
             await editor.press(ENTER, ENTER);
             expect(editor.savedMetadata()?.['levelColor.xhigh']).toBe('hex:ff8800');
         } finally {
