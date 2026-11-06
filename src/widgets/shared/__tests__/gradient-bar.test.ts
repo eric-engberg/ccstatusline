@@ -120,6 +120,14 @@ describe('paintBarCells', () => {
         expect(painted.endsWith(`${ESC}[38;2;60;60;60m░░${DEFAULT_FG}`)).toBe(true);
     });
 
+    it('colors the line bar\'s cells too', () => {
+        const line: WidgetItem = { id: 'l', type: 'context-bar', metadata: { display: 'line', gradient: 'traffic' } };
+        const painted = drawWidgetBar(line, 50, 4, { ...DEFAULT_SETTINGS, colorLevel: 3 });
+        expect(stripAnsi(painted)).toBe('━━──');
+        expect(painted.startsWith(`${ESC}[38;2;0;200;80m━`)).toBe(true);
+        expect(painted.endsWith(`${ESC}[38;2;60;60;60m──${DEFAULT_FG}`)).toBe(true);
+    });
+
     // Which cells are filled comes from the bar's layout, so a bar that draws
     // both with the same character is painted the same way
     it('tells filled cells from empty ones without reading their characters', () => {

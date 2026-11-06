@@ -16,15 +16,15 @@ import {
     setMetadataValue
 } from './metadata';
 
-// A widget's bar has a style (block "[███░░]", slider "▓▓▓░░" or cells "▮▮▮▮▮"),
-// a size (see bar-width.ts) and the numbers after it, some or all of which can
-// be turned off. They are stored in the display modes saved configs already
-// use: block bars as 'progress' (long) or 'progress-short', sliders as 'slider',
-// with barWidth only for a size the display mode doesn't already mean. The
-// older 'slider-only' mode reads as a slider with its numbers off. Cell bars
-// are 'cells', with barCell naming any shape but the first; builds without
-// them show the widget's text instead.
-export type BarStyle = 'block' | 'slider' | 'cells';
+// A widget's bar has a style (block "[███░░]", slider "▓▓▓░░", line "━━━──" or
+// cells "▮▮▮▮▮"), a size (see bar-width.ts) and the numbers after it, some or
+// all of which can be turned off. They are stored in the display modes saved
+// configs already use: block bars as 'progress' (long) or 'progress-short',
+// sliders as 'slider', lines as 'line', with barWidth only for a size the
+// display mode doesn't already mean. The older 'slider-only' mode reads as a
+// slider with its numbers off. Cell bars are 'cells', with barCell naming any
+// shape but the first; builds without them show the widget's text instead.
+export type BarStyle = 'block' | 'slider' | 'line' | 'cells';
 
 // A cell bar draws its filled and empty cells with the same character, the
 // empty ones faint or dark gray
@@ -68,8 +68,8 @@ export function getBarStyle(item: WidgetItem): BarStyle | null {
     if (display === 'progress' || display === 'progress-short') {
         return 'block';
     }
-    if (display === 'cells') {
-        return 'cells';
+    if (display === 'line' || display === 'cells') {
+        return display;
     }
     return display === 'slider' || display === 'slider-only' ? 'slider' : null;
 }
@@ -168,7 +168,7 @@ function setBarCellShape(item: WidgetItem, shape: BarCellShape): WidgetItem {
     return writeBarLayout(item, 'cells', getBarSize(item), getBarNumbers(item), shape);
 }
 
-// (p)'s next bar style, keeping the size and numbers: block, slider, then
+// (p)'s next bar style, keeping the size and numbers: block, slider, line, then
 // each cell shape in turn. Null after the last one, or without a bar.
 export function stepBarStyle(item: WidgetItem): WidgetItem | null {
     const style = getBarStyle(item);
@@ -176,6 +176,9 @@ export function stepBarStyle(item: WidgetItem): WidgetItem | null {
         return setBarStyle(item, 'slider');
     }
     if (style === 'slider') {
+        return setBarStyle(item, 'line');
+    }
+    if (style === 'line') {
         return setBarStyle(item, 'cells');
     }
     const next = style === 'cells' ? BAR_CELL_SHAPES[BAR_CELL_SHAPES.indexOf(getBarCellShape(item)) + 1] : undefined;

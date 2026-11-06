@@ -166,7 +166,7 @@ describe('cell styles', () => {
     });
 
     // (p) steps through the styles; null after the last
-    it('steps from block to slider to each cell shape, keeping the size and numbers', () => {
+    it('steps from block to slider to line to each cell shape, keeping the size and numbers', () => {
         const block = item({ display: 'progress', barNumbers: 'none' });
         const steps = [block];
         for (let next = stepBarStyle(block); next; next = stepBarStyle(next)) {
@@ -176,6 +176,7 @@ describe('cell styles', () => {
         expect(steps.map(step => step.metadata)).toEqual([
             { display: 'progress', barNumbers: 'none' },
             { display: 'slider', barWidth: 'long', barNumbers: 'none' },
+            { display: 'line', barWidth: 'long', barNumbers: 'none' },
             { display: 'cells', barWidth: 'long', barNumbers: 'none' },
             { display: 'cells', barWidth: 'long', barNumbers: 'none', barCell: 'square' },
             { display: 'cells', barWidth: 'long', barNumbers: 'none', barCell: 'seven-eighths' },

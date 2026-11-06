@@ -135,23 +135,25 @@ describe('ContextPercentageWidget', () => {
 
     // The percentage and the glyph keep the bar's size and numbers setting
     // for (p) to bring back
-    it('cycles the percentage, a slider, the cell bars and the level glyph', () => {
+    it('cycles the percentage, a slider, a line, the cell bars and the level glyph', () => {
         const widget = new ContextPercentageWidget();
         const base: WidgetItem = { id: 'ctx', type: 'context-percentage' };
 
         const slider = widget.handleEditorAction('toggle-slider', base);
-        const cells = widget.handleEditorAction('toggle-slider', slider ?? base);
+        const line = widget.handleEditorAction('toggle-slider', slider ?? base);
+        const cells = widget.handleEditorAction('toggle-slider', line ?? base);
         const glyph = widget.handleEditorAction('toggle-slider', { ...base, metadata: { display: 'cells', barCell: 'parallelogram', barWidth: 'short' } });
         const text = widget.handleEditorAction('toggle-slider', glyph ?? base);
         const again = widget.handleEditorAction('toggle-slider', text ?? base);
 
         expect(slider?.metadata).toEqual({ display: 'slider' });
+        expect(line?.metadata).toEqual({ display: 'line', barWidth: 'short' });
         expect(cells?.metadata).toEqual({ display: 'cells', barWidth: 'short' });
         expect(glyph?.metadata).toEqual({ display: 'glyph', barWidth: 'short' });
         expect(text?.metadata).toEqual({ barWidth: 'short' });
         expect(again?.metadata).toEqual({ display: 'slider' });
         expect(widget.handleEditorAction('toggle-slider', { ...base, metadata: { display: 'slider-only' } })?.metadata)
-            .toEqual({ display: 'cells', barWidth: 'short', barNumbers: 'none' });
+            .toEqual({ display: 'line', barWidth: 'short', barNumbers: 'none' });
     });
 
     describe('level glyph', () => {

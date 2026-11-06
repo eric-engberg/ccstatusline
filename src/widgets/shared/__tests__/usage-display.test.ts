@@ -60,39 +60,45 @@ describe('cycleUsageDisplayMode with slider', () => {
         return seen;
     };
 
-    it('cycles the text, a block bar, a slider and the four cell styles when includeSlider is true', () => {
-        expect(cycle(base, 8)).toEqual(['progress', 'slider', 'cells', 'cells:square', 'cells:seven-eighths', 'cells:parallelogram', 'time', 'progress']);
+    it('cycles the text, a block bar, a slider, a line and the four cell styles when includeSlider is true', () => {
+        expect(cycle(base, 9)).toEqual(['progress', 'slider', 'line', 'cells', 'cells:square', 'cells:seven-eighths', 'cells:parallelogram', 'time', 'progress']);
     });
 
     it('puts the level glyph after the cell styles', () => {
-        expect(cycle(base, 8, true)).toEqual(['progress', 'slider', 'cells', 'cells:square', 'cells:seven-eighths', 'cells:parallelogram', 'glyph', 'time']);
+        expect(cycle(base, 9, true)).toEqual(['progress', 'slider', 'line', 'cells', 'cells:square', 'cells:seven-eighths', 'cells:parallelogram', 'glyph', 'time']);
     });
 
     it('skips the slider when includeSlider is false', () => {
         const first = cycleUsageDisplayMode(base);
         const second = cycleUsageDisplayMode(first);
+        const third = cycleUsageDisplayMode(second);
 
         expect(first.metadata?.display).toBe('progress');
-        expect(second.metadata?.display).toBe('time');
+        expect(second.metadata?.display).toBe('line');
+        expect(third.metadata?.display).toBe('time');
     });
 
     // The size belongs to (b): switching style keeps it, and so does the text mode
     it('keeps the bar\'s size through the styles and back from the text', () => {
         const medium: WidgetItem = { ...base, metadata: { display: 'progress-short' } };
         const slider = cycleUsageDisplayMode(medium, [], true);
-        const cells = cycleUsageDisplayMode(slider, [], true);
+        const line = cycleUsageDisplayMode(slider, [], true);
+        const cells = cycleUsageDisplayMode(line, [], true);
         const lastCells: WidgetItem = { ...base, metadata: { display: 'cells', barCell: 'parallelogram' } };
         const text = cycleUsageDisplayMode(lastCells, [], true);
         const block = cycleUsageDisplayMode(text, [], true);
 
         expect(slider.metadata).toEqual({ display: 'slider', barWidth: 'medium' });
+        expect(line.metadata).toEqual({ display: 'line' });
         expect(cells.metadata).toEqual({ display: 'cells' });
         expect(text.metadata).toEqual({ display: 'time', barWidth: 'medium' });
         expect(block.metadata).toEqual({ display: 'progress-short' });
     });
 
-    it('keeps a short bar only setting\'s size and numbers through the cell styles and the text', () => {
-        const cells = cycleUsageDisplayMode({ ...base, metadata: { display: 'slider-only' } }, [], true);
+    it('keeps a short bar only setting\'s size and numbers through the line, the cell styles and the text', () => {
+        const line = cycleUsageDisplayMode({ ...base, metadata: { display: 'slider-only' } }, [], true);
+        expect(line.metadata).toEqual({ display: 'line', barWidth: 'short', barNumbers: 'none' });
+        const cells = cycleUsageDisplayMode(line, [], true);
         expect(cells.metadata).toEqual({ display: 'cells', barWidth: 'short', barNumbers: 'none' });
         const text = cycleUsageDisplayMode({ ...cells, metadata: { ...cells.metadata, barCell: 'parallelogram' } }, [], true);
         expect(text.metadata).toEqual({ display: 'time', barWidth: 'short', barNumbers: 'none' });
@@ -107,14 +113,14 @@ describe('cycleUsageDisplayMode with slider', () => {
         };
         const steps: WidgetItem[] = [];
         let current = cursorBase;
-        for (let i = 0; i < 7; i++) {
+        for (let i = 0; i < 8; i++) {
             current = cycleUsageDisplayMode(current, [], true);
             steps.push(current);
         }
 
-        expect(steps.slice(0, 6).map(step => step.metadata?.cursor)).toEqual(['true', 'true', 'true', 'true', 'true', 'true']);
-        expect(steps[6]?.metadata?.display).toBe('time');
-        expect(steps[6]?.metadata?.cursor).toBeUndefined();
+        expect(steps.slice(0, 7).map(step => step.metadata?.cursor)).toEqual(['true', 'true', 'true', 'true', 'true', 'true', 'true']);
+        expect(steps[7]?.metadata?.display).toBe('time');
+        expect(steps[7]?.metadata?.cursor).toBeUndefined();
     });
 });
 

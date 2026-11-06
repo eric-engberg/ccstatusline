@@ -44,7 +44,7 @@ import {
 } from './metadata';
 import { layoutBar } from './progress-bar';
 
-export type UsageDisplayMode = 'time' | 'progress' | 'progress-short' | 'slider' | 'slider-only' | 'cells';
+export type UsageDisplayMode = 'time' | 'progress' | 'progress-short' | 'slider' | 'slider-only' | 'line' | 'cells';
 
 // Shared by the usage percentage widgets and the reset timers, which render the
 // same error placeholders
@@ -84,14 +84,14 @@ const LOCALE_KEYBIND: CustomKeybind = { key: 'l', label: '(l)ocale', action: 'ed
 
 export function getUsageDisplayMode(item: WidgetItem): UsageDisplayMode {
     const mode = item.metadata?.display;
-    if (mode === 'progress' || mode === 'progress-short' || mode === 'slider' || mode === 'slider-only' || mode === 'cells') {
+    if (mode === 'progress' || mode === 'progress-short' || mode === 'slider' || mode === 'slider-only' || mode === 'line' || mode === 'cells') {
         return mode;
     }
     return 'time';
 }
 
 export function isUsageProgressMode(mode: UsageDisplayMode): boolean {
-    return mode === 'progress' || mode === 'progress-short';
+    return mode === 'progress' || mode === 'progress-short' || mode === 'line';
 }
 
 interface SliderBarOptions { cursorPercent?: number }
@@ -295,8 +295,8 @@ export function showsUsageBar(item: WidgetItem): boolean {
 }
 
 // (p) cycles the style, not the size, which is (b)'s: text, then a block bar
-// (long, the first time), then with includeSlider a slider and the cell bars
-// in each shape, then text again
+// (long, the first time), then with includeSlider a slider, a line and the cell
+// bars in each shape (a line alone without it), then text again
 // The percent widgets add the level glyph after the bars (includeGlyph). The
 // others take a glyph carried over by a type change as the text it renders as.
 export function cycleUsageDisplayMode(item: WidgetItem, disabledInProgressKeys: string[] = [], includeSlider = false, preserveInvertInTime = false, includeGlyph = false): WidgetItem {
@@ -304,7 +304,8 @@ export function cycleUsageDisplayMode(item: WidgetItem, disabledInProgressKeys: 
     if (style === null && !(includeGlyph && isLevelGlyphMode(item))) {
         return setBarStyle(removeMetadataKeys(item, disabledInProgressKeys), 'block', 'long');
     }
-    const nextStyle = includeSlider ? stepBarStyle(item) : null;
+    // Without the slider, a block bar goes on to a line and no further
+    const nextStyle = includeSlider ? stepBarStyle(item) : (style === 'block' ? setBarStyle(item, 'line') : null);
     if (nextStyle) {
         return nextStyle;
     }

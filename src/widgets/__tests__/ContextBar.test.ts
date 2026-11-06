@@ -188,20 +188,43 @@ describe('ContextBarWidget', () => {
         expect(widget.getEditorDisplay(item).modifierText).toBe('(block bar, medium, % only)');
     });
 
-    // (p) steps through a block bar, a slider and the cell bars, all the same size
-    it('steps through a block bar, a slider and the cell bars, keeping the size', () => {
+    // (p) steps through a block bar, a slider, a line and the cell bars, all the same size
+    it('steps through a block bar, a slider, a line and the cell bars, keeping the size', () => {
         const widget = new ContextBarWidget();
         const base: WidgetItem = { id: 'ctx', type: 'context-bar' };
 
         const slider = widget.handleEditorAction('toggle-progress', base);
-        const cells = widget.handleEditorAction('toggle-progress', slider ?? base);
+        const line = widget.handleEditorAction('toggle-progress', slider ?? base);
+        const cells = widget.handleEditorAction('toggle-progress', line ?? base);
         const block = widget.handleEditorAction('toggle-progress', { ...base, metadata: { display: 'cells', barCell: 'parallelogram' } });
 
         expect(slider?.metadata).toEqual({ display: 'slider', barWidth: 'medium' });
+        expect(line?.metadata).toEqual({ display: 'line' });
         expect(cells?.metadata).toEqual({ display: 'cells' });
         expect(block?.metadata).toEqual({ display: 'progress-short' });
         expect(widget.handleEditorAction('toggle-progress', { ...base, metadata: { display: 'slider-only' } })?.metadata)
-            .toEqual({ display: 'cells', barWidth: 'short', barNumbers: 'none' });
+            .toEqual({ display: 'line', barWidth: 'short', barNumbers: 'none' });
+    });
+
+    it('renders a thin line bar in line mode', () => {
+        const context: RenderContext = {
+            data: {
+                context_window: {
+                    context_window_size: 200000,
+                    current_usage: {
+                        input_tokens: 20000,
+                        output_tokens: 10000,
+                        cache_creation_input_tokens: 5000,
+                        cache_read_input_tokens: 5000
+                    }
+                }
+            }
+        };
+        const item: WidgetItem = { id: 'ctx', type: 'context-bar', metadata: { display: 'line' } };
+        const widget = new ContextBarWidget();
+
+        expect(widget.render(item, context, DEFAULT_SETTINGS)).toBe(`Context: ${'━'.repeat(2)}${'─'.repeat(14)} 30k/200k (15%)`);
+        expect(widget.getEditorDisplay(item).modifierText).toBe('(line bar, medium)');
     });
 
     it('formats context preview samples with the selected styles', () => {

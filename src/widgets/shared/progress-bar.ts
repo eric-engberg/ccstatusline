@@ -32,6 +32,7 @@ export function layoutBar(
 }
 
 const BLOCK_CELL_GLYPHS: Record<BarCell, string> = { filled: '█', empty: '░', cursor: '│' };
+const LINE_CELL_GLYPHS: Record<BarCell, string> = { filled: '━', empty: '─', cursor: '│' };
 
 export function makeTimerProgressBar(
     percent: number,
@@ -39,4 +40,8 @@ export function makeTimerProgressBar(
     options?: TimerProgressBarOptions
 ): string {
     return layoutBar(percent, width, options).map(cell => BLOCK_CELL_GLYPHS[cell]).join('');
+}
+
+export function makeLineProgressBar(percent: number, width = 16, options?: TimerProgressBarOptions): string {
+    return layoutBar(percent, width, options).map(cell => LINE_CELL_GLYPHS[cell]).join('');
 }

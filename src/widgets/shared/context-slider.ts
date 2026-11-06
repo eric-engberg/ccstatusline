@@ -33,13 +33,13 @@ import {
 } from './level-glyph';
 
 // The percentage, or a bar: a slider, or a cell bar in one of its shapes
-export type ContextSliderMode = 'none' | 'slider' | 'slider-only' | 'cells';
+export type ContextSliderMode = 'none' | 'slider' | 'slider-only' | 'line' | 'cells';
 
 const SLIDER_TOGGLE_KEYBIND: CustomKeybind = { key: 'p', label: '(p) bar style', action: 'toggle-slider' };
 
 export function getContextSliderMode(item: WidgetItem): ContextSliderMode {
     const mode = item.metadata?.display;
-    if (mode === 'slider' || mode === 'slider-only' || mode === 'cells') {
+    if (mode === 'slider' || mode === 'slider-only' || mode === 'line' || mode === 'cells') {
         return mode;
     }
     return 'none';

@@ -17,8 +17,12 @@ import {
 } from './gradient-bar';
 import { layoutBar } from './progress-bar';
 
-const BLOCK_GLYPHS: BarGlyphs = { filled: '█', empty: '░' };
-const SLIDER_GLYPHS: BarGlyphs = { filled: '▓', empty: '░' };
+// The glyphs of the styles that draw their filled and empty cells differently
+const STYLE_GLYPHS: Record<'block' | 'slider' | 'line', BarGlyphs> = {
+    block: { filled: '█', empty: '░' },
+    slider: { filled: '▓', empty: '░' },
+    line: { filled: '━', empty: '─' }
+};
 
 export interface DrawBarOptions {
     // Where the time cursor sits, as a percent of the bar
@@ -45,7 +49,7 @@ function getEmptyCellPaint(item: WidgetItem, settings: Settings): Pick<BarPaint,
     return item.dim === true ? {} : { faintEmpty: { bold: Boolean(settings.globalBold || item.bold) } };
 }
 
-// The widget's bar in its style, e.g. "[████░░░░]", "▓▓▓▓░░░░" or "▮▮▮▮▮▮▮▮",
+// The widget's bar in its style, e.g. "[████░░░░]", "▓▓▓▓░░░░", "━━━━────" or "▮▮▮▮▮▮▮▮",
 // with the given number of cells, the first percent of them filled, and
 // painted with the widget's gradient preset where the settings allow it. A cell
 // bar draws its filled and empty cells alike, so its empty ones are faint or gray.
@@ -57,6 +61,6 @@ export function drawWidgetBar(item: WidgetItem, percent: number, cellCount: numb
         const glyph = getBarCellGlyph(item);
         return paintBarCells(cells, { filled: glyph, empty: glyph }, { preset, reversed: options.reversed, ...getEmptyCellPaint(item, settings) });
     }
-    const bar = paintBarCells(cells, style === 'block' ? BLOCK_GLYPHS : SLIDER_GLYPHS, { preset, reversed: options.reversed });
+    const bar = paintBarCells(cells, STYLE_GLYPHS[style], { preset, reversed: options.reversed });
     return style === 'block' ? `[${bar}]` : bar;
 }

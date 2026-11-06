@@ -236,11 +236,11 @@ export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike & { g
     });
 
     // (p) cycles the style; the size, long the first time, stays with the bar
-    it('cycles the text, a block bar, a slider, the cell bars and the level glyph', () => {
+    it('cycles the text, a block bar, a slider, a line, the cell bars and the level glyph', () => {
         const widget = config.createWidget();
         const steps: WidgetItem[] = [];
         let item = config.baseItem;
-        for (let i = 0; i < 8; i++) {
+        for (let i = 0; i < 9; i++) {
             item = widget.handleEditorAction('toggle-progress', item) ?? item;
             steps.push(item);
         }
@@ -248,6 +248,7 @@ export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike & { g
         expect(steps.map(step => step.metadata)).toEqual([
             { display: 'progress' },
             { display: 'slider', barWidth: 'long' },
+            { display: 'line', barWidth: 'long' },
             { display: 'cells', barWidth: 'long' },
             { display: 'cells', barWidth: 'long', barCell: 'square' },
             { display: 'cells', barWidth: 'long', barCell: 'seven-eighths' },
@@ -496,11 +497,11 @@ export function runUsageTimerEditorSuite<TWidget extends UsageWidgetLike & { get
     });
 
     // (p) cycles the style; the size, long the first time, stays with the bar
-    it('cycles the time, a block bar, a slider and the cell bars', () => {
+    it('cycles the time, a block bar, a slider, a line and the cell bars', () => {
         const widget = config.createWidget();
         const steps: WidgetItem[] = [];
         let item = config.baseItem;
-        for (let i = 0; i < (config.supportsSliderMode ? 7 : 2); i++) {
+        for (let i = 0; i < (config.supportsSliderMode ? 8 : 3); i++) {
             item = widget.handleEditorAction('toggle-progress', item) ?? item;
             steps.push(item);
         }
@@ -508,18 +509,20 @@ export function runUsageTimerEditorSuite<TWidget extends UsageWidgetLike & { get
         expect(steps[0]?.metadata?.display).toBe('progress');
 
         if (config.supportsSliderMode) {
-            expect(steps.slice(1, 6).map(step => [step.metadata?.display, step.metadata?.barCell])).toEqual([
+            expect(steps.slice(1, 7).map(step => [step.metadata?.display, step.metadata?.barCell])).toEqual([
                 ['slider', undefined],
+                ['line', undefined],
                 ['cells', undefined],
                 ['cells', 'square'],
                 ['cells', 'seven-eighths'],
                 ['cells', 'parallelogram']
             ]);
             expect(steps[1]?.metadata?.barWidth).toBe('long');
-            expect(steps[5]?.metadata?.barWidth).toBe('long');
-            expect(steps[6]?.metadata?.display).toBe('time');
+            expect(steps[6]?.metadata?.barWidth).toBe('long');
+            expect(steps[7]?.metadata?.display).toBe('time');
         } else {
-            expect(steps[1]?.metadata?.display).toBe('time');
+            expect(steps[1]?.metadata?.display).toBe('line');
+            expect(steps[2]?.metadata?.display).toBe('time');
         }
     });
 

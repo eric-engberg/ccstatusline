@@ -99,10 +99,11 @@ describe('(p) through the cell styles', () => {
         'fable-weekly-usage',
         'spend-limit-usage',
         'extra-usage-utilization'
-    ])('%s goes text, block, slider, the four cell shapes, the level glyph, then text', (type) => {
-        expect(cycle(type, 9)).toEqual([
+    ])('%s goes text, block, slider, line, the four cell shapes, the level glyph, then text', (type) => {
+        expect(cycle(type, 10)).toEqual([
             { display: 'progress' },
             { display: 'slider', barWidth: 'long' },
+            { display: 'line', barWidth: 'long' },
             ...cellSteps({ barWidth: 'long' }),
             { display: 'glyph', barWidth: 'long' },
             { display: 'time', barWidth: 'long' },
@@ -110,28 +111,31 @@ describe('(p) through the cell styles', () => {
         ]);
     });
 
-    it.each(['block-timer', 'reset-timer', 'weekly-reset-timer'])('%s goes text, block, slider, the four cell shapes, then text', (type) => {
-        expect(cycle(type, 8)).toEqual([
+    it.each(['block-timer', 'reset-timer', 'weekly-reset-timer'])('%s goes text, block, slider, line, the four cell shapes, then text', (type) => {
+        expect(cycle(type, 9)).toEqual([
             { display: 'progress' },
             { display: 'slider', barWidth: 'long' },
+            { display: 'line', barWidth: 'long' },
             ...cellSteps({ barWidth: 'long' }),
             { display: 'time', barWidth: 'long' },
             { display: 'progress' }
         ]);
     });
 
-    // A medium block bar with no display mode saved; medium is a cell bar's own size
-    it('takes the Context Bar from block to slider, through the four cell shapes and back to block', () => {
-        expect(cycle('context-bar', 6)).toEqual([
+    // A medium block bar with no display mode saved; medium is a line's and a cell bar's own size
+    it('takes the Context Bar from block to slider, line, through the four cell shapes and back to block', () => {
+        expect(cycle('context-bar', 7)).toEqual([
             { display: 'slider', barWidth: 'medium' },
+            { display: 'line' },
             ...cellSteps({}),
             { display: 'progress-short' }
         ]);
     });
 
-    it.each(['context-percentage', 'context-percentage-usable'])('%s goes from the percentage to a slider, the four cell shapes, the level glyph and back', (type) => {
-        expect(cycle(type, 8)).toEqual([
+    it.each(['context-percentage', 'context-percentage-usable'])('%s goes from the percentage to a slider, a line, the four cell shapes, the level glyph and back', (type) => {
+        expect(cycle(type, 9)).toEqual([
             { display: 'slider' },
+            { display: 'line', barWidth: 'short' },
             ...cellSteps({ barWidth: 'short' }),
             { display: 'glyph', barWidth: 'short' },
             { barWidth: 'short' },
@@ -141,9 +145,11 @@ describe('(p) through the cell styles', () => {
 
     it('keeps the numbers setting, the time cursor and the gradient from shape to shape', () => {
         const start: WidgetItem = { id: 'w', type: 'session-usage', metadata: { display: 'slider', barNumbers: 'none', cursor: 'true', gradient: 'thermal', invert: 'true' } };
-        const cells = press('session-usage', start);
+        const line = press('session-usage', start);
+        const cells = press('session-usage', line);
         const square = press('session-usage', cells);
 
+        expect(line.metadata).toEqual({ display: 'line', barWidth: 'short', barNumbers: 'none', cursor: 'true', gradient: 'thermal', invert: 'true' });
         expect(cells.metadata).toEqual({ display: 'cells', barWidth: 'short', barNumbers: 'none', cursor: 'true', gradient: 'thermal', invert: 'true' });
         expect(square.metadata).toEqual({ ...cells.metadata, barCell: 'square' });
     });
