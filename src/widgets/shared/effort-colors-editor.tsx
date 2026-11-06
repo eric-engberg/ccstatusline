@@ -21,8 +21,8 @@ import {
     getColorDisplayName
 } from '../../utils/colors';
 import {
-    getPlainInput,
-    shouldInsertInput
+    getInsertableText,
+    getPlainInput
 } from '../../utils/input-guards';
 import {
     KNOWN_THINKING_EFFORTS,
@@ -135,6 +135,7 @@ export const EffortColorsEditor: React.FC<WidgetEditorProps> = ({ widget, onComp
 
     // Typing a custom color for the selected level
     const handleCustomInput = (text: string, input: string, key: Key) => {
+        const inserted = getInsertableText(input, key);
         if (key.escape) {
             closeCustomInput();
         } else if (key.return) {
@@ -147,8 +148,8 @@ export const EffortColorsEditor: React.FC<WidgetEditorProps> = ({ widget, onComp
             }
         } else if (key.backspace || key.delete) {
             setCustomInput(text.slice(0, -1));
-        } else if (shouldInsertInput(input, key)) {
-            setCustomInput(text + input);
+        } else if (inserted) {
+            setCustomInput(text + inserted);
             setCustomError(false);
         }
     };
