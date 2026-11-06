@@ -295,4 +295,30 @@ describe('SymbolSlotsEditor', () => {
             cleanupEditor(rendered);
         }
     });
+
+    // A glyph copied with its line ending arrives in the same input chunk
+    it('sets the selected slot to a pasted glyph', async () => {
+        const rendered = renderEditor({ id: 'git-status', type: 'git-status' });
+
+        try {
+            await waitFor(() => {
+                expect(rendered.stdout.getOutput()).toContain('Conflicts:');
+            });
+            rendered.stdin.write('✗\r');
+            await waitFor(() => {
+                expect(getPlainOutput(rendered.stdout.getOutput())).toContain('Conflicts: ✗');
+            });
+            // The pasted line break doesn't save the glyphs; Enter does
+            expect(rendered.onComplete).not.toHaveBeenCalled();
+            rendered.stdin.write('\r');
+            await waitFor(() => {
+                expect(rendered.onComplete).toHaveBeenCalledTimes(1);
+            });
+
+            const updated = rendered.onComplete.mock.calls[0]?.[0] as WidgetItem | undefined;
+            expect(updated?.metadata).toEqual({ symbolConflicts: '✗' });
+        } finally {
+            cleanupEditor(rendered);
+        }
+    });
 });

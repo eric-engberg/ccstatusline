@@ -1,5 +1,6 @@
 import { render } from 'ink';
 import { PassThrough } from 'node:stream';
+import stripAnsi from 'strip-ansi';
 import {
     describe,
     expect,
@@ -300,5 +301,55 @@ describe('LinkWidget', () => {
                 colors.restore();
             }
         });
+    });
+});
+
+describe('LinkWidget editor', () => {
+    // A URL copied with its line ending arrives in the same input chunk
+    it('inserts a pasted URL without its trailing line break', async () => {
+        const stdin = createMockStdin();
+        const stdout = createMockStdout();
+        const stderr = createMockStdout();
+        const onComplete = vi.fn();
+        const instance = render(
+            new LinkWidget().renderEditor({
+                widget: { id: 'link', type: 'link' },
+                onComplete,
+                onCancel: vi.fn(),
+                action: 'edit-url'
+            }),
+            {
+                stdin,
+                stdout,
+                stderr,
+                debug: true,
+                exitOnCtrlC: false,
+                patchConsole: false
+            }
+        );
+
+        try {
+            await waitFor(() => {
+                expect(stripAnsi(stdout.getOutput())).toContain('Enter URL (http/https):');
+            });
+
+            stdin.write('https://example.com/docs\n');
+            await waitFor(() => {
+                expect(stripAnsi(stdout.getOutput())).toContain('Enter URL (http/https): https://example.com/docs');
+            });
+            // The pasted line break doesn't save the link; Enter does
+            expect(onComplete).not.toHaveBeenCalled();
+            stdin.write('\r');
+            await waitFor(() => {
+                expect(onComplete).toHaveBeenCalledTimes(1);
+            });
+            expect(onComplete.mock.calls[0]?.[0]).toMatchObject({ metadata: { url: 'https://example.com/docs' } });
+        } finally {
+            instance.unmount();
+            instance.cleanup();
+            stdin.destroy();
+            stdout.destroy();
+            stderr.destroy();
+        }
     });
 });

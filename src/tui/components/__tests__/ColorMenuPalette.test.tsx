@@ -294,6 +294,37 @@ describe('ColorMenu 256-color grid', () => {
         }
     });
 
+    // A terminal paste reaches Ink as one input chunk, line break and all
+    it('jumps to a pasted color number without applying it on the line break', async () => {
+        const menu = renderMenu([orangeModel]);
+        try {
+            await menu.press('a', '45\r');
+            expect(menu.lastUpdate()?.[0]?.color).toBe('ansi256:45');
+            const screen = menu.latestScreen();
+            expect(screen).toContain(PICKER_TITLE);
+            expect(screen).toContain('ANSI 45  #00D7FF');
+        } finally {
+            menu.cleanup();
+        }
+    });
+
+    it('takes pasted digits whole while the number stays within 255', async () => {
+        const menu = renderMenu([orangeModel]);
+        try {
+            await menu.press('a', '2', '45');
+            expect(menu.lastUpdate()?.[0]?.color).toBe('ansi256:245');
+            // Past 255, they start a new number
+            await menu.press('99');
+            expect(menu.lastUpdate()?.[0]?.color).toBe('ansi256:99');
+            // A number past 255 isn't a color
+            await menu.pressIgnored('300');
+            expect(menu.lastUpdate()?.[0]?.color).toBe('ansi256:99');
+            expect(menu.latestScreen()).toContain('typed: 99');
+        } finally {
+            menu.cleanup();
+        }
+    });
+
     it('keeps the highlighted color on Enter', async () => {
         const menu = renderMenu([orangeModel]);
         try {

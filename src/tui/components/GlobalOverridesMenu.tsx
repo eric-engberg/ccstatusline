@@ -24,8 +24,9 @@ import {
 } from '../../utils/colors';
 import { GRADIENT_PRESET_NAMES } from '../../utils/gradient';
 import {
-    getPlainInput,
-    shouldInsertInput
+    getInsertableHexDigits,
+    getInsertableText,
+    getPlainInput
 } from '../../utils/input-guards';
 import { getNextNumberStyle } from '../../utils/number-format';
 import {
@@ -101,6 +102,7 @@ export const GlobalOverridesMenu: React.FC<GlobalOverridesMenuProps> = ({ settin
 
     useInput((input, key) => {
         const shortcut = getPlainInput(input, key);
+        const text = getInsertableText(input, key);
         if (editingPadding) {
             if (key.return) {
                 const updatedSettings = {
@@ -116,8 +118,8 @@ export const GlobalOverridesMenu: React.FC<GlobalOverridesMenuProps> = ({ settin
                 setPaddingInput(paddingInput.slice(0, -1));
             } else if (key.delete) {
                 // For simple text inputs without cursor, forward delete does nothing
-            } else if (shouldInsertInput(input, key)) {
-                setPaddingInput(paddingInput + input);
+            } else if (text) {
+                setPaddingInput(paddingInput + text);
             }
         } else if (editingSeparator) {
             if (key.return) {
@@ -145,8 +147,8 @@ export const GlobalOverridesMenu: React.FC<GlobalOverridesMenuProps> = ({ settin
                 setSeparatorInput(separatorInput.slice(0, -1));
             } else if (key.delete) {
                 // For simple text inputs without cursor, forward delete does nothing
-            } else if (shouldInsertInput(input, key)) {
-                setSeparatorInput(separatorInput + input);
+            } else if (text) {
+                setSeparatorInput(separatorInput + text);
             }
         } else if (confirmingSeparator) {
             // Skip input handling when confirmation is active - let ConfirmDialog handle it
@@ -183,10 +185,10 @@ export const GlobalOverridesMenu: React.FC<GlobalOverridesMenuProps> = ({ settin
                     }
                 } else if (key.backspace || key.delete) {
                     setGradientHexInput(gradientHexInput.slice(0, -1));
-                } else if (shouldInsertInput(input, key) && gradientHexInput.length < 6) {
-                    const upperInput = input.toUpperCase();
-                    if (/^[0-9A-F]$/.test(upperInput)) {
-                        setGradientHexInput(gradientHexInput + upperInput);
+                } else {
+                    const digits = getInsertableHexDigits(input, key, 6 - gradientHexInput.length);
+                    if (digits) {
+                        setGradientHexInput(gradientHexInput + digits);
                     }
                 }
                 return;

@@ -15,7 +15,7 @@ import type {
     WidgetItem
 } from '../types/Widget';
 import { renderOsc8Link } from '../utils/hyperlink';
-import { shouldInsertInput } from '../utils/input-guards';
+import { getInsertableText } from '../utils/input-guards';
 import { isSafeHyperlinkUrl } from '../utils/terminal-sanitize';
 
 import { BlinkingCursor } from './shared/BlinkingCursor';
@@ -164,6 +164,7 @@ const LinkEditor: React.FC<WidgetEditorProps> = ({ widget, onComplete, onCancel,
     };
 
     useInput((input, key) => {
+        const text = getInsertableText(input, key);
         if (key.return) {
             onComplete(buildMetadata(widget, urlInput, textInput));
         } else if (key.escape) {
@@ -182,9 +183,9 @@ const LinkEditor: React.FC<WidgetEditorProps> = ({ widget, onComplete, onCancel,
                 const value = activeValue.slice(0, activeCursor) + activeValue.slice(next);
                 updateActiveValue(value, activeCursor);
             }
-        } else if (shouldInsertInput(input, key)) {
-            const value = activeValue.slice(0, activeCursor) + input + activeValue.slice(activeCursor);
-            updateActiveValue(value, activeCursor + input.length);
+        } else if (text) {
+            const value = activeValue.slice(0, activeCursor) + text + activeValue.slice(activeCursor);
+            updateActiveValue(value, activeCursor + text.length);
         }
     });
 

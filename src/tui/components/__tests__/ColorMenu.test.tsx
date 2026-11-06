@@ -91,6 +91,7 @@ function renderColorMenu(widgets: WidgetItem[], settings: Settings = DEFAULT_SET
         onUpdate,
         onBack,
         latestFrame: () => stripAnsi(stdout.getOutput().split('Configure Colors').at(-1) ?? ''),
+        output: () => stripAnsi(stdout.getOutput()),
         cleanup: () => {
             instance.unmount();
             instance.cleanup();
@@ -236,6 +237,76 @@ describe('ColorMenu', () => {
                 expect(menu.onUpdate).toHaveBeenCalled();
             });
             expect(menu.onUpdate.mock.calls[0]?.[0]?.[0]).toMatchObject({ id: '1', bold: true });
+        } finally {
+            menu.cleanup();
+        }
+    });
+
+    // A terminal paste reaches Ink as one input chunk, not key by key
+    it('takes a hex color pasted with its #', async () => {
+        const menu = renderColorMenu([{ id: '1', type: 'model' }], { ...DEFAULT_SETTINGS, colorLevel: 3 });
+
+        try {
+            await waitFor(() => {
+                expect(menu.latestFrame()).toContain('▶  1: Model');
+            });
+            menu.stdin.write('h');
+            await waitFor(() => {
+                expect(menu.latestFrame()).toContain('Enter 6-digit hex color code');
+            });
+
+            menu.stdin.write('#FF8800');
+            await waitFor(() => {
+                expect(menu.latestFrame()).toMatch(/^#FF8800$/m);
+            });
+            menu.stdin.write('\r');
+            await waitFor(() => {
+                expect(menu.onUpdate).toHaveBeenCalledTimes(1);
+            });
+            expect(menu.onUpdate.mock.calls[0]?.[0]?.[0]).toMatchObject({ id: '1', color: 'hex:FF8800' });
+        } finally {
+            menu.cleanup();
+        }
+    });
+
+    it('takes pasted custom gradient stops', async () => {
+        const menu = renderColorMenu([{ id: '1', type: 'model' }], { ...DEFAULT_SETTINGS, colorLevel: 3 });
+
+        try {
+            await waitFor(() => {
+                expect(menu.latestFrame()).toContain('▶  1: Model');
+            });
+            menu.stdin.write('g');
+            await waitFor(() => {
+                expect(menu.output()).toContain('Select Gradient');
+            });
+            // Up wraps to the Custom entry at the bottom
+            menu.stdin.write('\x1B[A');
+            await waitFor(() => {
+                expect(menu.output()).toContain('▶ Custom (enter two hex stops)');
+            });
+            menu.stdin.write('\r');
+            await waitFor(() => {
+                expect(menu.output()).toContain('Enter START hex color');
+            });
+
+            menu.stdin.write('FF8800');
+            await waitFor(() => {
+                expect(menu.output()).toMatch(/^#FF8800$/m);
+            });
+            menu.stdin.write('\r');
+            await waitFor(() => {
+                expect(menu.output()).toContain('Enter END hex color');
+            });
+            menu.stdin.write('#0088ff');
+            await waitFor(() => {
+                expect(menu.output()).toMatch(/^#0088FF$/m);
+            });
+            menu.stdin.write('\r');
+            await waitFor(() => {
+                expect(menu.onUpdate).toHaveBeenCalledTimes(1);
+            });
+            expect(menu.onUpdate.mock.calls[0]?.[0]?.[0]).toMatchObject({ id: '1', color: 'gradient:FF8800-0088FF' });
         } finally {
             menu.cleanup();
         }
