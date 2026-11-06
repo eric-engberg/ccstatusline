@@ -13,6 +13,7 @@ import {
     type FontInstallResult,
     type PowerlineFontStatus
 } from '../../utils/powerline';
+import { isAnyLinePowerline } from '../../utils/powerline-lines';
 import {
     buildDisabledPowerlineSettings,
     buildEnabledPowerlineSettings
@@ -115,10 +116,13 @@ export function getFontInstallMessageColor(result: FontInstallResult): 'green' |
     return result.success ? 'green' : 'red';
 }
 
+// The options apply to Powerline lines, so they're offered while any line is
+// Powerline, including one switched on in Edit Lines with Powerline off
 export function buildPowerlineSetupMenuItems(
-    powerlineConfig: PowerlineConfig
+    powerlineConfig: PowerlineConfig,
+    powerlineInUse = powerlineConfig.enabled
 ): ListEntry<PowerlineMenuValue>[] {
-    const disabled = !powerlineConfig.enabled;
+    const disabled = !powerlineInUse;
 
     return [
         {
@@ -174,12 +178,14 @@ export const PowerlineSetup: React.FC<PowerlineSetupProps> = ({
     onClearMessage
 }) => {
     const powerlineConfig = settings.powerline;
+    const powerlineInUse = isAnyLinePowerline(settings);
     const [screen, setScreen] = useState<Screen>('menu');
     const [selectedMenuItem, setSelectedMenuItem] = useState(0);
     const [confirmingEnable, setConfirmingEnable] = useState(false);
     const [confirmingFontInstall, setConfirmingFontInstall] = useState(false);
 
-    const hasManualSeparatorItems = settings.lines.some(line => line.some(
+    // Separators only on the lines Powerline would apply to: a line set to plain still shows its own
+    const hasManualSeparatorItems = settings.lines.some((line, index) => powerlineConfig.lineEnabled?.[index] !== false && line.some(
         item => item.type === 'separator'
     ));
     const hasGlobalFgOverride = Boolean(settings.overrideForegroundColor && settings.overrideForegroundColor !== 'none');
@@ -213,7 +219,7 @@ export const PowerlineSetup: React.FC<PowerlineSetupProps> = ({
                 }
             } else if (shortcut === 'i' || shortcut === 'I') {
                 setConfirmingFontInstall(true);
-            } else if ((shortcut === 'a' || shortcut === 'A') && powerlineConfig.enabled) {
+            } else if ((shortcut === 'a' || shortcut === 'A') && powerlineInUse) {
                 onUpdate({
                     ...settings,
                     powerline: {
@@ -221,7 +227,7 @@ export const PowerlineSetup: React.FC<PowerlineSetupProps> = ({
                         autoAlign: !powerlineConfig.autoAlign
                     }
                 });
-            } else if ((shortcut === 'c' || shortcut === 'C') && powerlineConfig.enabled) {
+            } else if ((shortcut === 'c' || shortcut === 'C') && powerlineInUse) {
                 onUpdate({
                     ...settings,
                     powerline: {
@@ -421,7 +427,7 @@ export const PowerlineSetup: React.FC<PowerlineSetupProps> = ({
                         <Text dimColor> - Press (t) to toggle</Text>
                     </Box>
 
-                    {powerlineConfig.enabled && (
+                    {powerlineInUse && (
                         <>
                             <Box>
                                 <Text>  Align Widgets: </Text>
@@ -444,13 +450,18 @@ export const PowerlineSetup: React.FC<PowerlineSetupProps> = ({
                                     Powerline mode uses its own separator system
                                 </Text>
                                 <Text dimColor>
-                                    Continue Theme keeps the Powerline color sequence running across lines
+                                    Continue Theme keeps the Powerline color sequence running across Powerline lines
+                                </Text>
+                                <Text dimColor>
+                                    {powerlineConfig.enabled
+                                        ? 'Lines set to plain with (p) in Edit Lines stay plain'
+                                        : 'Lines set to Powerline with (p) in Edit Lines use these settings'}
                                 </Text>
                             </Box>
                         </>
                     )}
 
-                    {!powerlineConfig.enabled && (
+                    {!powerlineInUse && (
                         <Box marginTop={1}>
                             <Text dimColor>Enable Powerline mode to configure separators, caps, and themes.</Text>
                         </Box>
@@ -458,7 +469,7 @@ export const PowerlineSetup: React.FC<PowerlineSetupProps> = ({
 
                     <List
                         marginTop={1}
-                        items={buildPowerlineSetupMenuItems(powerlineConfig)}
+                        items={buildPowerlineSetupMenuItems(powerlineConfig, powerlineInUse)}
                         onSelect={(value) => {
                             if (value === 'back') {
                                 onBack();

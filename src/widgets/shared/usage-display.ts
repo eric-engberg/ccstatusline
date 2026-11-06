@@ -1,5 +1,6 @@
 import type { NumberFormat } from '../../types/NumberFormat';
 import type { RenderContext } from '../../types/RenderContext';
+import type { Settings } from '../../types/Settings';
 import type {
     CustomKeybind,
     HideableState,
@@ -11,13 +12,29 @@ import {
 } from '../../utils/locales';
 import { formatPercent } from '../../utils/number-format';
 
+import {
+    getBarLayoutModifiers,
+    getBarNumbersKeybinds,
+    getBarStyle,
+    keepBarLayout,
+    setBarStyle,
+    showsBarPercent
+} from './bar-layout';
+import {
+    getBarWidthKeybinds,
+    getFixedBarCells
+} from './bar-width';
 import { makeModifierText } from './editor-display';
+import {
+    getGradientKeybinds,
+    getGradientModifier,
+    paintWidgetBar
+} from './gradient-bar';
 import {
     isMetadataFlagEnabled,
     removeMetadataKeys,
     toggleMetadataFlag
 } from './metadata';
-import type { TimerProgressBarOptions } from './progress-bar';
 import {
     makeLineProgressBar,
     makeTimerProgressBar
@@ -48,7 +65,7 @@ export function isAtSessionLimit(context: RenderContext): boolean {
 
 const SLIDER_WIDTH = 10;
 
-const PROGRESS_TOGGLE_KEYBIND: CustomKeybind = { key: 'p', label: '(p)rogress toggle', action: 'toggle-progress' };
+const PROGRESS_TOGGLE_KEYBIND: CustomKeybind = { key: 'p', label: '(p) bar style', action: 'toggle-progress' };
 const INVERT_TOGGLE_KEYBIND: CustomKeybind = { key: 'v', label: 'in(v)ert fill', action: 'toggle-invert' };
 const COMPACT_TOGGLE_KEYBIND: CustomKeybind = { key: 's', label: '(s)hort time', action: 'toggle-compact' };
 const CURSOR_TOGGLE_KEYBIND: CustomKeybind = { key: 't', label: '(t)ime cursor', action: 'toggle-cursor' };
@@ -79,24 +96,30 @@ export function isUsageSliderMode(mode: UsageDisplayMode): boolean {
 
 interface SliderBarOptions { cursorPercent?: number }
 
-// The bar modes' text: "[████░░░░] 50.0%", "━━━━──── 50.0%", "▓▓▓▓░░░░ 50.0%" or
-// "▓▓▓▓░░░░". Null in the other modes, without calling getCursor, which can be costly
-// to resolve.
+// The bar modes' text, e.g. "[████░░░░] 50.0%", "━━━━────" or "▓▓▓▓░░░░", with
+// the widget's gradient, if any. Null in the text mode, without calling getCursor,
+// which can be costly to resolve.
 export function formatUsageBar(
     item: WidgetItem,
     percent: number,
     format: NumberFormat,
+    settings: Settings,
+    context: RenderContext,
     getCursor: () => SliderBarOptions | undefined = () => undefined
 ): string | null {
-    const mode = getUsageDisplayMode(item);
-    if (isUsageProgressMode(mode)) {
-        return `${renderUsageProgressBar(percent, mode, getCursor())} ${formatPercent(percent, format)}`;
+    const style = getBarStyle(item);
+    if (style === null) {
+        return null;
     }
-    if (isUsageSliderMode(mode)) {
-        const slider = makeSliderBar(percent, undefined, getCursor());
-        return mode === 'slider' ? `${slider} ${formatPercent(percent, format)}` : slider;
+    const cells = context.barCells ?? getFixedBarCells(item);
+    let bar: string;
+    if (style === 'block') {
+        bar = `[${makeTimerProgressBar(percent, cells, getCursor())}]`;
+    } else {
+        bar = style === 'line' ? makeLineProgressBar(percent, cells, getCursor()) : makeSliderBar(percent, cells, getCursor());
     }
-    return null;
+    const text = showsBarPercent(item) ? `${bar} ${formatPercent(percent, format)}` : bar;
+    return paintWidgetBar(text, item, settings, isUsageInverted(item));
 }
 
 export function makeSliderBar(percent: number, width: number = SLIDER_WIDTH, options?: SliderBarOptions): string {
@@ -118,18 +141,6 @@ export function makeSliderBar(percent: number, width: number = SLIDER_WIDTH, opt
     }
 
     return bar;
-}
-
-export function getUsageProgressBarWidth(mode: UsageDisplayMode): number {
-    return mode === 'progress' ? 32 : 16;
-}
-
-// Block modes keep their brackets; the thin line uses the same medium width.
-export function renderUsageProgressBar(percent: number, mode: UsageDisplayMode, options?: TimerProgressBarOptions): string {
-    const width = getUsageProgressBarWidth(mode);
-    return mode === 'line'
-        ? makeLineProgressBar(percent, width, options)
-        : `[${makeTimerProgressBar(percent, width, options)}]`;
 }
 
 export function isUsageInverted(item: WidgetItem): boolean {
@@ -250,19 +261,7 @@ export function getUsageDisplayModifierText(
     options: UsageDisplayModifierOptions = {}
 ): string | undefined {
     const mode = getUsageDisplayMode(item);
-    const modifiers: string[] = [];
-
-    if (mode === 'progress') {
-        modifiers.push('long bar');
-    } else if (mode === 'progress-short') {
-        modifiers.push('medium bar');
-    } else if (mode === 'slider') {
-        modifiers.push('short bar');
-    } else if (mode === 'slider-only') {
-        modifiers.push('short bar only');
-    } else if (mode === 'line') {
-        modifiers.push('line bar');
-    }
+    const modifiers = getBarLayoutModifiers(item);
 
     if (options.showUsageDirection) {
         modifiers.push(isUsageInverted(item) ? 'remaining' : 'used');
@@ -296,45 +295,35 @@ export function getUsageDisplayModifierText(
         modifiers.push(localeModifier);
     }
 
+    const gradientModifier = getGradientModifier(item);
+    if (showsUsageBar(item) && gradientModifier) {
+        modifiers.push(gradientModifier);
+    }
+
     return makeModifierText(modifiers);
 }
 
+export function showsUsageBar(item: WidgetItem): boolean {
+    const mode = getUsageDisplayMode(item);
+    return isUsageProgressMode(mode) || isUsageSliderMode(mode);
+}
+
+// (p) cycles the style, not the size, which is (b)'s: text, then a block bar
+// (long, the first time), then a slider, then a line, then text again
 export function cycleUsageDisplayMode(item: WidgetItem, disabledInProgressKeys: string[] = [], includeSlider = false, preserveInvertInTime = false): WidgetItem {
-    const currentMode = getUsageDisplayMode(item);
-    let nextMode: UsageDisplayMode;
-    if (includeSlider) {
-        nextMode = currentMode === 'time'
-            ? 'progress'
-            : currentMode === 'progress'
-                ? 'progress-short'
-                : currentMode === 'progress-short'
-                    ? 'slider'
-                    : currentMode === 'slider'
-                        ? 'slider-only'
-                        : currentMode === 'slider-only'
-                            ? 'line'
-                            : 'time';
-    } else {
-        nextMode = currentMode === 'time'
-            ? 'progress'
-            : currentMode === 'progress'
-                ? 'progress-short'
-                : currentMode === 'progress-short'
-                    ? 'line'
-                    : 'time';
+    const style = getBarStyle(item);
+    if (style === null) {
+        return setBarStyle(removeMetadataKeys(item, disabledInProgressKeys), 'block', 'long');
+    }
+    if (style === 'block' && includeSlider) {
+        return setBarStyle(item, 'slider');
+    }
+    if (style !== 'line') {
+        return setBarStyle(item, 'line');
     }
 
-    const keysToRemove = nextMode === 'time' ? (preserveInvertInTime ? ['cursor'] : ['invert', 'cursor']) : disabledInProgressKeys;
-    const nextItem = removeMetadataKeys(item, keysToRemove);
-    const nextMetadata: Record<string, string> = {
-        ...(nextItem.metadata ?? {}),
-        display: nextMode
-    };
-
-    return {
-        ...nextItem,
-        metadata: nextMetadata
-    };
+    const nextItem = removeMetadataKeys(keepBarLayout(item), preserveInvertInTime ? ['cursor'] : ['invert', 'cursor']);
+    return { ...nextItem, metadata: { ...nextItem.metadata, display: 'time' } };
 }
 
 export function toggleUsageInverted(item: WidgetItem): WidgetItem {
@@ -362,6 +351,9 @@ export function getUsagePercentCustomKeybinds(item?: WidgetItem, includeCursor =
             keybinds.push(CURSOR_TOGGLE_KEYBIND);
         }
     }
+
+    const showsBar = item ? showsUsageBar(item) : false;
+    keybinds.push(...getGradientKeybinds(showsBar), ...getBarWidthKeybinds(showsBar), ...getBarNumbersKeybinds(item, showsBar));
 
     return keybinds;
 }
@@ -410,6 +402,9 @@ export function getUsageTimerCustomKeybinds(
             keybinds.push(LOCALE_KEYBIND);
         }
     }
+
+    const showsBar = item !== undefined && isBarMode;
+    keybinds.push(...getGradientKeybinds(showsBar), ...getBarWidthKeybinds(showsBar), ...getBarNumbersKeybinds(item, showsBar));
 
     return keybinds;
 }
