@@ -1125,28 +1125,28 @@ describe('git utils', () => {
             expect(getGitUntrackedFileCount({})).toBe(0);
         });
 
-        it('returns zero without listing when git status fails, as the staged and unstaged counts do', () => {
+        it('returns null without listing when git status fails, as the staged and unstaged counts do', () => {
             mockExecFileSync.mockImplementationOnce(() => { throw new Error('git status failed'); });
 
-            expect(getGitUntrackedFileCount({})).toBe(0);
+            expect(getGitUntrackedFileCount({})).toBeNull();
             expect(mockExecFileSync.mock.calls).toHaveLength(1);
             expect(mockExecFileSync.mock.calls[0]?.[1]).toEqual([...GIT_HARDENING_ARGS, 'status', '--ignore-submodules=dirty', '--porcelain', '-z']);
         });
 
         // As when the listing runs past the timeout every git call has
-        it('returns zero when the listing fails after git status lists something untracked', () => {
+        it('returns null when the listing fails after git status lists something untracked', () => {
             mockExecFileSync.mockReturnValueOnce('?? a.ts\0');
             mockExecFileSync.mockImplementationOnce(() => { throw new Error('ls-files failed'); });
 
-            expect(getGitUntrackedFileCount({})).toBe(0);
+            expect(getGitUntrackedFileCount({})).toBeNull();
             expect(mockExecFileSync.mock.calls).toHaveLength(2);
             expect(mockExecFileSync.mock.calls[1]?.[1]).toEqual([...GIT_HARDENING_ARGS, '--no-literal-pathspecs', 'ls-files', '--others', '--exclude-standard', '-z', '--', ':/']);
         });
 
-        it('returns zero when git fails', () => {
+        it('returns null, not zero, when git fails', () => {
             mockExecFileSync.mockImplementation(() => { throw new Error('git failed'); });
 
-            expect(getGitUntrackedFileCount({})).toBe(0);
+            expect(getGitUntrackedFileCount({})).toBeNull();
         });
 
         it('keeps the count in the persistent cache rather than the listing', () => {

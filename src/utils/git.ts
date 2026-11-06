@@ -749,8 +749,11 @@ function countNulTerminatedEntries(output: string): number {
 // only when the git status Git Status and the other file counts share lists
 // something untracked. Otherwise the count is 0, as git status says, which
 // under status.showUntrackedFiles=no lists no untracked files at all.
-export function getGitUntrackedFileCount(context: RenderContext): number {
+export function getGitUntrackedFileCount(context: RenderContext): number | null {
     const status = getGitStatus(context);
+    if (status === null) {
+        return null;
+    }
     if (!status.untracked) {
         return 0;
     }
@@ -760,7 +763,7 @@ export function getGitUntrackedFileCount(context: RenderContext): number {
         return `${countNulTerminatedEntries(output)}`;
     });
     const parsed = Number.parseInt(count ?? '', 10);
-    return Number.isNaN(parsed) ? 0 : parsed;
+    return Number.isNaN(parsed) ? null : parsed;
 }
 
 export interface GitAheadBehind {
