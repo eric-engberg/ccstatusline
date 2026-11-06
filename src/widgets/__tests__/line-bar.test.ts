@@ -104,7 +104,7 @@ describe('line bars across usage and timer widgets', () => {
                 const last: WidgetItem = { ...item, metadata: { display: 'slider-only', invert: 'true', cursor: 'true', label: 'Custom ' } };
                 const line = widget.handleEditorAction('toggle-progress', last);
                 expect(line).not.toBeNull();
-                expect(line?.metadata).toEqual({ display: 'line', invert: 'true', cursor: 'true', label: 'Custom ' });
+                expect(line?.metadata).toEqual({ display: 'line', invert: 'true', cursor: 'true', label: 'Custom ', barWidth: 'short', barNumbers: 'none' });
                 const text = widget.handleEditorAction('toggle-progress', line ?? item);
                 expect(text).not.toBeNull();
                 expect(text?.metadata?.display).toBe('time');
@@ -137,11 +137,11 @@ describe('context line bars', () => {
         expect(widget.render(item, context, DEFAULT_SETTINGS)).toBe(live);
         expect(widget.render(item, { isPreview: true }, DEFAULT_SETTINGS)).toBe(preview);
         expect(widget.render({ ...item, rawValue: true, metadata: { display: 'line', inverse: 'true' } }, context, DEFAULT_SETTINGS)).toBe(remaining);
-        expect(widget.getEditorDisplay(item).modifierText).toBe('(line bar)');
+        expect(widget.getEditorDisplay(item).modifierText).toBe('(line bar, medium)');
         const line = widget.handleEditorAction('toggle-slider', { ...item, metadata: { display: 'slider-only', inverse: 'true' } });
         expect(line).not.toBeNull();
-        expect(line?.metadata).toEqual({ display: 'line', inverse: 'true' });
-        expect(widget.handleEditorAction('toggle-slider', line ?? item)?.metadata).toEqual({ inverse: 'true' });
+        expect(line?.metadata).toEqual({ display: 'line', inverse: 'true', barWidth: 'short', barNumbers: 'none' });
+        expect(widget.handleEditorAction('toggle-slider', line ?? item)?.metadata).toEqual({ inverse: 'true', barWidth: 'short', barNumbers: 'none' });
     });
 
     it('retains the original Context Bar line appearance in live and preview output', () => {
