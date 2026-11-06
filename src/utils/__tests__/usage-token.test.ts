@@ -54,6 +54,11 @@ function makeConfigDirService(configDir: string): string {
     return `Claude Code-credentials-${createHash('sha256').update(configDir).digest('hex').slice(0, 8)}`;
 }
 
+// `security` exits 44 (errSecItemNotFound) for an item that isn't there
+function makeMissingItemError(): Error {
+    return Object.assign(new Error('The specified item could not be found in the keychain.'), { status: 44 });
+}
+
 function makeTokenPayload(token: string, refreshToken?: string): string {
     return JSON.stringify({ claudeAiOauth: { accessToken: token, refreshToken } });
 }
@@ -95,7 +100,7 @@ function mockKeychainWithOtherProfileLogin(plainItem?: string): void {
 
         if (args[0] === 'find-generic-password' && args[2] === 'Claude Code-credentials') {
             if (plainItem === undefined) {
-                throw new Error('missing exact credential');
+                throw makeMissingItemError();
             }
 
             return plainItem;
@@ -204,7 +209,7 @@ describe('getUsageToken', () => {
             }
 
             if (args[0] === 'find-generic-password' && args[2] === 'Claude Code-credentials') {
-                throw new Error('missing exact credential');
+                throw makeMissingItemError();
             }
 
             throw new Error(`Unexpected security args: ${args.join(' ')}`);
@@ -271,7 +276,7 @@ describe('getUsageToken', () => {
         vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
         mockCredentialsFile();
         mockedExecFileSync.mockImplementation(() => {
-            throw new Error('security timed out');
+            throw makeMissingItemError();
         });
 
         expect(getUsageToken()).toBeNull();
@@ -310,6 +315,21 @@ describe('getUsageToken', () => {
                 'find-generic-password -s Claude Code-credentials -w',
                 'find-generic-password -s Claude Code-credentials -a testuser -w'
             ]);
+    });
+
+    it.each([
+        ['times out', Object.assign(new Error('spawnSync security ETIMEDOUT'), { code: 'ETIMEDOUT', signal: 'SIGTERM', status: null })],
+        ['finds the keychain locked', Object.assign(new Error('User interaction is not allowed.'), { status: 36 })],
+        ['is refused', Object.assign(new Error('The user name or passphrase you entered is not correct.'), { status: 51 })]
+    ])('reads the credentials file when the macOS keychain item read %s', (_label, failure) => {
+        vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
+        mockCredentialsFile(makeTokenPayload('file-token'));
+        mockedExecFileSync.mockImplementation(() => {
+            throw failure;
+        });
+
+        expect(getUsageToken()).toBe('file-token');
+        expect(getSecurityCallLog()).toEqual(['find-generic-password -s Claude Code-credentials -w']);
     });
 
     it.each(['linux', 'win32'] as const)('uses the credentials file on %s', (platform) => {
@@ -373,7 +393,7 @@ describe('getUsageToken', () => {
         mockCredentialsFile(makeTokenPayload('file-token', 'file-refresh-token'));
         mockedExecFileSync.mockImplementation((command: string, args?: string[]) => {
             if (command === 'security' && args?.[0] === 'find-generic-password' && args[2] === configDirService) {
-                throw new Error('missing profile credential');
+                throw makeMissingItemError();
             }
 
             throw new Error(`Unexpected security args: ${args?.join(' ')}`);
