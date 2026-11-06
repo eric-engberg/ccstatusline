@@ -160,6 +160,10 @@ const USAGE_CURSOR_REQUIREMENTS: Record<string, UsageFieldRequirement> = {
     ...Object.fromEntries(WEEKLY_MODEL_USAGE_BUCKETS.map(bucket => [bucket.widgetType, { field: bucket.resetField, alternatives: ['weeklyResetAt'] }]))
 };
 
+// Extra Usage Today's value colors measure today's spend against what was left
+// of the monthly limit when the day began
+const VALUE_COLORS_REQUIREMENTS: Record<string, UsageFieldRequirement> = { 'extra-usage-today': { field: 'extraUsageLimit' } };
+
 // Block Reset Timer's under-limit and Block Usage's at-limit hide states read
 // the 5-hour block's percent from the usage API, kept as apiSessionUsage. The
 // payload's percent comes from this session's last response, so in a session
@@ -261,6 +265,10 @@ function isUsageCursorEnabled(item: WidgetItem): boolean {
     return item.metadata?.cursor === 'true';
 }
 
+function isValueColorsEnabled(item: WidgetItem): boolean {
+    return item.metadata?.valueColors === 'true';
+}
+
 function getUsageFieldRequirements(lines: WidgetItem[][]): UsageFieldRequirement[] {
     const requirements: UsageFieldRequirement[] = [];
 
@@ -271,6 +279,11 @@ function getUsageFieldRequirements(lines: WidgetItem[][]): UsageFieldRequirement
             const cursorRequirement = USAGE_CURSOR_REQUIREMENTS[item.type];
             if (cursorRequirement && isUsageCursorEnabled(item)) {
                 requirements.push(cursorRequirement);
+            }
+
+            const valueColorsRequirement = VALUE_COLORS_REQUIREMENTS[item.type];
+            if (valueColorsRequirement && isValueColorsEnabled(item)) {
+                requirements.push(valueColorsRequirement);
             }
 
             if (readsSessionLimit(item)) {
