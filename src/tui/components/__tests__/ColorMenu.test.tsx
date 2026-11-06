@@ -9,7 +9,10 @@ import {
     vi
 } from 'vitest';
 
-import { DEFAULT_SETTINGS } from '../../../types/Settings';
+import {
+    DEFAULT_SETTINGS,
+    type Settings
+} from '../../../types/Settings';
 import type { WidgetItem } from '../../../types/Widget';
 import {
     letReactCatchUp,
@@ -59,7 +62,7 @@ function createMockStdout(): CapturedWriteStream {
     });
 }
 
-function renderColorMenu(widgets: WidgetItem[], props: Pick<ColorMenuProps, 'showsBackgrounds'> = {}) {
+function renderColorMenu(widgets: WidgetItem[], settings: Settings = DEFAULT_SETTINGS, props: Pick<ColorMenuProps, 'showsBackgrounds'> = {}) {
     const stdin = createMockStdin();
     const stdout = createMockStdout();
     const stderr = createMockStdout();
@@ -68,7 +71,7 @@ function renderColorMenu(widgets: WidgetItem[], props: Pick<ColorMenuProps, 'sho
     const instance = render(
         React.createElement(ColorMenu, {
             widgets,
-            settings: DEFAULT_SETTINGS,
+            settings,
             ...props,
             onUpdate,
             onBack
@@ -281,7 +284,7 @@ describe('ColorMenu', () => {
             { id: '1', type: 'model', color: 'red', backgroundColor: 'bgBlue', bold: true },
             { id: '2', type: 'version', color: 'green', backgroundColor: 'bgMagenta' }
         ];
-        const menu = renderColorMenu(widgets, { showsBackgrounds: false });
+        const menu = renderColorMenu(widgets, DEFAULT_SETTINGS, { showsBackgrounds: false });
 
         try {
             await waitFor(() => {
