@@ -1,9 +1,12 @@
 import type { ColorLevelString } from '../../types/ColorLevel';
 import type { WidgetItem } from '../../types/Widget';
-import { getColorAnsiCode } from '../../utils/colors';
 import type { TranscriptThinkingEffort } from '../../utils/jsonl-metadata';
 
-import { removeMetadataKeys } from './metadata';
+import { paintForeground } from './foreground';
+import {
+    removeMetadataKeys,
+    setMetadataValue
+} from './metadata';
 import { getLabel } from './raw-or-labeled';
 
 // Every option below stores nothing while at its default, so a Thinking
@@ -31,14 +34,6 @@ const DEFAULT_LEVEL_COLORS: Record<TranscriptThinkingEffort, string> = {
 // The default orange has no 16-color equivalent, so basic terminals get the
 // nearest distinct named color instead of an escape they can't show
 const DEFAULT_LEVEL_COLORS_ANSI16: Partial<Record<TranscriptThinkingEffort, string>> = { xhigh: 'brightMagenta' };
-
-function setMetadataValue(item: WidgetItem, key: string, value: string | null): WidgetItem {
-    if (value === null) {
-        return removeMetadataKeys(item, [key]);
-    }
-
-    return { ...item, metadata: { ...item.metadata, [key]: value } };
-}
 
 function isBracketStyle(value: string | undefined): value is BracketStyle {
     return value !== undefined && (BRACKET_STYLES as readonly string[]).includes(value);
@@ -75,23 +70,6 @@ export function getLevelColor(item: WidgetItem, level: TranscriptThinkingEffort,
 // A null color restores the level's default
 export function setLevelColor(item: WidgetItem, level: TranscriptThinkingEffort, color: string | null): WidgetItem {
     return setMetadataValue(item, `${LEVEL_COLOR_KEY_PREFIX}${level}`, color);
-}
-
-// Accepts what people naturally type for a custom color (#ff8800, ff8800,
-// 208) as well as the stored hex:/ansi256: forms; null when it isn't one
-export function parseCustomColor(input: string): string | null {
-    const value = input.trim();
-    const hex = /^(?:hex:|#)?([0-9a-f]{6})$/i.exec(value)?.[1];
-    if (hex) {
-        return `hex:${hex}`;
-    }
-
-    const ansi256 = /^(?:ansi256:)?(\d{1,3})$/.exec(value)?.[1];
-    if (ansi256 && Number(ansi256) <= 255) {
-        return `ansi256:${ansi256}`;
-    }
-
-    return null;
 }
 
 export function getBracketColorMode(item: WidgetItem): BracketColorMode {
@@ -131,10 +109,7 @@ export function formatThinkingEffort(item: WidgetItem, effort: EffortDisplay, op
     // Only the level's runs are painted, each ending with the default-foreground
     // code; the renderer colors the label, unknown levels and widget-colored
     // brackets with the widget color (Widget.colorsOnlyItsRuns)
-    const paint = (text: string, color: string | null): string => {
-        const code = color ? getColorAnsiCode(color, options.colorLevel) : '';
-        return text && code ? `${code}${text}\x1b[39m` : text;
-    };
+    const paint = (text: string, color: string | null): string => (color ? paintForeground(text, color, options.colorLevel) : text);
     const valueColor = effort.level ? getLevelColor(item, effort.level, options.colorLevel) : null;
     const bracketColor = getBracketColorMode(item) === 'effort' ? valueColor : null;
 

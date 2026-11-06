@@ -1,3 +1,5 @@
+import type React from 'react';
+
 import type {
     RenderContext,
     RenderUsageData
@@ -8,6 +10,7 @@ import type {
     HideableState,
     Widget,
     WidgetEditorDisplay,
+    WidgetEditorProps,
     WidgetItem
 } from '../types/Widget';
 import {
@@ -17,7 +20,17 @@ import {
 import { getUsageErrorMessage } from '../utils/usage';
 
 import { EXTRA_USAGE_DISABLED_HIDEABLE_STATE } from './shared/extra-usage-disabled';
+import {
+    CYCLE_GRADIENT_ACTION,
+    cycleGradientPreset,
+    paintsBarGradient
+} from './shared/gradient-bar';
 import { isHidden } from './shared/hideable';
+import {
+    getLevelGlyph,
+    isLevelGlyphMode
+} from './shared/level-glyph';
+import { renderLevelGlyphEditor } from './shared/level-glyph-editor';
 import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
 import {
     USAGE_NO_DATA_HIDEABLE_STATE,
@@ -26,8 +39,33 @@ import {
     getUsageDisplayModifierText,
     getUsagePercentCustomKeybinds,
     isUsageInverted,
+    showsPlainUsageValue,
+    showsUsageBar,
     toggleUsageInverted
 } from './shared/usage-display';
+import {
+    LIMIT_SCALE,
+    formatColoredValue,
+    getValueColorsModifier,
+    getValueFormatOptions,
+    isValueColorsEnabled
+} from './shared/value-coloring';
+import {
+    renderValueColorsEditor,
+    withValueColorsKeybind,
+    type ValueColorsEditorOptions
+} from './shared/value-colors-editor';
+
+const DEFAULT_COLOR = 'green';
+const LABEL = 'Overage: ';
+const VALUE_COLORS_EDITOR: ValueColorsEditorOptions = {
+    title: 'Extra Usage Utilization: value colors',
+    scale: LIMIT_SCALE,
+    sampleNote: 'used',
+    defaultColor: DEFAULT_COLOR,
+    maxPercent: 100,
+    label: LABEL
+};
 
 // The usage API reports `utilization: null` until the first charge of the month,
 // while still reporting the amount spent and the monthly limit (both in cents).
@@ -40,10 +78,33 @@ function getExtraUsageUtilization(data: RenderUsageData): number | undefined {
     }
     return data.extraUsageUsed / data.extraUsageLimit * 100;
 }
-const LABEL = 'Overage: ';
+
+// Value colors apply to the plain percent; the bar modes have bar gradients,
+// and the level glyph has no number to color
+function showsValueColors(item: WidgetItem): boolean {
+    return isValueColorsEnabled(item) && showsPlainUsageValue(item);
+}
+
+// The bar, the level glyph, or the percent in its value color. The glyph and
+// value colors follow the used percent, even while the widget shows what's left.
+function formatUsedPercent(item: WidgetItem, label: string, usedPercent: number, settings: Settings, context: RenderContext): string {
+    if (isLevelGlyphMode(item)) {
+        return formatRawOrLabeledValue(item, label, getLevelGlyph(item, usedPercent));
+    }
+    const format = resolveNumberFormat('percent', item, settings);
+    const renderedPercent = isUsageInverted(item) ? 100 - usedPercent : usedPercent;
+
+    const bar = formatUsageBar(item, renderedPercent, format, settings, context);
+    if (bar !== null) {
+        return formatRawOrLabeledValue(item, label, bar);
+    }
+
+    const formatOptions = getValueFormatOptions(settings);
+    return formatColoredValue(item, label, formatPercent(renderedPercent, format), usedPercent, LIMIT_SCALE, formatOptions);
+}
 
 export class ExtraUsageUtilizationWidget implements Widget {
-    getDefaultColor(): string { return 'green'; }
+    getDefaultColor(): string { return DEFAULT_COLOR; }
     getDescription(): string { return 'Shows extra usage as a percentage of your monthly limit (Pro/Max overage or Enterprise spend)'; }
     getDisplayName(): string { return 'Extra Usage Utilization'; }
     getCategory(): string { return 'Usage'; }
@@ -52,7 +113,11 @@ export class ExtraUsageUtilizationWidget implements Widget {
     getEditorDisplay(item: WidgetItem): WidgetEditorDisplay {
         return {
             displayText: this.getDisplayName(),
-            modifierText: getUsageDisplayModifierText(item, { showUsageDirection: true })
+            modifierText: getUsageDisplayModifierText(item, {
+                includeGlyph: true,
+                showUsageDirection: true,
+                extraModifiers: [showsPlainUsageValue(item) ? getValueColorsModifier(item) : null].filter((modifier): modifier is string => modifier !== null)
+            })
         };
     }
 
@@ -61,8 +126,12 @@ export class ExtraUsageUtilizationWidget implements Widget {
     }
 
     handleEditorAction(action: string, item: WidgetItem): WidgetItem | null {
+        if (action === CYCLE_GRADIENT_ACTION) {
+            return cycleGradientPreset(item);
+        }
+
         if (action === 'toggle-progress') {
-            return cycleUsageDisplayMode(item, [], true, true);
+            return cycleUsageDisplayMode(item, [], true, true, true);
         }
 
         if (action === 'toggle-invert') {
@@ -73,19 +142,8 @@ export class ExtraUsageUtilizationWidget implements Widget {
     }
 
     render(item: WidgetItem, context: RenderContext, settings: Settings): string | null {
-        const inverted = isUsageInverted(item);
-        const format = resolveNumberFormat('percent', item, settings);
-
         if (context.isPreview) {
-            const previewPercent = 2.6;
-            const renderedPercent = inverted ? 100 - previewPercent : previewPercent;
-
-            const bar = formatUsageBar(item, renderedPercent, format);
-            if (bar !== null) {
-                return formatRawOrLabeledValue(item, this.getLabelPrefix(), bar);
-            }
-
-            return formatRawOrLabeledValue(item, this.getLabelPrefix(), formatPercent(renderedPercent, format));
+            return formatUsedPercent(item, this.getLabelPrefix(), 85, settings, context);
         }
 
         const data = context.usageData ?? {};
@@ -105,19 +163,26 @@ export class ExtraUsageUtilizationWidget implements Widget {
         }
 
         // utilization is a percentage (0-100), not a fraction
-        const percent = Math.max(0, Math.min(100, utilization));
-        const renderedPercent = inverted ? 100 - percent : percent;
-
-        const bar = formatUsageBar(item, renderedPercent, format);
-        if (bar !== null) {
-            return formatRawOrLabeledValue(item, this.getLabelPrefix(), bar);
-        }
-
-        return formatRawOrLabeledValue(item, this.getLabelPrefix(), formatPercent(renderedPercent, format));
+        return formatUsedPercent(item, this.getLabelPrefix(), Math.max(0, Math.min(100, utilization)), settings, context);
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
-        return getUsagePercentCustomKeybinds(item, false);
+        const keybinds = getUsagePercentCustomKeybinds(item, false);
+        return withValueColorsKeybind(keybinds, item === undefined || showsPlainUsageValue(item));
+    }
+
+    // The level glyph's glyph and break point editors, or the value colors
+    // editor, whose sample shows what's left while the widget does
+    renderEditor(props: WidgetEditorProps): React.ReactElement {
+        const showsRemaining = isUsageInverted(props.widget);
+        return renderLevelGlyphEditor(props) ?? renderValueColorsEditor(props, { ...VALUE_COLORS_EDITOR, showsRemaining, sampleNote: showsRemaining ? 'left' : 'used' });
+    }
+
+    // Value colors paint only the value (or the whole text), and a gradient
+    // preset only the bar, so the renderer colors the rest with the theme
+    // or widget color
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
+        return showsValueColors(item) || paintsBarGradient(item, showsUsageBar(item));
     }
 
     supportsRawValue(): boolean { return true; }

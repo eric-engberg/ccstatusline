@@ -49,35 +49,52 @@ describe('makeSliderBar', () => {
 describe('cycleUsageDisplayMode with slider', () => {
     const base: WidgetItem = { id: 'test', type: 'session-usage' };
 
-    it('includes slider modes when includeSlider is true', () => {
+    it('cycles the text, a block bar and a slider when includeSlider is true', () => {
         const first = cycleUsageDisplayMode(base, [], true);
         const second = cycleUsageDisplayMode(first, [], true);
         const third = cycleUsageDisplayMode(second, [], true);
         const fourth = cycleUsageDisplayMode(third, [], true);
-        const fifth = cycleUsageDisplayMode(fourth, [], true);
-        const sixth = cycleUsageDisplayMode(fifth, [], true);
 
         expect(first.metadata?.display).toBe('progress');
-        expect(second.metadata?.display).toBe('progress-short');
-        expect(third.metadata?.display).toBe('slider');
-        expect(fourth.metadata?.display).toBe('slider-only');
-        expect(fifth.metadata?.display).toBe('line');
-        expect(sixth.metadata?.display).toBe('time');
-    });
-
-    it('skips slider modes when includeSlider is false', () => {
-        const first = cycleUsageDisplayMode(base);
-        const second = cycleUsageDisplayMode(first);
-        const third = cycleUsageDisplayMode(second);
-        const fourth = cycleUsageDisplayMode(third);
-
-        expect(first.metadata?.display).toBe('progress');
-        expect(second.metadata?.display).toBe('progress-short');
+        expect(second.metadata?.display).toBe('slider');
         expect(third.metadata?.display).toBe('line');
         expect(fourth.metadata?.display).toBe('time');
     });
 
-    it('keeps cursor metadata through slider modes and clears it when returning to time mode', () => {
+    it('skips the slider when includeSlider is false', () => {
+        const first = cycleUsageDisplayMode(base);
+        const second = cycleUsageDisplayMode(first);
+        const third = cycleUsageDisplayMode(second);
+
+        expect(first.metadata?.display).toBe('progress');
+        expect(second.metadata?.display).toBe('line');
+        expect(third.metadata?.display).toBe('time');
+    });
+
+    // The size belongs to (b): switching style keeps it, and so does the text mode
+    it('keeps the bar\'s size through the styles and back from the text', () => {
+        const medium: WidgetItem = { ...base, metadata: { display: 'progress-short' } };
+        const slider = cycleUsageDisplayMode(medium, [], true);
+        const line = cycleUsageDisplayMode(slider, [], true);
+        const text = cycleUsageDisplayMode(line, [], true);
+        const block = cycleUsageDisplayMode(text, [], true);
+
+        expect(slider.metadata).toEqual({ display: 'slider', barWidth: 'medium' });
+        expect(line.metadata).toEqual({ display: 'line' });
+        expect(text.metadata).toEqual({ display: 'time', barWidth: 'medium' });
+        expect(block.metadata).toEqual({ display: 'progress-short' });
+    });
+
+    it('keeps a short bar only setting\'s size and numbers through the text', () => {
+        const line = cycleUsageDisplayMode({ ...base, metadata: { display: 'slider-only' } }, [], true);
+        expect(line.metadata).toEqual({ display: 'line', barWidth: 'short', barNumbers: 'none' });
+        const text = cycleUsageDisplayMode(line, [], true);
+        expect(text.metadata).toEqual({ display: 'time', barWidth: 'short', barNumbers: 'none' });
+        expect(cycleUsageDisplayMode(text, [], true).metadata).toEqual({ display: 'progress-short', barWidth: 'short', barNumbers: 'none' });
+        expect(cycleUsageDisplayMode({ ...base, metadata: { display: 'time', barNumbers: 'none' } }, [], true).metadata).toEqual({ display: 'progress', barNumbers: 'none' });
+    });
+
+    it('keeps cursor metadata through the bar styles and clears it when returning to time mode', () => {
         const cursorBase: WidgetItem = {
             ...base,
             metadata: { cursor: 'true' }
@@ -86,15 +103,11 @@ describe('cycleUsageDisplayMode with slider', () => {
         const second = cycleUsageDisplayMode(first, [], true);
         const third = cycleUsageDisplayMode(second, [], true);
         const fourth = cycleUsageDisplayMode(third, [], true);
-        const fifth = cycleUsageDisplayMode(fourth, [], true);
-        const sixth = cycleUsageDisplayMode(fifth, [], true);
 
         expect(first.metadata?.cursor).toBe('true');
         expect(second.metadata?.cursor).toBe('true');
         expect(third.metadata?.cursor).toBe('true');
-        expect(fourth.metadata?.cursor).toBe('true');
-        expect(fifth.metadata?.cursor).toBe('true');
-        expect(sixth.metadata?.cursor).toBeUndefined();
+        expect(fourth.metadata?.cursor).toBeUndefined();
     });
 });
 

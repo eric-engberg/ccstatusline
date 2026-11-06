@@ -1,3 +1,5 @@
+import type React from 'react';
+
 import type { NumberFormat } from '../../types/NumberFormat';
 import type {
     RenderContext,
@@ -9,6 +11,7 @@ import type {
     HideableState,
     Widget,
     WidgetEditorDisplay,
+    WidgetEditorProps,
     WidgetItem
 } from '../../types/Widget';
 import {
@@ -25,7 +28,17 @@ import {
 } from '../../utils/usage';
 import type { UsageWindowMetrics } from '../../utils/usage-types';
 
+import {
+    CYCLE_GRADIENT_ACTION,
+    cycleGradientPreset,
+    paintsBarGradient
+} from './gradient-bar';
 import { isHidden } from './hideable';
+import {
+    getLevelGlyph,
+    isLevelGlyphMode
+} from './level-glyph';
+import { renderLevelGlyphEditor } from './level-glyph-editor';
 import { formatRawOrLabeledValue } from './raw-or-labeled';
 import {
     USAGE_NO_DATA_HIDEABLE_STATE,
@@ -35,11 +48,26 @@ import {
     getUsagePercentCustomKeybinds,
     isUsageCursorEnabled,
     isUsageInverted,
+    showsPlainUsageValue,
+    showsUsageBar,
     toggleUsageCursor,
     toggleUsageInverted
 } from './usage-display';
+import {
+    LIMIT_SCALE,
+    formatColoredValue,
+    getValueColorsModifier,
+    getValueFormatOptions,
+    isValueColorsEnabled
+} from './value-coloring';
+import {
+    renderValueColorsEditor,
+    withValueColorsKeybind
+} from './value-colors-editor';
 
 export type UsagePercentWidgetKind = 'session' | 'weekly' | 'weekly-sonnet' | 'weekly-opus' | 'fable-weekly' | 'spend-limit';
+
+const DEFAULT_COLOR = 'brightBlue';
 
 type UsagePercentField = 'sessionUsage' | 'weeklyUsage' | 'weeklySonnetUsage' | 'weeklyOpusUsage' | 'fableUsage' | 'spendLimitUsage';
 
@@ -60,35 +88,35 @@ const USAGE_PERCENT_WIDGET_CONFIG: Record<UsagePercentWidgetKind, UsagePercentWi
         label: '5h: ',
         displayName: 'Block Usage',
         description: 'Shows the current 5-hour block\'s usage percentage',
-        previewPercent: 20,
+        previewPercent: 90,
         usageField: 'sessionUsage'
     },
     'weekly': {
         label: 'Weekly: ',
         displayName: 'Weekly Usage',
         description: 'Shows weekly API usage percentage',
-        previewPercent: 12,
+        previewPercent: 80,
         usageField: 'weeklyUsage'
     },
     'weekly-sonnet': {
         label: 'Weekly Sonnet: ',
         displayName: 'Weekly Sonnet Usage',
         description: 'Shows weekly Sonnet API usage percentage',
-        previewPercent: 8,
+        previewPercent: 70,
         usageField: 'weeklySonnetUsage'
     },
     'weekly-opus': {
         label: 'Weekly Opus: ',
         displayName: 'Weekly Opus Usage',
         description: 'Shows weekly Opus API usage percentage',
-        previewPercent: 4,
+        previewPercent: 60,
         usageField: 'weeklyOpusUsage'
     },
     'fable-weekly': {
         label: 'Weekly Fable: ',
         displayName: 'Weekly Fable Usage',
         description: 'Shows Fable-only weekly usage percentage',
-        previewPercent: 4,
+        previewPercent: 60,
         usageField: 'fableUsage'
     },
     'spend-limit': {
@@ -133,10 +161,22 @@ function renderUsageDisplay(
     label: string,
     percent: number,
     format: NumberFormat,
-    getCursorOptions: () => UsageCursorOptions | undefined
+    getCursorOptions: () => UsageCursorOptions | undefined,
+    settings: Settings,
+    context: RenderContext
 ): string {
-    const bar = formatUsageBar(item, percent, format, getCursorOptions);
-    return formatRawOrLabeledValue(item, label, bar ?? formatPercent(percent, format));
+    // The level glyph and value colors measure what's used, even while the
+    // widget shows what's left
+    const usedPercent = isUsageInverted(item) ? 100 - percent : percent;
+    if (isLevelGlyphMode(item)) {
+        return formatRawOrLabeledValue(item, label, getLevelGlyph(item, usedPercent));
+    }
+    const bar = formatUsageBar(item, percent, format, settings, context, getCursorOptions);
+    if (bar !== null) {
+        return formatRawOrLabeledValue(item, label, bar);
+    }
+    const formatOptions = getValueFormatOptions(settings);
+    return formatColoredValue(item, label, formatPercent(percent, format), usedPercent, LIMIT_SCALE, formatOptions);
 }
 
 export function getUsagePercentWidgetDisplayName(kind: UsagePercentWidgetKind): string {
@@ -154,13 +194,18 @@ export function getUsagePercentWidgetDescription(kind: UsagePercentWidgetKind): 
 export function getUsagePercentWidgetEditorDisplay(kind: UsagePercentWidgetKind, item: WidgetItem): WidgetEditorDisplay {
     return {
         displayText: getUsagePercentWidgetDisplayName(kind),
-        modifierText: getUsageDisplayModifierText(item, { showUsageDirection: true, includeCursor: true })
+        modifierText: getUsageDisplayModifierText(item, {
+            includeGlyph: true,
+            showUsageDirection: true,
+            includeCursor: true,
+            extraModifiers: [showsPlainUsageValue(item) ? getValueColorsModifier(item) : null].filter((modifier): modifier is string => modifier !== null)
+        })
     };
 }
 
 export function handleUsagePercentWidgetEditorAction(action: string, item: WidgetItem): WidgetItem | null {
     if (action === 'toggle-progress') {
-        return cycleUsageDisplayMode(item, [], true, true);
+        return cycleUsageDisplayMode(item, [], true, true, true);
     }
 
     if (action === 'toggle-invert') {
@@ -169,6 +214,10 @@ export function handleUsagePercentWidgetEditorAction(action: string, item: Widge
 
     if (action === 'toggle-cursor') {
         return toggleUsageCursor(item);
+    }
+
+    if (action === CYCLE_GRADIENT_ACTION) {
+        return cycleGradientPreset(item);
     }
 
     return null;
@@ -187,7 +236,7 @@ export function renderUsagePercentWidgetValue(
 
     if (context.isPreview) {
         const renderedPercent = inverted ? 100 - config.previewPercent : config.previewPercent;
-        return renderUsageDisplay(item, config.label, renderedPercent, format, () => showCursor ? { cursorPercent: 50 } : undefined);
+        return renderUsageDisplay(item, config.label, renderedPercent, format, () => showCursor ? { cursorPercent: 50 } : undefined, settings, context);
     }
 
     const data: RenderUsageData = context.usageData ?? {};
@@ -216,7 +265,7 @@ export function renderUsagePercentWidgetValue(
             return undefined;
         }
         return { cursorPercent: inverted ? window.remainingPercent : window.elapsedPercent };
-    });
+    }, settings, context);
 }
 
 // Session, Weekly, Weekly Sonnet, Weekly Opus and Fable Weekly Usage differ only
@@ -228,7 +277,7 @@ export class UsagePercentWidget implements Widget {
         this.kind = kind;
     }
 
-    getDefaultColor(): string { return 'brightBlue'; }
+    getDefaultColor(): string { return DEFAULT_COLOR; }
     getDescription(): string { return getUsagePercentWidgetDescription(this.kind); }
     getDisplayName(): string { return getUsagePercentWidgetDisplayName(this.kind); }
     getCategory(): string { return 'Usage'; }
@@ -252,7 +301,29 @@ export class UsagePercentWidget implements Widget {
     }
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
-        return getUsagePercentCustomKeybinds(item, hasUsageWindow(this.kind));
+        return withValueColorsKeybind(getUsagePercentCustomKeybinds(item, hasUsageWindow(this.kind)), item === undefined || showsPlainUsageValue(item));
+    }
+
+    // The level glyph mode's glyph and break point editors, or value colors,
+    // whose sample shows what's left while the widget does
+    renderEditor(props: WidgetEditorProps): React.ReactElement | null {
+        const showsRemaining = isUsageInverted(props.widget);
+        return renderLevelGlyphEditor(props) ?? renderValueColorsEditor(props, {
+            title: `${this.getDisplayName()}: value colors`,
+            scale: LIMIT_SCALE,
+            sampleNote: showsRemaining ? 'left' : 'used',
+            defaultColor: this.getDefaultColor(),
+            maxPercent: 100,
+            label: this.getLabelPrefix(),
+            showsRemaining
+        });
+    }
+
+    // Value colors paint only the value (or the whole text), and a gradient
+    // preset only the bar, so the renderer colors the rest with the theme
+    // or widget color
+    colorsOnlyItsRuns(item: WidgetItem): boolean {
+        return (isValueColorsEnabled(item) && showsPlainUsageValue(item)) || paintsBarGradient(item, showsUsageBar(item));
     }
 
     supportsRawValue(): boolean { return true; }
