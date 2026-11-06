@@ -33,8 +33,9 @@ const ZERO_HIDE_KEY = 'zero';
 // Git Staged, Unstaged and Untracked Files, Insertions, Deletions and Changes
 // show counts read from the work tree. Outside a git work tree they show
 // "(no git)", or nothing when that state is hidden; with the zero state hidden
-// they show nothing while their count is zero. Each reads its counts, says
-// when they count as zero, and formats them, its preview sample included.
+// they show nothing while their count is zero. Each reads its counts, or null
+// for nothing to show, says when they count as zero, and formats them, its
+// preview sample included.
 export abstract class GitCountWidgetBase<Counts> implements Widget {
     abstract getDefaultColor(): string;
     abstract getDescription(): string;
@@ -44,7 +45,7 @@ export abstract class GitCountWidgetBase<Counts> implements Widget {
     // The zero hide state's label, e.g. "when the staged file count is zero"
     protected abstract readonly zeroLabel: string;
     protected abstract readonly previewCounts: Counts;
-    protected abstract getCounts(context: RenderContext): Counts;
+    protected abstract getCounts(context: RenderContext): Counts | null;
     protected abstract isZero(counts: Counts): boolean;
     protected abstract formatCounts(item: WidgetItem, counts: Counts): string;
 
@@ -68,7 +69,7 @@ export abstract class GitCountWidgetBase<Counts> implements Widget {
         }
 
         const counts = this.getCounts(context);
-        if (this.isZero(counts) && isHidden(item, ZERO_HIDE_KEY)) {
+        if (counts === null || (this.isZero(counts) && isHidden(item, ZERO_HIDE_KEY))) {
             return null;
         }
 
@@ -80,22 +81,24 @@ export abstract class GitCountWidgetBase<Counts> implements Widget {
 
 type GitFileCountField = keyof GitFileStatusCounts | 'untracked';
 
-// Only Git Untracked Files runs the call that lists every untracked file
-function getGitFileCount(context: RenderContext, field: GitFileCountField): number {
+// Only Git Untracked Files runs the call that lists every untracked file. null
+// when the git call behind the count fails
+function getGitFileCount(context: RenderContext, field: GitFileCountField): number | null {
     return field === 'untracked'
         ? getGitUntrackedFileCount(context)
-        : getGitFileStatusCounts(context)[field];
+        : getGitFileStatusCounts(context)?.[field] ?? null;
 }
 
 // Git Staged, Unstaged and Untracked Files show a file count after a short
-// label, or the bare count when raw
+// label, or the bare count when raw, and nothing when the git call behind it
+// fails
 export abstract class GitFileCountWidget extends GitCountWidgetBase<number> {
     protected abstract readonly field: GitFileCountField;
     protected abstract readonly label: string;
 
     getLabelPrefix(): string { return this.label; }
 
-    protected getCounts(context: RenderContext): number {
+    protected getCounts(context: RenderContext): number | null {
         return getGitFileCount(context, this.field);
     }
 
@@ -110,7 +113,7 @@ export abstract class GitFileCountWidget extends GitCountWidgetBase<number> {
     getNumericValue(context: RenderContext, _item: WidgetItem): number | null {
         if (!isInsideGitWorkTree(context))
             return null;
-        return getGitFileCount(context, this.field);
+        return this.getCounts(context);
     }
 
     supportsRawValue(): boolean { return true; }
