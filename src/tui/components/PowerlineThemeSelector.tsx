@@ -17,6 +17,7 @@ import {
     getPowerlineThemes
 } from '../../utils/colors';
 import { getPlainInput } from '../../utils/input-guards';
+import { isPowerlineLine } from '../../utils/powerline-lines';
 import { assignPowerlineThemeSlots } from '../../utils/powerline-theme-index';
 
 import { ConfirmDialog } from './ConfirmDialog';
@@ -61,9 +62,14 @@ export function applyCustomPowerlineTheme(
 
     // Number the widgets the way the renderer picks theme colors, so the copy
     // matches what the theme showed: a merged group shares one color, and with
-    // Continue Theme on, each line picks up where the previous one stopped
+    // Continue Theme on, each line picks up where the previous one stopped. A
+    // plain line draws no theme colors, so it keeps its own and takes no slots.
     let nextLineSlot = 0;
-    const lines = settings.lines.map((line) => {
+    const lines = settings.lines.map((line, lineIndex) => {
+        if (!isPowerlineLine(settings, lineIndex)) {
+            return line;
+        }
+
         const { slots, nextSlot } = assignPowerlineThemeSlots(
             line,
             settings.powerline.continueThemeAcrossLines ? nextLineSlot : 0
