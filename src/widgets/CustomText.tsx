@@ -3,7 +3,7 @@ import {
     Text,
     useInput
 } from 'ink';
-import React from 'react';
+import React, { useState } from 'react';
 
 import type { RenderContext } from '../types/RenderContext';
 import type { Settings } from '../types/Settings';
@@ -16,6 +16,7 @@ import type {
     WidgetItem
 } from '../types/Widget';
 
+import { GlyphPicker } from './shared/glyph-picker';
 import { MERGE_TARGET_HIDDEN_HIDEABLE_STATE } from './shared/hideable';
 import { useTextCursor } from './shared/text-cursor';
 
@@ -57,22 +58,39 @@ export class CustomTextWidget implements Widget {
 }
 
 const CustomTextEditor: React.FC<WidgetEditorProps> = ({ widget, onComplete, onCancel }) => {
-    const { getText, display, handleInput } = useTextCursor(widget.customText ?? '');
+    const { getText, display, handleInput, insert } = useTextCursor(widget.customText ?? '');
+    const [picking, setPicking] = useState(false);
 
+    // The picker takes the keys while it's open
     useInput((input, key) => {
-        if (key.return) {
+        if (key.downArrow) {
+            setPicking(true);
+        } else if (key.return) {
             onComplete({ ...widget, customText: getText() });
         } else if (key.escape) {
             onCancel();
         } else {
             handleInput(input, key);
         }
-    });
+    }, { isActive: !picking });
+
+    if (picking) {
+        return (
+            <GlyphPicker
+                initialGlyph=''
+                onPick={(glyph) => {
+                    insert(glyph);
+                    setPicking(false);
+                }}
+                onCancel={() => { setPicking(false); }}
+            />
+        );
+    }
 
     return (
         <Box flexDirection='column'>
             <Text>{`Enter custom text: ${display}`}</Text>
-            <Text dimColor>←→ move cursor, Ctrl+←→ jump to start/end, Enter save, ESC cancel</Text>
+            <Text dimColor>←→ move cursor, ↓ pick a glyph, Ctrl+←→ jump to start/end, Enter save, ESC cancel</Text>
         </Box>
     );
 };

@@ -3,9 +3,10 @@ import {
     Text,
     useInput
 } from 'ink';
-import React from 'react';
+import React, { useState } from 'react';
 
 import type { WidgetItem } from '../../types/Widget';
+import { GlyphPicker } from '../../widgets/shared/glyph-picker';
 import {
     clearLabel,
     getLabel,
@@ -22,23 +23,45 @@ export interface LabelEditorProps {
 }
 
 export const LabelEditor: React.FC<LabelEditorProps> = ({ widget, defaultLabel, onComplete, onCancel, onPreview }) => {
-    const { getText, display, handleInput } = useTextCursor(getLabel(widget, defaultLabel));
+    const { getText, display, handleInput, insert } = useTextCursor(getLabel(widget, defaultLabel));
+    const [picking, setPicking] = useState(false);
 
+    // Typed or picked, every change to the text shows in the preview
+    const editText = (edit: () => void) => {
+        const previousText = getText();
+        edit();
+        if (getText() !== previousText) {
+            onPreview?.(setLabel(widget, getText()));
+        }
+    };
+
+    // The picker takes the keys while it's open
     useInput((input, key) => {
-        if (key.return) {
+        if (key.downArrow) {
+            setPicking(true);
+        } else if (key.return) {
             onComplete(setLabel(widget, getText()));
         } else if (key.escape) {
             onCancel();
         } else if (key.tab) {
             onComplete(clearLabel(widget));
         } else {
-            const previousText = getText();
-            handleInput(input, key);
-            if (getText() !== previousText) {
-                onPreview?.(setLabel(widget, getText()));
-            }
+            editText(() => { handleInput(input, key); });
         }
-    });
+    }, { isActive: !picking });
+
+    if (picking) {
+        return (
+            <GlyphPicker
+                initialGlyph=''
+                onPick={(glyph) => {
+                    editText(() => { insert(glyph); });
+                    setPicking(false);
+                }}
+                onCancel={() => { setPicking(false); }}
+            />
+        );
+    }
 
     // Quoted so trailing spaces, which usually separate the label from the
     // value, stay visible. One Text, because Ink measures a toned or joined
@@ -46,7 +69,7 @@ export const LabelEditor: React.FC<LabelEditorProps> = ({ widget, defaultLabel, 
     return (
         <Box flexDirection='column'>
             <Text bold>Label</Text>
-            <Text dimColor>←→ move cursor, Ctrl+←→ jump to start/end, Tab reset to default, Enter save, ESC cancel</Text>
+            <Text dimColor>←→ move cursor, ↓ pick a glyph, Ctrl+←→ jump to start/end, Tab reset to default, Enter save, ESC cancel</Text>
             <Box marginTop={1}>
                 <Text>
                     {`"${display}"`}
