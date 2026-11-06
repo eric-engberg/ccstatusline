@@ -26,6 +26,11 @@ import {
     paintsBarGradient
 } from './shared/gradient-bar';
 import { isHidden } from './shared/hideable';
+import {
+    getLevelGlyph,
+    isLevelGlyphMode
+} from './shared/level-glyph';
+import { renderLevelGlyphEditor } from './shared/level-glyph-editor';
 import { formatRawOrLabeledValue } from './shared/raw-or-labeled';
 import {
     USAGE_NO_DATA_HIDEABLE_STATE,
@@ -34,6 +39,7 @@ import {
     getUsageDisplayModifierText,
     getUsagePercentCustomKeybinds,
     isUsageInverted,
+    showsPlainUsageValue,
     showsUsageBar,
     toggleUsageInverted
 } from './shared/usage-display';
@@ -45,8 +51,8 @@ import {
     isValueColorsEnabled
 } from './shared/value-coloring';
 import {
-    VALUE_COLORS_KEYBIND,
     renderValueColorsEditor,
+    withValueColorsKeybind,
     type ValueColorsEditorOptions
 } from './shared/value-colors-editor';
 
@@ -73,14 +79,18 @@ function getExtraUsageUtilization(data: RenderUsageData): number | undefined {
     return data.extraUsageUsed / data.extraUsageLimit * 100;
 }
 
-// Value colors apply to the plain percent; the bar modes have bar gradients
+// Value colors apply to the plain percent; the bar modes have bar gradients,
+// and the level glyph has no number to color
 function showsValueColors(item: WidgetItem): boolean {
-    return isValueColorsEnabled(item) && !showsUsageBar(item);
+    return isValueColorsEnabled(item) && showsPlainUsageValue(item);
 }
 
-// The bar, or the percent in its value color. Value colors follow the used
-// percent, even while the widget shows what's left.
+// The bar, the level glyph, or the percent in its value color. The glyph and
+// value colors follow the used percent, even while the widget shows what's left.
 function formatUsedPercent(item: WidgetItem, label: string, usedPercent: number, settings: Settings, context: RenderContext): string {
+    if (isLevelGlyphMode(item)) {
+        return formatRawOrLabeledValue(item, label, getLevelGlyph(item, usedPercent));
+    }
     const format = resolveNumberFormat('percent', item, settings);
     const renderedPercent = isUsageInverted(item) ? 100 - usedPercent : usedPercent;
 
@@ -104,8 +114,9 @@ export class ExtraUsageUtilizationWidget implements Widget {
         return {
             displayText: this.getDisplayName(),
             modifierText: getUsageDisplayModifierText(item, {
+                includeGlyph: true,
                 showUsageDirection: true,
-                extraModifiers: showsUsageBar(item) ? [] : [getValueColorsModifier(item)].filter((modifier): modifier is string => modifier !== null)
+                extraModifiers: [showsPlainUsageValue(item) ? getValueColorsModifier(item) : null].filter((modifier): modifier is string => modifier !== null)
             })
         };
     }
@@ -120,7 +131,7 @@ export class ExtraUsageUtilizationWidget implements Widget {
         }
 
         if (action === 'toggle-progress') {
-            return cycleUsageDisplayMode(item, [], true, true);
+            return cycleUsageDisplayMode(item, [], true, true, true);
         }
 
         if (action === 'toggle-invert') {
@@ -157,13 +168,14 @@ export class ExtraUsageUtilizationWidget implements Widget {
 
     getCustomKeybinds(item?: WidgetItem): CustomKeybind[] {
         const keybinds = getUsagePercentCustomKeybinds(item, false);
-        return item && showsUsageBar(item) ? keybinds : [...keybinds, VALUE_COLORS_KEYBIND];
+        return withValueColorsKeybind(keybinds, item === undefined || showsPlainUsageValue(item));
     }
 
-    // While the widget shows what's left, the sample does too
+    // The level glyph's glyph and break point editors, or the value colors
+    // editor, whose sample shows what's left while the widget does
     renderEditor(props: WidgetEditorProps): React.ReactElement {
         const showsRemaining = isUsageInverted(props.widget);
-        return renderValueColorsEditor(props, { ...VALUE_COLORS_EDITOR, showsRemaining, sampleNote: showsRemaining ? 'left' : 'used' });
+        return renderLevelGlyphEditor(props) ?? renderValueColorsEditor(props, { ...VALUE_COLORS_EDITOR, showsRemaining, sampleNote: showsRemaining ? 'left' : 'used' });
     }
 
     // Value colors paint only the value (or the whole text), and a gradient
