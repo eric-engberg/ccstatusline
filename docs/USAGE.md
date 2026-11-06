@@ -320,7 +320,7 @@ Text editors use a blinking bar cursor so trailing spaces remain visible. Label 
 
 The keybind footer in the TUI only shows shortcuts that apply to the currently selected widget. Plain-letter shortcuts ignore Ctrl and Alt/Option modifiers, so combinations such as `Ctrl+S` do not also trigger the letter action.
 
-All bar widgets offer a 16-cell **line bar** mode using `━` for filled cells and `─` for empty cells, with no brackets and the widget's numeric values alongside it. It is the last mode before the `p` cycle returns to its starting mode. Fill inversion and time cursors remain available on widgets that support them. Existing modes retain their appearance.
+All bar widgets offer a **line bar** style using `━` for filled cells and `─` for empty cells, with no brackets and the widget's numeric values alongside it. In the `p` cycle it comes right after the slider, and like the other styles it keeps the bar's size (medium, 16 cells, unless sized). Fill inversion and time cursors remain available on widgets that support them. Existing modes retain their appearance.
 
 Widget-specific shortcuts:
 - **Remote Control Status**: `e` edits the label in `label-check` and `label-mark` formats when raw value is off. The override is shared by these two formats; Tab in the label editor restores `remote `.
