@@ -305,7 +305,10 @@ export function cycleUsageDisplayMode(item: WidgetItem, disabledInProgressKeys: 
         return setBarStyle(removeMetadataKeys(item, disabledInProgressKeys), 'block', 'long');
     }
     // Without the slider, a block bar goes on to a line and no further
-    const nextStyle = includeSlider ? stepBarStyle(item) : (style === 'block' ? setBarStyle(item, 'line') : null);
+    if (!includeSlider && style === 'block') {
+        return setBarStyle(item, 'line');
+    }
+    const nextStyle = includeSlider ? stepBarStyle(item) : null;
     if (nextStyle) {
         return nextStyle;
     }
