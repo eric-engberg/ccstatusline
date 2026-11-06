@@ -18,8 +18,7 @@ import {
     getMacKeychainConfigDirService,
     getUsageCredentials,
     getUsageLoginFingerprint,
-    getUsageToken,
-    parseMacKeychainCredentialCandidates
+    getUsageToken
 } from '../usage-fetch';
 
 vi.mock('node:child_process', () => ({
@@ -68,28 +67,15 @@ function makeExecFileTimeoutError(): Error & { code: string } {
     return Object.assign(new Error('child process failed'), { code: 'ETIMEDOUT' });
 }
 
-function encodeAsciiAsHex(value: string): string {
-    return Buffer.from(value, 'utf8').toString('hex');
-}
-
-function makeKeychainBlock(service: string, modifiedAt?: { raw?: string; quoted?: string }): string {
-    const lines = [
+function makeKeychainBlock(service: string): string {
+    return [
         'keychain: "/Users/example/Library/Keychains/login.keychain-db"',
         'version: 512',
         'class: "genp"',
         'attributes:',
-        `    "svce"<blob>="${service}"`
-    ];
-
-    if (modifiedAt?.raw && modifiedAt.quoted) {
-        lines.push(`    "mdat"<timedate>=0x${modifiedAt.raw}    "${modifiedAt.quoted}"`);
-    } else if (modifiedAt?.raw) {
-        lines.push(`    "mdat"<timedate>=0x${modifiedAt.raw}`);
-    } else if (modifiedAt?.quoted) {
-        lines.push(`    "mdat"<timedate>="${modifiedAt.quoted}"`);
-    }
-
-    return lines.join('\n');
+        `    "svce"<blob>="${service}"`,
+        '    "mdat"<timedate>="20240301010101Z"'
+    ].join('\n');
 }
 
 function getSecurityCallLog(): string[] {
@@ -98,6 +84,37 @@ function getSecurityCallLog(): string[] {
 
         expect(command).toBe('security');
         return Array.isArray(args) ? args.join(' ') : '';
+    });
+}
+
+// A second profile, CLAUDE_CONFIG_DIR=/fake/claude-work, is logged in: the
+// keychain holds its login under that profile's suffixed service and lists it
+// in a dump. The default profile's plain item holds plainItem, or is missing.
+function mockKeychainWithOtherProfileLogin(plainItem?: string): void {
+    const otherProfileService = makeConfigDirService('/fake/claude-work');
+
+    mockedExecFileSync.mockImplementation((command: string, args?: string[]) => {
+        if (command !== 'security' || !args) {
+            throw new Error(`Unexpected security args: ${args?.join(' ')}`);
+        }
+
+        if (args[0] === 'find-generic-password' && args[2] === 'Claude Code-credentials') {
+            if (plainItem === undefined) {
+                throw makeMissingItemError();
+            }
+
+            return plainItem;
+        }
+
+        if (args[0] === 'dump-keychain') {
+            return makeKeychainBlock(otherProfileService);
+        }
+
+        if (args[0] === 'find-generic-password' && args[2] === otherProfileService) {
+            return makeTokenPayload('other-profile-token', 'other-profile-refresh-token');
+        }
+
+        throw new Error(`Unexpected security args: ${args.join(' ')}`);
     });
 }
 
@@ -116,35 +133,6 @@ function mockCredentialsFile(payload?: string): void {
     });
 }
 
-describe('parseMacKeychainCredentialCandidates', () => {
-    it('returns hashed macOS credential candidates sorted newest-first and excludes the exact service', () => {
-        const dump = [
-            makeKeychainBlock('Claude Code-credentials', { quoted: '20240101010101Z' }),
-            makeKeychainBlock('Claude Code-credentials-old', { quoted: '20240201010101Z' }),
-            makeKeychainBlock('Claude Code-credentials-new', { quoted: '20240301010101Z' })
-        ].join('\n');
-
-        expect(parseMacKeychainCredentialCandidates(dump)).toEqual([
-            'Claude Code-credentials-new',
-            'Claude Code-credentials-old'
-        ]);
-    });
-
-    it('uses discovered order when modified times are unavailable and parses hex-only timestamps when present', () => {
-        const dump = [
-            makeKeychainBlock('Claude Code-credentials-first'),
-            makeKeychainBlock('Claude Code-credentials-second', { raw: encodeAsciiAsHex('20240401010101Z\0') }),
-            makeKeychainBlock('Claude Code-credentials-third')
-        ].join('\n');
-
-        expect(parseMacKeychainCredentialCandidates(dump)).toEqual([
-            'Claude Code-credentials-second',
-            'Claude Code-credentials-first',
-            'Claude Code-credentials-third'
-        ]);
-    });
-});
-
 describe('getUsageToken', () => {
     beforeEach(() => {
         vi.restoreAllMocks();
@@ -158,9 +146,9 @@ describe('getUsageToken', () => {
         mockedExecFileSync.mockReset();
     });
 
-    it('prefers the exact macOS keychain service over hashed fallbacks and files', () => {
+    it('prefers the exact macOS keychain service over the credentials file', () => {
         vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
-        mockCredentialsFile();
+        mockCredentialsFile(makeTokenPayload('file-token'));
         mockedExecFileSync.mockImplementation((command: string, args?: string[]) => {
             if (command === 'security' && args?.[0] === 'find-generic-password' && args[2] === 'Claude Code-credentials') {
                 return makeTokenPayload('exact-token');
@@ -224,85 +212,54 @@ describe('getUsageToken', () => {
                 throw makeMissingItemError();
             }
 
-            if (args[0] === 'dump-keychain') {
-                return '';
-            }
-
             throw new Error(`Unexpected security args: ${args.join(' ')}`);
         });
 
         expect(getUsageToken()).toBe('file-token');
         expect(getSecurityCallLog()).toEqual([
-            'find-generic-password -s Claude Code-credentials -w',
-            'dump-keychain'
+            'find-generic-password -s Claude Code-credentials -w'
         ]);
     });
 
-    it('tries the newest hashed macOS keychain candidate after an exact miss', () => {
-        const dump = [
-            makeKeychainBlock('Claude Code-credentials-old', { quoted: '20240201010101Z' }),
-            makeKeychainBlock('Claude Code-credentials-new', { quoted: '20240301010101Z' })
-        ].join('\n');
-
+    it('uses the default profile\'s credentials file after an exact miss, not another profile\'s keychain item', () => {
         vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
-        mockCredentialsFile();
-        mockedExecFileSync.mockImplementation((command: string, args?: string[]) => {
-            if (command !== 'security' || !args) {
-                throw new Error(`Unexpected security args: ${args?.join(' ')}`);
-            }
+        mockCredentialsFile(makeTokenPayload('file-token', 'file-refresh-token'));
+        mockKeychainWithOtherProfileLogin();
 
-            if (args[0] === 'find-generic-password' && args[2] === 'Claude Code-credentials') {
-                throw makeMissingItemError();
-            }
-
-            if (args[0] === 'dump-keychain') {
-                return dump;
-            }
-
-            if (args[0] === 'find-generic-password' && args[2] === 'Claude Code-credentials-new') {
-                return makeTokenPayload('hashed-token');
-            }
-
-            throw new Error(`Unexpected security args: ${args.join(' ')}`);
+        expect(getUsageToken()).toBe('file-token');
+        expect(getUsageCredentials()).toEqual({
+            accessToken: 'file-token',
+            refreshToken: 'file-refresh-token'
         });
-
-        expect(getUsageToken()).toBe('hashed-token');
-        expect(getUsageToken()).toBe('hashed-token');
         expect(getSecurityCallLog()).toEqual([
             'find-generic-password -s Claude Code-credentials -w',
             'find-generic-password -s Claude Code-credentials -a testuser -w',
-            'dump-keychain',
-            'find-generic-password -s Claude Code-credentials-new -w',
             'find-generic-password -s Claude Code-credentials -w',
-            'find-generic-password -s Claude Code-credentials -a testuser -w',
-            'dump-keychain',
-            'find-generic-password -s Claude Code-credentials-new -w'
+            'find-generic-password -s Claude Code-credentials -a testuser -w'
         ]);
     });
 
-    it('falls back to ~/.claude/.credentials.json on macOS when keychain lookups miss or parse invalid data', () => {
-        const dump = makeKeychainBlock('Claude Code-credentials-hashed', { quoted: '20240301010101Z' });
+    it('finds no login rather than another profile\'s when the exact item holds only MCP tokens', () => {
+        vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
+        mockCredentialsFile();
+        mockKeychainWithOtherProfileLogin(JSON.stringify({ mcpOAuth: { 'example-server': { accessToken: 'mcp-token' } } }));
 
+        expect(getUsageCredentials()).toBeNull();
+        expect(getSecurityCallLog()).toEqual([
+            'find-generic-password -s Claude Code-credentials -w',
+            'find-generic-password -s Claude Code-credentials -a testuser -w'
+        ]);
+    });
+
+    it('falls back to ~/.claude/.credentials.json on macOS when the keychain item holds invalid data', () => {
         vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
         mockCredentialsFile(makeTokenPayload('file-token'));
         mockedExecFileSync.mockImplementation((command: string, args?: string[]) => {
-            if (command !== 'security' || !args) {
-                throw new Error(`Unexpected security args: ${args?.join(' ')}`);
-            }
-
-            if (args[0] === 'find-generic-password' && args[2] === 'Claude Code-credentials') {
-                throw makeMissingItemError();
-            }
-
-            if (args[0] === 'dump-keychain') {
-                return dump;
-            }
-
-            if (args[0] === 'find-generic-password' && args[2] === 'Claude Code-credentials-hashed') {
+            if (command === 'security' && args?.[0] === 'find-generic-password' && args[2] === 'Claude Code-credentials') {
                 return 'not-json';
             }
 
-            throw new Error(`Unexpected security args: ${args.join(' ')}`);
+            throw new Error(`Unexpected security args: ${args?.join(' ')}`);
         });
 
         expect(getUsageToken()).toBe('file-token');
@@ -310,98 +267,28 @@ describe('getUsageToken', () => {
         expect(getSecurityCallLog()).toEqual([
             'find-generic-password -s Claude Code-credentials -w',
             'find-generic-password -s Claude Code-credentials -a testuser -w',
-            'dump-keychain',
-            'find-generic-password -s Claude Code-credentials-hashed -w',
             'find-generic-password -s Claude Code-credentials -w',
-            'find-generic-password -s Claude Code-credentials -a testuser -w',
-            'dump-keychain',
-            'find-generic-password -s Claude Code-credentials-hashed -w'
+            'find-generic-password -s Claude Code-credentials -a testuser -w'
         ]);
     });
 
     it('bounds every macOS keychain read with a timeout', () => {
-        const dump = makeKeychainBlock('Claude Code-credentials-hashed', { quoted: '20240301010101Z' });
-
         vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
         mockCredentialsFile();
-        mockedExecFileSync.mockImplementation((command: string, args?: string[]) => {
-            if (command === 'security' && args?.[0] === 'dump-keychain') {
-                return dump;
-            }
-
-            if (command === 'security' && args?.[2] === 'Claude Code-credentials') {
-                throw makeMissingItemError();
-            }
-
-            throw new Error('security timed out');
+        mockedExecFileSync.mockImplementation(() => {
+            throw makeMissingItemError();
         });
 
         expect(getUsageToken()).toBeNull();
         expect(getSecurityCallLog()).toEqual([
             'find-generic-password -s Claude Code-credentials -w',
-            'find-generic-password -s Claude Code-credentials -a testuser -w',
-            'dump-keychain',
-            'find-generic-password -s Claude Code-credentials-hashed -w'
+            'find-generic-password -s Claude Code-credentials -a testuser -w'
         ]);
         // A blocked `security` (e.g. waiting on a keychain unlock prompt)
         // must not hold the status line until someone answers it.
         for (const call of mockedExecFileSync.mock.calls) {
             expect(call[2]).toEqual(expect.objectContaining({ timeout: 5000 }));
         }
-    });
-
-    it.each([
-        [
-            'the item read times out',
-            'find-generic-password -s Claude Code-credentials -w',
-            Object.assign(new Error('spawnSync security ETIMEDOUT'), { code: 'ETIMEDOUT', signal: 'SIGTERM', status: null })
-        ],
-        [
-            'the keychain dump finds it locked',
-            'dump-keychain',
-            Object.assign(new Error('User interaction is not allowed.'), { status: 36 })
-        ],
-        [
-            'a suffixed item read is refused',
-            'find-generic-password -s Claude Code-credentials-new -w',
-            Object.assign(new Error('The user name or passphrase you entered is not correct.'), { status: 51 })
-        ]
-    ])('stops the macOS keychain lookup when %s, then reads the credentials file', (_label, failingCall, failure) => {
-        const dump = [
-            makeKeychainBlock('Claude Code-credentials-new', { quoted: '20240301010101Z' }),
-            makeKeychainBlock('Claude Code-credentials-old', { quoted: '20240201010101Z' })
-        ].join('\n');
-        const chain = [
-            'find-generic-password -s Claude Code-credentials -w',
-            'find-generic-password -s Claude Code-credentials -a testuser -w',
-            'dump-keychain',
-            'find-generic-password -s Claude Code-credentials-new -w',
-            'find-generic-password -s Claude Code-credentials-old -w'
-        ];
-
-        vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
-        mockCredentialsFile(makeTokenPayload('file-token'));
-        mockedExecFileSync.mockImplementation((command: string, args?: string[]) => {
-            if (command !== 'security' || !args) {
-                throw new Error(`Unexpected security args: ${args?.join(' ')}`);
-            }
-
-            if (args.join(' ') === failingCall) {
-                throw failure;
-            }
-
-            if (args[0] === 'dump-keychain') {
-                return dump;
-            }
-
-            throw makeMissingItemError();
-        });
-
-        // Only a missing item moves on to the next keychain call. Any other
-        // failure would meet every later call too, each one another request
-        // for securityd to answer.
-        expect(getUsageToken()).toBe('file-token');
-        expect(getSecurityCallLog()).toEqual(chain.slice(0, chain.indexOf(failingCall) + 1));
     });
 
     it.each(['service-only', 'username'] as const)('stops macOS keychain probes after the %s lookup times out', (timeoutPosition) => {
@@ -430,41 +317,19 @@ describe('getUsageToken', () => {
             ]);
     });
 
-    it('stops trying macOS keychain candidates after one times out', () => {
-        const dump = [
-            makeKeychainBlock('Claude Code-credentials-new', { quoted: '20240301010101Z' }),
-            makeKeychainBlock('Claude Code-credentials-old', { quoted: '20240201010101Z' })
-        ].join('\n');
-
+    it.each([
+        ['times out', Object.assign(new Error('spawnSync security ETIMEDOUT'), { code: 'ETIMEDOUT', signal: 'SIGTERM', status: null })],
+        ['finds the keychain locked', Object.assign(new Error('User interaction is not allowed.'), { status: 36 })],
+        ['is refused', Object.assign(new Error('The user name or passphrase you entered is not correct.'), { status: 51 })]
+    ])('reads the credentials file when the macOS keychain item read %s', (_label, failure) => {
         vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin');
         mockCredentialsFile(makeTokenPayload('file-token'));
-        mockedExecFileSync.mockImplementation((command: string, args?: string[]) => {
-            if (command !== 'security' || !args) {
-                throw new Error(`Unexpected security args: ${args?.join(' ')}`);
-            }
-
-            if (args[0] === 'find-generic-password' && args[2] === 'Claude Code-credentials') {
-                throw makeMissingItemError();
-            }
-
-            if (args[0] === 'dump-keychain') {
-                return dump;
-            }
-
-            if (args[0] === 'find-generic-password' && args[2] === 'Claude Code-credentials-new') {
-                throw makeExecFileTimeoutError();
-            }
-
-            throw new Error(`Unexpected security args: ${args.join(' ')}`);
+        mockedExecFileSync.mockImplementation(() => {
+            throw failure;
         });
 
         expect(getUsageToken()).toBe('file-token');
-        expect(getSecurityCallLog()).toEqual([
-            'find-generic-password -s Claude Code-credentials -w',
-            'find-generic-password -s Claude Code-credentials -a testuser -w',
-            'dump-keychain',
-            'find-generic-password -s Claude Code-credentials-new -w'
-        ]);
+        expect(getSecurityCallLog()).toEqual(['find-generic-password -s Claude Code-credentials -w']);
     });
 
     it.each(['linux', 'win32'] as const)('uses the credentials file on %s', (platform) => {

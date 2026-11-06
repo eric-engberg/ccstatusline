@@ -251,7 +251,45 @@ describe('usage prefetch', () => {
 
         expect(usageData?.fableUsage).toBe(5);
         expect(mockFetchUsageData.mock.calls.length).toBe(1);
-        expect(mockFetchUsageData.mock.calls[0]).toEqual([{ requiredFields: ['fableUsage'] }]);
+        expect(mockFetchUsageData.mock.calls[0]).toEqual([{
+            requiredFields: ['fableUsage'],
+            payloadResetAt: {
+                sessionResetAt: epochToIso(1774020000),
+                weeklyResetAt: epochToIso(1774540000)
+            }
+        }]);
+    });
+
+    it('hands the fetch the payload\'s reset ends so a cached answer from before a reset is replaced', async () => {
+        mockFetchUsageData.mockResolvedValue({
+            weeklyUsage: 1,
+            weeklyResetAt: epochToIso(1774540000),
+            fableUsage: 3,
+            fableResetAt: epochToIso(1774540000)
+        });
+
+        const lines = makeLines(
+            [{ id: '1', type: 'fable-weekly-usage' }, { id: '2', type: 'weekly-usage' }]
+        );
+
+        // Just after a weekly reset: the payload already ends the week seven
+        // days later, while Fable usage comes only from the usage API.
+        const usageData = await prefetchUsageDataIfNeeded(lines, {
+            rate_limits: {
+                five_hour: { used_percentage: 12, resets_at: 1774020000 },
+                seven_day: { used_percentage: 1, resets_at: 1774540000 }
+            }
+        });
+
+        expect(mockFetchUsageData.mock.calls).toEqual([[{
+            requiredFields: ['fableUsage'],
+            payloadResetAt: {
+                sessionResetAt: epochToIso(1774020000),
+                weeklyResetAt: epochToIso(1774540000)
+            }
+        }]]);
+        expect(usageData?.fableUsage).toBe(3);
+        expect(usageData?.weeklyUsage).toBe(1);
     });
 
     it.each([
@@ -362,7 +400,7 @@ describe('usage prefetch', () => {
             weeklyResetAt: epochToIso(1774540000)
         });
         expect(mockFetchUsageData.mock.calls).toEqual([
-            [{ requiredFields: ['sessionResetAt'] }]
+            [{ requiredFields: ['sessionResetAt'], payloadResetAt: { weeklyResetAt: epochToIso(1774540000) } }]
         ]);
     });
 
@@ -421,7 +459,7 @@ describe('usage prefetch', () => {
 
         expect(usageData).toEqual({ weeklyUsage: 72, weeklyResetAt: epochToIso(1776211200), fableUsage: 8 });
         expect(mockFetchUsageData.mock.calls).toEqual([
-            [{ requiredFields: ['fableUsage'] }]
+            [{ requiredFields: ['fableUsage'], payloadResetAt: { weeklyResetAt: epochToIso(1776211200) } }]
         ]);
     });
 
@@ -434,7 +472,7 @@ describe('usage prefetch', () => {
 
         expect(usageData).toEqual({ weeklyUsage: 72, weeklyResetAt: epochToIso(1776211200) });
         expect(mockFetchUsageData.mock.calls).toEqual([
-            [{ requiredFields: ['fableUsage'] }]
+            [{ requiredFields: ['fableUsage'], payloadResetAt: { weeklyResetAt: epochToIso(1776211200) } }]
         ]);
     });
 
@@ -453,6 +491,54 @@ describe('usage prefetch', () => {
         ]);
     });
 
+    it('returns no usage data while another render is still fetching for reset-only lines', async () => {
+        mockFetchUsageData.mockResolvedValue({ error: 'timeout' });
+
+        const lines = makeLines(
+            [{ id: '1', type: 'weekly-reset-timer' }]
+        );
+
+        await expect(prefetchUsageDataIfNeeded(lines, {})).resolves.toBeNull();
+    });
+
+    // A 5xx or 408, a network error or a request past its deadline, whether
+    // this render's fetch failed or it read that failure's backoff
+    it('returns no usage data for reset-only lines while the API error clears up on its own', async () => {
+        mockFetchUsageData.mockResolvedValue({ error: 'api-error', errorTransient: true });
+
+        const lines = makeLines(
+            [{ id: '1', type: 'weekly-reset-timer' }],
+            [{ id: '2', type: 'reset-timer' }]
+        );
+
+        await expect(prefetchUsageDataIfNeeded(lines, {})).resolves.toBeNull();
+    });
+
+    it('keeps an API error that clears up on its own for lines that show it', async () => {
+        mockFetchUsageData.mockResolvedValue({ error: 'api-error', errorTransient: true });
+
+        const lines = makeLines(
+            [{ id: '1', type: 'weekly-usage' }, { id: '2', type: 'reset-timer' }]
+        );
+
+        await expect(prefetchUsageDataIfNeeded(lines, {})).resolves.toEqual({ error: 'api-error' });
+    });
+
+    // A missing login, a rejected token or an unreadable response won't clear
+    // up on a later render, so the timers would otherwise show [Loading] forever
+    it.each(['no-credentials', 'api-error', 'parse-error'] as const)('keeps the %s error for reset-only fetches', async (error) => {
+        mockFetchUsageData.mockResolvedValue({ error });
+
+        const lines = makeLines(
+            [{ id: '1', type: 'weekly-reset-timer' }],
+            [{ id: '2', type: 'reset-timer' }]
+        );
+
+        const usageData = await prefetchUsageDataIfNeeded(lines, { rate_limits: { seven_day: { used_percentage: 15 } } });
+
+        expect(usageData).toEqual({ weeklyUsage: 15, error });
+    });
+
     it('fetches the 5-hour block\'s percent for a reset timer that hides under the limit', async () => {
         mockFetchUsageData.mockResolvedValue({ sessionUsage: 100 });
 
@@ -465,7 +551,7 @@ describe('usage prefetch', () => {
         expect(usageData?.sessionUsage).toBe(100);
         expect(usageData?.apiSessionUsage).toBe(100);
         expect(mockFetchUsageData.mock.calls).toEqual([
-            [{ requiredFields: ['sessionUsage'] }]
+            [{ requiredFields: ['sessionUsage'], payloadResetAt: { sessionResetAt: epochToIso(1774020000) } }]
         ]);
     });
 
@@ -494,7 +580,7 @@ describe('usage prefetch', () => {
         // The usage widgets keep the payload's percent; only the hide state reads the API's
         expect(usageData).toEqual({ sessionUsage: 97, sessionResetAt: epochToIso(1774020000), apiSessionUsage: 100 });
         expect(mockFetchUsageData.mock.calls).toEqual([
-            [{ requiredFields: ['sessionUsage'] }]
+            [{ requiredFields: ['sessionUsage'], payloadResetAt: { sessionResetAt: epochToIso(1774020000) } }]
         ]);
     });
 
@@ -595,7 +681,7 @@ describe('usage prefetch', () => {
         // The widget keeps showing the payload's percent; only the hide state reads the API's
         expect(usageData).toEqual({ sessionUsage: 97, sessionResetAt: epochToIso(1774020000), apiSessionUsage: 100 });
         expect(mockFetchUsageData.mock.calls).toEqual([
-            [{ requiredFields: ['sessionUsage'] }]
+            [{ requiredFields: ['sessionUsage'], payloadResetAt: { sessionResetAt: epochToIso(1774020000) } }]
         ]);
     });
 
@@ -611,7 +697,7 @@ describe('usage prefetch', () => {
 
         expect(usageData?.apiSessionUsage).toBe(100);
         expect(mockFetchUsageData.mock.calls).toEqual([
-            [{ requiredFields: ['sessionUsage'] }]
+            [{ requiredFields: ['sessionUsage'], payloadResetAt: { sessionResetAt: epochToIso(1774020000) } }]
         ]);
     });
 
@@ -698,7 +784,10 @@ describe('usage prefetch', () => {
             weeklySonnetUsage: 8
         });
         expect(mockFetchUsageData.mock.calls.length).toBe(1);
-        expect(mockFetchUsageData.mock.calls[0]).toEqual([{ requiredFields: ['weeklySonnetUsage'] }]);
+        expect(mockFetchUsageData.mock.calls[0]).toEqual([{
+            requiredFields: ['weeklySonnetUsage'],
+            payloadResetAt: { weeklyResetAt: epochToIso(1774540000) }
+        }]);
     });
 
     it('uses aggregate weekly reset as the cursor fallback without fetching for fable reset data', async () => {
@@ -715,7 +804,10 @@ describe('usage prefetch', () => {
             fableUsage: 8
         });
         expect(mockFetchUsageData.mock.calls.length).toBe(1);
-        expect(mockFetchUsageData.mock.calls[0]).toEqual([{ requiredFields: ['fableUsage'] }]);
+        expect(mockFetchUsageData.mock.calls[0]).toEqual([{
+            requiredFields: ['fableUsage'],
+            payloadResetAt: { weeklyResetAt: epochToIso(1774540000) }
+        }]);
     });
 
     it('fetches extra usage fields while preserving statusline usage data', async () => {
@@ -854,9 +946,13 @@ describe('usage prefetch', () => {
 
         expect(usageData?.weeklySonnetUsage).toBe(8);
         expect(usageData?.weeklyOpusUsage).toBe(2);
-        expect(mockFetchUsageData.mock.calls).toEqual([[
-            { requiredFields: ['weeklySonnetUsage', 'weeklyOpusUsage'] }
-        ]]);
+        expect(mockFetchUsageData.mock.calls).toEqual([[{
+            requiredFields: ['weeklySonnetUsage', 'weeklyOpusUsage'],
+            payloadResetAt: {
+                sessionResetAt: epochToIso(1774020000),
+                weeklyResetAt: epochToIso(1774540000)
+            }
+        }]]);
     });
 
     it('does not let null per-model stdin buckets overwrite scoped API usage fetched for another widget', async () => {

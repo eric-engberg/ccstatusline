@@ -11,7 +11,10 @@ import {
 
 import { observeExtraUsageSpend } from './daily-spend';
 import { getLastResponseAtMs } from './session-usage-history';
-import type { UsageData } from './usage';
+import type {
+    PayloadResetAt,
+    UsageData
+} from './usage';
 import {
     fetchUsageData,
     getUsageAccountKey,
@@ -19,7 +22,10 @@ import {
     isStaleUsageFallback,
     lookUpUsageAccount
 } from './usage';
-import type { UsageDataField } from './usage-types';
+import type {
+    UsageDataField,
+    UsageError
+} from './usage-types';
 import {
     WEEKLY_MODEL_USAGE_BUCKETS,
     setUsageField
@@ -78,6 +84,15 @@ interface UsageFieldRequirement {
 }
 
 const EMPTY_USAGE_REQUIREMENTS: UsageFieldRequirement[] = [];
+
+// Fetch errors that only mean the data hasn't arrived yet: a 429 while Claude
+// Code starts up, before its payload carries rate_limits, or another render's
+// fetch still in flight. An API error joins them when the fetch marks it as
+// one that clears up on its own: a 5xx or 408 response, a network error or a
+// request past its deadline. Any other failure, a missing login, a rejected
+// token or a server certificate that doesn't verify among them, may never
+// clear up, so it is shown rather than a loading placeholder that never ends.
+const TRANSIENT_FETCH_ERRORS = new Set<UsageError>(['rate-limited', 'timeout']);
 
 // The spend limit widgets have no entry here on purpose: rate_limits.spend_limit
 // only exists in the statusline payload, so a missing value must not trigger an
@@ -392,6 +407,19 @@ export function extractUsageDataFromRateLimits(rateLimits: StatusJSON['rate_limi
     return hasAnyUsageDataField(usageData) ? usageData : null;
 }
 
+// The payload's 5-hour and weekly reset ends, which tell fetchUsageData that a
+// cached usage API answer is from before a reset. Undefined when it has neither.
+function getPayloadResetAt(rateLimitsData: UsageData | null): PayloadResetAt | undefined {
+    if (rateLimitsData?.sessionResetAt === undefined && rateLimitsData?.weeklyResetAt === undefined) {
+        return undefined;
+    }
+
+    return {
+        sessionResetAt: rateLimitsData.sessionResetAt,
+        weeklyResetAt: rateLimitsData.weeklyResetAt
+    };
+}
+
 export async function prefetchUsageDataIfNeeded(lines: WidgetItem[][], data?: StatusJSON): Promise<UsageData | null> {
     if (!hasUsageDependentWidgets(lines)) {
         return null;
@@ -413,8 +441,13 @@ export async function prefetchUsageDataIfNeeded(lines: WidgetItem[][], data?: St
         return rateLimitsData;
     }
 
-    const apiData = await fetchUsageData({ requiredFields: missingFields });
-    if (apiData.error && missingRequirements.suppressFetchError) {
+    const apiData = await fetchUsageData({
+        requiredFields: missingFields,
+        payloadResetAt: getPayloadResetAt(rateLimitsData)
+    });
+    const hasTransientError = apiData.error !== undefined
+        && (TRANSIENT_FETCH_ERRORS.has(apiData.error) || apiData.errorTransient === true);
+    if (hasTransientError && missingRequirements.suppressFetchError) {
         return hasAnyUsageDataField(apiData)
             ? mergeUsageData(rateLimitsData, { ...apiData, error: undefined })
             : rateLimitsData;
