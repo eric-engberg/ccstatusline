@@ -23,6 +23,11 @@ import {
     getGradientKeybinds,
     getGradientModifier
 } from './gradient-bar';
+import {
+    LEVEL_GLYPH_DISPLAY,
+    getLevelGlyphKeybinds,
+    isLevelGlyphMode
+} from './level-glyph';
 import { makeLineProgressBar } from './progress-bar';
 import { makeSliderBar } from './usage-display';
 
@@ -38,16 +43,22 @@ export function getContextSliderMode(item: WidgetItem): ContextSliderMode {
     return 'none';
 }
 
-// (p) steps from the percentage to a slider, then a line, each keeping the bar's size
+// (p) cycles the percentage, a slider, a line and the level glyph. The bar
+// keeps the size it had through the others.
 export function cycleContextSliderMode(item: WidgetItem): WidgetItem {
-    if (getContextSliderMode(item) === 'none') {
-        return setBarStyle(item, 'slider', 'short');
-    }
-    if (getBarStyle(item) !== 'line') {
+    const mode = getContextSliderMode(item);
+    if (mode !== 'none' && getBarStyle(item) !== 'line') {
         return setBarStyle(item, 'line');
     }
+    if (mode !== 'none') {
+        const kept = keepBarLayout(item);
+        return { ...kept, metadata: { ...kept.metadata, display: LEVEL_GLYPH_DISPLAY } };
+    }
+    if (!isLevelGlyphMode(item)) {
+        return setBarStyle(item, 'slider', 'short');
+    }
 
-    const nextMetadata = { ...keepBarLayout(item).metadata };
+    const nextMetadata = { ...item.metadata };
     delete nextMetadata.display;
     return {
         ...item,
@@ -65,6 +76,9 @@ export function renderContextSlider(item: WidgetItem, percent: number, format: N
 }
 
 export function getContextSliderModifierText(item: WidgetItem): string | undefined {
+    if (isLevelGlyphMode(item)) {
+        return '(level glyph)';
+    }
     if (getContextSliderMode(item) === 'none') {
         return undefined;
     }
@@ -74,6 +88,9 @@ export function getContextSliderModifierText(item: WidgetItem): string | undefin
 }
 
 export function getContextSliderKeybinds(item?: WidgetItem): CustomKeybind[] {
+    if (item && isLevelGlyphMode(item)) {
+        return [SLIDER_TOGGLE_KEYBIND, ...getLevelGlyphKeybinds()];
+    }
     const showsBar = item ? getContextSliderMode(item) !== 'none' : false;
     return [SLIDER_TOGGLE_KEYBIND, ...getGradientKeybinds(showsBar), ...getBarWidthKeybinds(showsBar), ...getBarNumbersKeybinds(item, showsBar)];
 }
