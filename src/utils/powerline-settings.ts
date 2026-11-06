@@ -4,8 +4,10 @@ import type { WidgetItem } from '../types/Widget';
 import { getDefaultPowerlineTheme } from './colors';
 import { isAnyLinePowerline } from './powerline-lines';
 
+// Only a first enable has no theme yet. 'custom' is chosen in the Themes menu,
+// which is open only while Powerline is enabled, so it is kept.
 function resolveEnabledPowerlineTheme(theme: string | undefined): string {
-    if (!theme || theme === 'custom') {
+    if (!theme) {
         return getDefaultPowerlineTheme();
     }
 
