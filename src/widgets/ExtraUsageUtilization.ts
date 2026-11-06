@@ -23,7 +23,7 @@ import { EXTRA_USAGE_DISABLED_HIDEABLE_STATE } from './shared/extra-usage-disabl
 import {
     CYCLE_GRADIENT_ACTION,
     cycleGradientPreset,
-    paintsBarGradient
+    paintsBarCells
 } from './shared/gradient-bar';
 import { isHidden } from './shared/hideable';
 import {
@@ -175,10 +175,10 @@ export class ExtraUsageUtilizationWidget implements Widget {
     }
 
     // Value colors paint only the value (or the whole text), and a gradient
-    // preset only the bar, so the renderer colors the rest with the theme
-    // or widget color
+    // preset or gray empty cells only the bar, so the renderer colors the rest
+    // with the theme or widget color
     colorsOnlyItsRuns(item: WidgetItem): boolean {
-        return showsValueColors(item) || paintsBarGradient(item, showsUsageBar(item));
+        return showsValueColors(item) || paintsBarCells(item, showsUsageBar(item));
     }
 
     supportsRawValue(): boolean { return true; }

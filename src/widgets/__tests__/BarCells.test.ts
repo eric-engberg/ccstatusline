@@ -9,7 +9,7 @@ import { DEFAULT_SETTINGS } from '../../types/Settings';
 import type { WidgetItem } from '../../types/Widget';
 import { getWidget } from '../../utils/widgets';
 
-const BAR_GLYPHS = /[█░▓│]/g;
+const BAR_GLYPHS = /[█░▓│▮■▉▰]/g;
 
 function renderPreview(type: string, metadata: Record<string, string>, context: RenderContext = {}): string {
     const widget = getWidget(type);
@@ -47,7 +47,13 @@ const BAR_MODES: [string, string, number][] = [
     ['context-bar', 'progress', 32],
     ['context-bar', 'progress-short', 16],
     ['context-bar', 'slider', 10],
-    ['context-bar', 'slider-only', 10]
+    ['context-bar', 'slider-only', 10],
+    // The cell styles are medium unless sized
+    ['session-usage', 'cells', 16],
+    ['weekly-reset-timer', 'cells', 16],
+    ['extra-usage-utilization', 'cells', 16],
+    ['context-percentage-usable', 'cells', 16],
+    ['context-bar', 'cells', 16]
 ];
 
 describe('bar cells', () => {
@@ -79,11 +85,19 @@ const BAR_STYLES: [string, string][] = [
     ['context-percentage', 'slider'],
     ['context-percentage-usable', 'slider'],
     ['context-bar', 'progress-short'],
-    ['context-bar', 'slider']
+    ['context-bar', 'slider'],
+    ['session-usage', 'cells'],
+    ['weekly-opus-usage', 'cells'],
+    ['block-timer', 'cells'],
+    ['reset-timer', 'cells'],
+    ['extra-usage-utilization', 'cells'],
+    ['context-percentage', 'cells'],
+    ['context-bar', 'cells']
 ];
 
-// The text ends with the bar: a cell, or a block bar's closing bracket
-const ENDS_WITH_BAR = /[█░▓│\]]$/;
+// The text ends with the bar: a cell, or a block bar's closing bracket, then
+// perhaps the code that ends a cell bar's faint empty cells
+const ENDS_WITH_BAR = /[█░▓│▮■▉▰\]](\x1b\[22m)?$/;
 
 describe('bar sizes and numbers', () => {
     it.each(BAR_STYLES)('%s in %s mode draws any of the fixed sizes', (type, display) => {
@@ -109,7 +123,9 @@ describe('bar width in the line editor', () => {
         ['block-timer', 'slider', '(slider bar, 50% width)'],
         ['weekly-reset-timer', 'progress-short', '(block bar, 50% width)'],
         ['context-percentage', 'slider', '(slider bar, 50% width)'],
-        ['context-bar', 'slider-only', '(slider bar, 50% width, numbers off)']
+        ['context-bar', 'slider-only', '(slider bar, 50% width, numbers off)'],
+        ['spend-limit-usage', 'cells', '(cells ▮, 50% width, used)'],
+        ['reset-timer', 'cells', '(cells ▮, 50% width)']
     ])('%s in %s mode shows the width and offers (b)', (type, display, expected) => {
         expect(modifierText(type, { display, barWidth: '50' })).toBe(expected);
         expect(keys(type, { display })).toContain('b');
