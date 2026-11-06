@@ -7,8 +7,8 @@ import { isAnyLinePowerline } from './powerline-lines';
 // The Default Padding turning Powerline on sets, so segment text doesn't touch the arrows
 const POWERLINE_PADDING = ' ';
 
-// Only a theme never picked gets the default. Custom is picked on purpose, and
-// the widgets' own colors draw only under it
+// Only a first enable has no theme yet. 'custom' is chosen in the Themes menu,
+// which is open only while Powerline is enabled, so it is kept.
 function resolveEnabledPowerlineTheme(theme: string | undefined): string {
     if (!theme) {
         return getDefaultPowerlineTheme();
