@@ -105,12 +105,16 @@ describe('line bars across usage and timer widgets', () => {
                 const line = widget.handleEditorAction('toggle-progress', last);
                 expect(line).not.toBeNull();
                 expect(line?.metadata).toEqual({ display: 'line', invert: 'true', cursor: 'true', label: 'Custom ', barWidth: 'short', barNumbers: 'none' });
-                // The percent widgets show the level glyph after the line; the timers go back to text
+                // The cell bars come after the line, then the level glyph on the percent widgets
                 const afterLine = widget.handleEditorAction('toggle-progress', line ?? item);
-                const text = type.includes('timer') ? afterLine : widget.handleEditorAction('toggle-progress', afterLine ?? item);
-                if (!type.includes('timer')) {
-                    expect(afterLine?.metadata?.display).toBe('glyph');
+                expect(afterLine?.metadata?.display).toBe('cells');
+                const seen: (string | undefined)[] = [];
+                let text = afterLine;
+                while (text && text.metadata?.display !== 'time' && seen.length < 8) {
+                    text = widget.handleEditorAction('toggle-progress', text);
+                    seen.push(text?.metadata?.display);
                 }
+                expect(seen.includes('glyph')).toBe(!type.includes('timer'));
                 expect(text).not.toBeNull();
                 expect(text?.metadata?.display).toBe('time');
                 expect(text?.metadata?.cursor).toBeUndefined();
@@ -146,7 +150,9 @@ describe('context line bars', () => {
         const line = widget.handleEditorAction('toggle-slider', { ...item, metadata: { display: 'slider-only', inverse: 'true' } });
         expect(line).not.toBeNull();
         expect(line?.metadata).toEqual({ display: 'line', inverse: 'true', barWidth: 'short', barNumbers: 'none' });
-        const glyph = widget.handleEditorAction('toggle-slider', line ?? item);
+        const cells = widget.handleEditorAction('toggle-slider', line ?? item);
+        expect(cells?.metadata).toEqual({ display: 'cells', inverse: 'true', barWidth: 'short', barNumbers: 'none' });
+        const glyph = widget.handleEditorAction('toggle-slider', { ...item, metadata: { ...cells?.metadata, barCell: 'parallelogram' } });
         expect(glyph?.metadata).toEqual({ display: 'glyph', inverse: 'true', barWidth: 'short', barNumbers: 'none' });
         expect(widget.handleEditorAction('toggle-slider', glyph ?? item)?.metadata).toEqual({ inverse: 'true', barWidth: 'short', barNumbers: 'none' });
     });

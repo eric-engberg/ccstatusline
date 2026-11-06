@@ -1,17 +1,20 @@
 import type { NumberFormat } from '../../types/NumberFormat';
+import type { Settings } from '../../types/Settings';
 import type {
     CustomKeybind,
     WidgetItem
 } from '../../types/Widget';
 import { formatPercent } from '../../utils/number-format';
 
+import { drawWidgetBar } from './bar-draw';
 import {
+    getBarEmptyCellsKeybinds,
     getBarLayoutModifiers,
     getBarNumbersKeybinds,
-    getBarStyle,
     keepBarLayout,
     setBarStyle,
-    showsBarPercent
+    showsBarPercent,
+    stepBarStyle
 } from './bar-layout';
 import {
     getBarWidthKeybinds,
@@ -28,29 +31,29 @@ import {
     getLevelGlyphKeybinds,
     isLevelGlyphMode
 } from './level-glyph';
-import { makeLineProgressBar } from './progress-bar';
-import { makeSliderBar } from './usage-display';
 
-export type ContextSliderMode = 'none' | 'slider' | 'slider-only' | 'line';
+// The percentage, or a bar: a slider, or a cell bar in one of its shapes
+export type ContextSliderMode = 'none' | 'slider' | 'slider-only' | 'line' | 'cells';
 
 const SLIDER_TOGGLE_KEYBIND: CustomKeybind = { key: 'p', label: '(p) bar style', action: 'toggle-slider' };
 
 export function getContextSliderMode(item: WidgetItem): ContextSliderMode {
     const mode = item.metadata?.display;
-    if (mode === 'slider' || mode === 'slider-only' || mode === 'line') {
+    if (mode === 'slider' || mode === 'slider-only' || mode === 'line' || mode === 'cells') {
         return mode;
     }
     return 'none';
 }
 
-// (p) cycles the percentage, a slider, a line and the level glyph. The bar
-// keeps the size it had through the others.
+// (p) cycles the percentage, a slider, the cell bars in each shape and the
+// level glyph, the order the usage widgets have after their block bar. The
+// bar keeps the size it had through all of them.
 export function cycleContextSliderMode(item: WidgetItem): WidgetItem {
-    const mode = getContextSliderMode(item);
-    if (mode !== 'none' && getBarStyle(item) !== 'line') {
-        return setBarStyle(item, 'line');
-    }
-    if (mode !== 'none') {
+    if (getContextSliderMode(item) !== 'none') {
+        const nextStyle = stepBarStyle(item);
+        if (nextStyle) {
+            return nextStyle;
+        }
         const kept = keepBarLayout(item);
         return { ...kept, metadata: { ...kept.metadata, display: LEVEL_GLYPH_DISPLAY } };
     }
@@ -66,13 +69,14 @@ export function cycleContextSliderMode(item: WidgetItem): WidgetItem {
     };
 }
 
-export function renderContextSlider(item: WidgetItem, percent: number, format: NumberFormat = {}, cells?: number): string | null {
+// The bar and the percent after it, painted with the widget's gradient
+// preset; reversed when it fills with what's left
+export function renderContextSlider(item: WidgetItem, percent: number, settings: Settings, format: NumberFormat = {}, cells?: number, reversed = false): string | null {
     if (getContextSliderMode(item) === 'none') {
         return null;
     }
-    const barCells = cells ?? getFixedBarCells(item);
-    const bar = getBarStyle(item) === 'line' ? makeLineProgressBar(percent, barCells) : makeSliderBar(percent, barCells);
-    return showsBarPercent(item) ? `${bar} ${formatPercent(percent, format)}` : bar;
+    const slider = drawWidgetBar(item, percent, cells ?? getFixedBarCells(item), settings, { reversed });
+    return showsBarPercent(item) ? `${slider} ${formatPercent(percent, format)}` : slider;
 }
 
 export function getContextSliderModifierText(item: WidgetItem): string | undefined {
@@ -92,7 +96,7 @@ export function getContextSliderKeybinds(item?: WidgetItem): CustomKeybind[] {
         return [SLIDER_TOGGLE_KEYBIND, ...getLevelGlyphKeybinds()];
     }
     const showsBar = item ? getContextSliderMode(item) !== 'none' : false;
-    return [SLIDER_TOGGLE_KEYBIND, ...getGradientKeybinds(showsBar), ...getBarWidthKeybinds(showsBar), ...getBarNumbersKeybinds(item, showsBar)];
+    return [SLIDER_TOGGLE_KEYBIND, ...getGradientKeybinds(showsBar), ...getBarWidthKeybinds(showsBar), ...getBarNumbersKeybinds(item, showsBar), ...getBarEmptyCellsKeybinds(item)];
 }
 
 // The slider and gradient actions; null for anything else

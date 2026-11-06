@@ -236,20 +236,26 @@ export function runUsagePercentWidgetSuite<TWidget extends UsageWidgetLike & { g
     });
 
     // (p) cycles the style; the size, long the first time, stays with the bar
-    it('cycles the text, a block bar, a slider and the level glyph', () => {
+    it('cycles the text, a block bar, a slider, a line, the cell bars and the level glyph', () => {
         const widget = config.createWidget();
+        const steps: WidgetItem[] = [];
+        let item = config.baseItem;
+        for (let i = 0; i < 9; i++) {
+            item = widget.handleEditorAction('toggle-progress', item) ?? item;
+            steps.push(item);
+        }
 
-        const first = widget.handleEditorAction('toggle-progress', config.baseItem);
-        const second = widget.handleEditorAction('toggle-progress', first ?? config.baseItem);
-        const third = widget.handleEditorAction('toggle-progress', second ?? config.baseItem);
-        const fourth = widget.handleEditorAction('toggle-progress', third ?? config.baseItem);
-        const fifth = widget.handleEditorAction('toggle-progress', fourth ?? config.baseItem);
-
-        expect(first?.metadata).toEqual({ display: 'progress' });
-        expect(second?.metadata).toEqual({ display: 'slider', barWidth: 'long' });
-        expect(third?.metadata).toEqual({ display: 'line', barWidth: 'long' });
-        expect(fourth?.metadata).toEqual({ display: 'glyph', barWidth: 'long' });
-        expect(fifth?.metadata).toEqual({ display: 'time', barWidth: 'long' });
+        expect(steps.map(step => step.metadata)).toEqual([
+            { display: 'progress' },
+            { display: 'slider', barWidth: 'long' },
+            { display: 'line', barWidth: 'long' },
+            { display: 'cells', barWidth: 'long' },
+            { display: 'cells', barWidth: 'long', barCell: 'square' },
+            { display: 'cells', barWidth: 'long', barCell: 'seven-eighths' },
+            { display: 'cells', barWidth: 'long', barCell: 'parallelogram' },
+            { display: 'glyph', barWidth: 'long' },
+            { display: 'time', barWidth: 'long' }
+        ]);
     });
 
     // What's left would flip the levels, so the glyph always measures what's used
@@ -477,11 +483,11 @@ export function runUsageTimerEditorSuite<TWidget extends UsageWidgetLike & { get
 
     it('clears invert metadata when cycling back to time mode', () => {
         const widget = config.createWidget();
-        const lastBarMode = 'line';
+        const lastBarMode: Record<string, string> = config.supportsSliderMode ? { display: 'cells', barCell: 'parallelogram' } : { display: 'progress-short' };
         const updated = widget.handleEditorAction('toggle-progress', {
             ...config.baseItem,
             metadata: {
-                display: lastBarMode,
+                ...lastBarMode,
                 invert: 'true'
             }
         });
@@ -491,26 +497,32 @@ export function runUsageTimerEditorSuite<TWidget extends UsageWidgetLike & { get
     });
 
     // (p) cycles the style; the size, long the first time, stays with the bar
-    it('cycles the time, a block bar and a slider', () => {
+    it('cycles the time, a block bar, a slider, a line and the cell bars', () => {
         const widget = config.createWidget();
+        const steps: WidgetItem[] = [];
+        let item = config.baseItem;
+        for (let i = 0; i < (config.supportsSliderMode ? 8 : 3); i++) {
+            item = widget.handleEditorAction('toggle-progress', item) ?? item;
+            steps.push(item);
+        }
 
-        const first = widget.handleEditorAction('toggle-progress', config.baseItem);
-        const second = widget.handleEditorAction('toggle-progress', first ?? config.baseItem);
-
-        expect(first?.metadata?.display).toBe('progress');
+        expect(steps[0]?.metadata?.display).toBe('progress');
 
         if (config.supportsSliderMode) {
-            const third = widget.handleEditorAction('toggle-progress', second ?? config.baseItem);
-            const fourth = widget.handleEditorAction('toggle-progress', third ?? config.baseItem);
-
-            expect(second?.metadata?.display).toBe('slider');
-            expect(second?.metadata?.barWidth).toBe('long');
-            expect(third?.metadata?.display).toBe('line');
-            expect(fourth?.metadata?.display).toBe('time');
+            expect(steps.slice(1, 7).map(step => [step.metadata?.display, step.metadata?.barCell])).toEqual([
+                ['slider', undefined],
+                ['line', undefined],
+                ['cells', undefined],
+                ['cells', 'square'],
+                ['cells', 'seven-eighths'],
+                ['cells', 'parallelogram']
+            ]);
+            expect(steps[1]?.metadata?.barWidth).toBe('long');
+            expect(steps[6]?.metadata?.barWidth).toBe('long');
+            expect(steps[7]?.metadata?.display).toBe('time');
         } else {
-            const third = widget.handleEditorAction('toggle-progress', second ?? config.baseItem);
-            expect(second?.metadata?.display).toBe('line');
-            expect(third?.metadata?.display).toBe('time');
+            expect(steps[1]?.metadata?.display).toBe('line');
+            expect(steps[2]?.metadata?.display).toBe('time');
         }
     });
 
