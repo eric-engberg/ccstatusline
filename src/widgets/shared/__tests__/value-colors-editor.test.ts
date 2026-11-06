@@ -16,6 +16,10 @@ import {
     renderValueColorsEditor,
     type ValueColorsEditorOptions
 } from '../value-colors-editor';
+import {
+    COUNT_UNIT,
+    DOLLAR_UNIT
+} from '../value-units';
 
 import {
     DOWN,
@@ -40,6 +44,19 @@ const UTILIZATION_OPTIONS: ValueColorsEditorOptions = {
     sampleNote: 'used',
     defaultColor: 'green',
     maxPercent: 100
+};
+
+const COST_OPTIONS: ValueColorsEditorOptions = {
+    title: 'Session Cost: value colors',
+    scale: { midFrom: 5, highFrom: 20, highEdge: 'from', unit: DOLLAR_UNIT, gradientEnd: 20 },
+    sampleNote: 'this session',
+    defaultColor: 'green'
+};
+const COUNT_OPTIONS: ValueColorsEditorOptions = {
+    title: 'Compaction Counter: value colors',
+    scale: { midFrom: 1, highFrom: 3, highEdge: 'from', unit: COUNT_UNIT, gradientEnd: 3 },
+    sampleNote: 'compactions',
+    defaultColor: 'yellow'
 };
 
 const today: WidgetItem = { id: 't', type: 'extra-usage-today', rawValue: true };
@@ -170,7 +187,7 @@ describe('value colors editor', () => {
         try {
             await editor.ready();
             await editor.press(DOWN, DOWN, DOWN, DOWN, RIGHT);
-            expect(editor.takeOutput()).toContain('Sample: 43% 85% 100% 115%');
+            expect(editor.takeOutput()).toContain('Sample: 42% 85% 100% 115%');
             await editor.press(ENTER);
             expect(editor.savedMetadata()).toEqual({ valueMidFrom: '85' });
         } finally {
@@ -263,6 +280,52 @@ describe('value colors editor', () => {
             await editor.ready();
             await editor.press('d', ENTER);
             expect(editor.savedMetadata()).toEqual({ valueColors: 'true' });
+        } finally {
+            editor.cleanup();
+        }
+    });
+
+    it('shows an amount scale\'s break points, samples and hint in its unit', async () => {
+        const editor = renderEditor({ id: 'c', type: 'session-cost', rawValue: true }, COST_OPTIONS);
+
+        try {
+            await editor.ready();
+            const output = editor.takeOutput();
+            expect(output).toContain('Sample: $2.50 $5 $20 $35 this session');
+            expect(output).toMatch(/mid from\s+\$5/);
+            expect(output).toMatch(/high from\s+\$20/);
+            expect(output).toContain('Type an amount on a dollar row to set it exactly');
+            await editor.press(DOWN, DOWN, DOWN, DOWN, '7');
+            expect(editor.takeOutput()).toContain('mid from (dollars, e.g. 2.50): 7');
+            await editor.press('.', '5', ENTER, ENTER);
+            expect(editor.savedMetadata()).toEqual({ valueMidFrom: '7.5' });
+        } finally {
+            editor.cleanup();
+        }
+    });
+
+    it('ends an amount scale\'s gradient at its own default', async () => {
+        const editor = renderEditor({ id: 'c', type: 'session-cost', rawValue: true, metadata: { valueColorMode: 'gradient' } }, COST_OPTIONS);
+
+        try {
+            await editor.ready();
+            const output = editor.takeOutput();
+            expect(output).toMatch(/ends at\s+\$20/);
+            expect(output).toContain('Sample: $5 $10 $15 $20 $25 this session');
+            await editor.press(DOWN, DOWN, RIGHT, ENTER);
+            expect(editor.savedMetadata()).toEqual({ valueColorMode: 'gradient', valueGradientEnd: '21' });
+        } finally {
+            editor.cleanup();
+        }
+    });
+
+    // Half of a mid break point of 1 rounds down to 0, so the sample still shows a value below mid
+    it('samples a count below its mid break point', async () => {
+        const editor = renderEditor({ id: 'c', type: 'compaction-counter' }, COUNT_OPTIONS);
+
+        try {
+            await editor.ready();
+            expect(editor.takeOutput()).toContain('Sample: 0 1 3 5 compactions');
         } finally {
             editor.cleanup();
         }

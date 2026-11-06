@@ -249,6 +249,18 @@ describe('CompactionCounterWidget', () => {
                 item: { ...ITEM, metadata: { showReclaimed: 'true', symbolReclaimed: '' } }
             })).toBe('↻ 2 887.0k');
         });
+
+        // Minimalist mode renders every widget as a raw value, but this one has
+        // no raw value mode: its icon or label is part of its format
+        it('keeps its icon or label as a raw value, as minimalist mode renders it, with or without value colors', () => {
+            const compactionData = { count: 2, byTrigger: { auto: 2, manual: 0, unknown: 0 } };
+
+            for (const metadata of [{}, { valueColors: 'true' }] as Record<string, string>[]) {
+                expect(render({ compactionData, item: { ...ITEM, rawValue: true, metadata } })).toBe('↻ 2');
+                expect(render({ compactionData, item: { ...ITEM, rawValue: true, metadata: { ...metadata, format: 'text-and-number' } } })).toBe('Compactions: 2');
+                expect(render({ compactionData, item: { ...ITEM, rawValue: true, metadata: { ...metadata, showTriggers: 'true' } } })).toBe('↻ 2 (2 auto)');
+            }
+        });
     });
 
     describe('editor', () => {
@@ -259,7 +271,8 @@ describe('CompactionCounterWidget', () => {
                 { key: 'n', label: '(n)erd font', action: 'toggle-nerd-font' },
                 { key: 's', label: '(s)plit by trigger', action: 'toggle-triggers' },
                 { key: 't', label: '(t)okens reclaimed', action: 'toggle-reclaimed' },
-                { key: 'g', label: '(g)lyph', action: 'edit-symbol-override' }
+                { key: 'g', label: '(g)lyph', action: 'edit-symbol-override' },
+                { key: 'l', label: 'va(l)ue colors', action: 'edit-value-colors' }
             ]);
         });
 
@@ -272,7 +285,8 @@ describe('CompactionCounterWidget', () => {
                 { key: 'f', label: '(f)ormat', action: 'cycle-format' },
                 { key: 's', label: '(s)plit by trigger', action: 'toggle-triggers' },
                 { key: 't', label: '(t)okens reclaimed', action: 'toggle-reclaimed' },
-                { key: 'g', label: '(g)lyph', action: 'edit-symbol-override' }
+                { key: 'g', label: '(g)lyph', action: 'edit-symbol-override' },
+                { key: 'l', label: 'va(l)ue colors', action: 'edit-value-colors' }
             ]);
         });
 
@@ -467,12 +481,13 @@ describe('CompactionCounterWidget', () => {
             });
         });
 
-        it('uses only the metric keybind in metric mode, since hiding moves to the shared checklist', () => {
+        it('uses only the metric and value colors keybinds in metric mode, since hiding moves to the shared checklist', () => {
             expect(new CompactionCounterWidget().getCustomKeybinds({
                 ...ITEM,
                 metadata: { metric: 'auto' }
             })).toEqual([
-                { key: 'v', label: '(v)alue', action: 'cycle-metric' }
+                { key: 'v', label: '(v)alue', action: 'cycle-metric' },
+                { key: 'l', label: 'va(l)ue colors', action: 'edit-value-colors' }
             ]);
         });
 
