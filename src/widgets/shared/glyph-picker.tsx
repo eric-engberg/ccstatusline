@@ -13,7 +13,7 @@ import React, {
 
 import type { SkinTone } from '../../types/SkinTone';
 import { getVisibleWidth } from '../../utils/ansi';
-import { shouldInsertInput } from '../../utils/input-guards';
+import { getInsertableText } from '../../utils/input-guards';
 
 import type { GlyphCatalog } from './glyph-catalog';
 import type { GlyphEntry } from './glyph-groups';
@@ -136,12 +136,13 @@ const GlyphGrid: React.FC<GlyphPickerProps & { catalog: GlyphCatalog }> = ({ cat
 
     // Keys that only browse the groups or only refine a search
     const handleModeKey = (input: string, key: Key) => {
+        const text = getInsertableText(input, key);
         if (searching && (key.backspace || key.delete)) {
             search(query.slice(0, -1));
         } else if (!searching && key.tab) {
             changeGroup(key.shift ? -1 : 1);
-        } else if (shouldInsertInput(input, key)) {
-            search(query + input);
+        } else if (text) {
+            search(query + text);
         }
     };
 
