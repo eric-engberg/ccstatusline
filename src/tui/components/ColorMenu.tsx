@@ -17,8 +17,8 @@ import {
 } from '../../utils/colors';
 import { GRADIENT_PRESET_NAMES } from '../../utils/gradient';
 import {
-    getPlainInput,
-    shouldInsertInput
+    getInsertableHexDigits,
+    getPlainInput
 } from '../../utils/input-guards';
 import {
     getWidget,
@@ -154,11 +154,11 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
                 }
             } else if (key.backspace || key.delete) {
                 setHexInput(hexInput.slice(0, -1));
-            } else if (shouldInsertInput(input, key) && hexInput.length < 6) {
+            } else {
                 // Only accept hex characters (0-9, A-F, a-f)
-                const upperInput = input.toUpperCase();
-                if (/^[0-9A-F]$/.test(upperInput)) {
-                    setHexInput(hexInput + upperInput);
+                const digits = getInsertableHexDigits(input, key, 6 - hexInput.length);
+                if (digits) {
+                    setHexInput(hexInput + digits);
                 }
             }
             return;
@@ -198,10 +198,10 @@ export const ColorMenu: React.FC<ColorMenuProps> = ({ widgets, lineIndex, settin
                     }
                 } else if (key.backspace || key.delete) {
                     setGradientHexInput(gradientHexInput.slice(0, -1));
-                } else if (shouldInsertInput(input, key) && gradientHexInput.length < 6) {
-                    const upperInput = input.toUpperCase();
-                    if (/^[0-9A-F]$/.test(upperInput)) {
-                        setGradientHexInput(gradientHexInput + upperInput);
+                } else {
+                    const digits = getInsertableHexDigits(input, key, 6 - gradientHexInput.length);
+                    if (digits) {
+                        setGradientHexInput(gradientHexInput + digits);
                     }
                 }
                 return;

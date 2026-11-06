@@ -5,7 +5,7 @@ import {
 } from 'ink';
 import React, { useState } from 'react';
 
-import { shouldInsertInput } from '../../utils/input-guards';
+import { getInsertableText } from '../../utils/input-guards';
 import { BlinkingCursor } from '../../widgets/shared/BlinkingCursor';
 
 interface ImportConfigDialogProps {
@@ -17,14 +17,15 @@ export function ImportConfigDialog({ onFileChosen, onCancel }: ImportConfigDialo
     const [inputValue, setInputValue] = useState('');
 
     useInput((input, key) => {
+        const text = getInsertableText(input, key);
         if (key.return) {
             onFileChosen(inputValue);
         } else if (key.escape) {
             onCancel();
         } else if (key.backspace) {
             setInputValue(inputValue.slice(0, -1));
-        } else if (shouldInsertInput(input, key)) {
-            setInputValue(inputValue + input);
+        } else if (text) {
+            setInputValue(inputValue + text);
         }
     });
 

@@ -37,6 +37,10 @@ describe('applyTextCursorInput', () => {
         expect(applyTextCursorInput({ text: 'ac', cursor: 1 }, 'b', makeKey())).toEqual({ text: 'abc', cursor: 2 });
     });
 
+    it('inserts a paste whole, its line break dropped and its tab turned into a space', () => {
+        expect(applyTextCursorInput({ text: 'ab', cursor: 1 }, 'x\ty\r', makeKey())).toEqual({ text: 'ax yb', cursor: 4 });
+    });
+
     it('moves and deletes by whole graphemes', () => {
         const text = `a${FAMILY}b`;
         const afterEmoji = 1 + FAMILY.length;

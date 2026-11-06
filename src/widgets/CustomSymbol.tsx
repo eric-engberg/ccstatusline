@@ -15,7 +15,7 @@ import type {
     WidgetEditorProps,
     WidgetItem
 } from '../types/Widget';
-import { shouldInsertInput } from '../utils/input-guards';
+import { getInsertableText } from '../utils/input-guards';
 
 import { BlinkingCursor } from './shared/BlinkingCursor';
 import { MERGE_TARGET_HIDDEN_HIDEABLE_STATE } from './shared/hideable';
@@ -62,15 +62,16 @@ const CustomSymbolEditor: React.FC<WidgetEditorProps> = ({ widget, onComplete, o
     const [symbol, setSymbol] = useState(widget.customSymbol ?? '');
 
     useInput((input, key) => {
+        const text = getInsertableText(input, key);
         if (key.return) {
             onComplete({ ...widget, customSymbol: symbol });
         } else if (key.escape) {
             onCancel();
         } else if (key.backspace || key.delete) {
             setSymbol('');
-        } else if (shouldInsertInput(input, key)) {
+        } else if (text) {
             // Take only the first grapheme (handles multi-byte emojis correctly)
-            const firstGrapheme = getGraphemes(input)[0] ?? '';
+            const firstGrapheme = getGraphemes(text)[0] ?? '';
             setSymbol(firstGrapheme);
         }
     });

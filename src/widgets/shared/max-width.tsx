@@ -11,7 +11,7 @@ import type {
     WidgetItem
 } from '../../types/Widget';
 import { truncateStyledText } from '../../utils/ansi';
-import { shouldInsertInput } from '../../utils/input-guards';
+import { getInsertableText } from '../../utils/input-guards';
 
 import { BlinkingCursor } from './BlinkingCursor';
 
@@ -47,6 +47,7 @@ const MaxWidthEditor: React.FC<WidgetEditorProps> = ({ widget, onComplete, onCan
     const [widthInput, setWidthInput] = useState(widget.maxWidth?.toString() ?? '');
 
     useInput((input, key) => {
+        const text = getInsertableText(input, key);
         if (key.return) {
             const width = Number.parseInt(widthInput, 10);
             if (!Number.isNaN(width) && width > 0) {
@@ -59,8 +60,8 @@ const MaxWidthEditor: React.FC<WidgetEditorProps> = ({ widget, onComplete, onCan
             onCancel();
         } else if (key.backspace) {
             setWidthInput(widthInput.slice(0, -1));
-        } else if (shouldInsertInput(input, key) && /\d/.test(input)) {
-            setWidthInput(widthInput + input);
+        } else if (/\d/.test(text)) {
+            setWidthInput(widthInput + text);
         }
     });
 

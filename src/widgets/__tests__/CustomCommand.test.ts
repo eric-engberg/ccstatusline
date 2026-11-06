@@ -340,17 +340,17 @@ describe('CustomCommandWidget', () => {
     });
 
     describe('command editor', () => {
-        function renderCommandEditor() {
+        function renderCommandEditor(action = 'edit-command', fields: Partial<WidgetItem> = {}) {
             const stdin = createMockStdin();
             const stdout = createMockStdout();
             const stderr = createMockStdout();
             const onComplete = vi.fn();
             const instance = render(
                 widget.renderEditor({
-                    widget: { id: 'test', type: 'custom-command' },
+                    widget: { id: 'test', type: 'custom-command', ...fields },
                     onComplete,
                     onCancel: vi.fn(),
-                    action: 'edit-command'
+                    action
                 }),
                 {
                     stdin,
@@ -438,6 +438,79 @@ describe('CustomCommandWidget', () => {
             } finally {
                 editor.cleanup();
                 colors.restore();
+            }
+        });
+
+        // A terminal paste reaches Ink as one input chunk, so a command copied
+        // with its line ending, or with a tab in it, arrives with that in it
+        it.each([
+            ['with a trailing line break', 'npx ccusage statusline\r', 'npx ccusage statusline'],
+            ['with a tab', 'echo\thi', 'echo hi']
+        ])('inserts a command pasted %s', async (_case, paste, expected) => {
+            const editor = renderCommandEditor();
+
+            try {
+                await waitFor(() => {
+                    expect(editor.output()).toContain('Enter command path:');
+                });
+
+                editor.stdin.write(paste);
+                await waitFor(() => {
+                    expect(editor.output()).toContain(`Enter command path: ${expected}`);
+                });
+                // The pasted line break doesn't save the command; Enter does
+                expect(editor.onComplete).not.toHaveBeenCalled();
+                editor.stdin.write('\r');
+                await waitFor(() => {
+                    expect(editor.onComplete).toHaveBeenCalledTimes(1);
+                });
+                expect(editor.onComplete.mock.calls[0]?.[0]).toMatchObject({ commandPath: expected });
+            } finally {
+                editor.cleanup();
+            }
+        });
+
+        // A number copied with its line ending arrives in the same input chunk
+        it.each([
+            {
+                field: 'max width',
+                action: 'edit-width',
+                prompt: 'Enter max width (blank for no limit):',
+                paste: '40\r',
+                saved: { maxWidth: 40 }
+            },
+            {
+                field: 'timeout',
+                action: 'edit-timeout',
+                prompt: 'Enter timeout in milliseconds (default 1000):',
+                paste: '2500\r',
+                saved: { timeout: 2500 }
+            }
+        ])('replaces the $field with a pasted number', async ({ action, prompt, paste, saved }) => {
+            const editor = renderCommandEditor(action, { maxWidth: 5, timeout: 5 });
+
+            try {
+                await waitFor(() => {
+                    expect(editor.output()).toContain(`${prompt} 5\n`);
+                });
+                editor.stdin.write('\x7f');
+                await waitFor(() => {
+                    expect(editor.output()).toContain(`${prompt}\n`);
+                });
+
+                editor.stdin.write(paste);
+                await waitFor(() => {
+                    expect(editor.output()).toContain(`${prompt} ${paste.trimEnd()}\n`);
+                });
+                // The pasted line break doesn't save the number; Enter does
+                expect(editor.onComplete).not.toHaveBeenCalled();
+                editor.stdin.write('\r');
+                await waitFor(() => {
+                    expect(editor.onComplete).toHaveBeenCalledTimes(1);
+                });
+                expect(editor.onComplete.mock.calls[0]?.[0]).toMatchObject(saved);
+            } finally {
+                editor.cleanup();
             }
         });
     });
