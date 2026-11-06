@@ -258,6 +258,7 @@ https.request = (...args) => {
     return request;
 };
 
+// Lets a test take the macOS keychain path on any host
 if (process.env.TEST_PLATFORM) {
     Object.defineProperty(process, 'platform', { value: process.env.TEST_PLATFORM });
 }
