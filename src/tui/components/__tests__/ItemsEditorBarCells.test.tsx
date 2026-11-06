@@ -158,6 +158,12 @@ describe('ItemsEditor cell bar empty cells', () => {
 
             press('p');
             await waitFor(() => {
+                expect(screen()).toContain('Weekly Opus Usage (line bar, long, used)');
+            });
+            expect(screen()).not.toContain('(y)');
+
+            press('p');
+            await waitFor(() => {
                 expect(screen()).toContain('Weekly Opus Usage (cells ▮, long, used)');
             });
             expect(screen()).toContain('(y) gray empty cells');
